@@ -1,17 +1,19 @@
 import Form from 'next/form';
-
-import { signOut } from '@/app/(auth)/auth';
+import { createClient } from '@/utils/supabase/client';
+import { useRouter } from 'next/navigation';
 
 export const SignOutForm = () => {
+  const router = useRouter();
+
   return (
     <Form
       className="w-full"
       action={async () => {
         'use server';
-
-        await signOut({
-          redirectTo: '/',
-        });
+        const supabase = createClient();
+        await supabase.auth.signOut();
+        router.push('/login');
+        router.refresh();
       }}
     >
       <button
