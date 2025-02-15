@@ -4,6 +4,8 @@ import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { and, asc, desc, eq, gt, gte, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/postgres-js';
 import postgres from 'postgres';
+import { createServerClient } from '@supabase/ssr';
+import { cookies } from 'next/headers';
 
 import {
   user,
@@ -22,9 +24,36 @@ import { ArtifactKind } from '@/components/artifact';
 // use the Drizzle adapter for Auth.js / NextAuth
 // https://authjs.dev/reference/adapter/drizzle
 
-// biome-ignore lint: Forbidden non-null assertion.
-const client = postgres(process.env.POSTGRES_URL!);
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+if (!supabaseUrl || !supabaseKey) {
+  throw new Error('Missing Supabase environment variables');
+}
+
+const client = postgres(supabaseUrl);
 const db = drizzle(client);
+
+function createClient() {
+  const cookieStore = cookies();
+  return createServerClient(
+    supabaseUrl!,
+    supabaseKey!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value;
+        },
+        set(name: string, value: string, options: { path: string }) {
+          cookieStore.set(name, value, options);
+        },
+        remove(name: string, options: { path: string }) {
+          cookieStore.set(name, '', { ...options, maxAge: 0 });
+        },
+      },
+    }
+  );
+}
 
 export async function getUser(email: string): Promise<Array<User>> {
   try {
@@ -38,11 +67,30 @@ export async function getUser(email: string): Promise<Array<User>> {
 export async function createUser(email: string, password: string) {
   const salt = genSaltSync(10);
   const hash = hashSync(password, salt);
+  const supabase = createClient();
 
   try {
-    return await db.insert(user).values({ email, password: hash });
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        emailRedirectTo: '/auth/callback'
+      }
+    });
+
+    if (authError) throw authError;
+
+    if (authData.user) {
+      await db.insert(user).values({
+        id: authData.user.id,
+        email,
+        password: hash
+      });
+    }
+
+    return authData;
   } catch (error) {
-    console.error('Failed to create user in database');
+    console.error('Failed to create user:', error);
     throw error;
   }
 }

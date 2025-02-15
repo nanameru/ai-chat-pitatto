@@ -1,31 +1,26 @@
 import { cookies } from 'next/headers';
+import { createClient } from '@/utils/supabase/server';
 
 import { AppSidebar } from '@/components/app-sidebar';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
-
-import { auth } from '../(auth)/auth';
 import Script from 'next/script';
 
 export const experimental_ppr = true;
 
-export default async function Layout({
+export default async function ChatLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const [session, cookieStore] = await Promise.all([auth(), cookies()]);
-  const isCollapsed = cookieStore.get('sidebar:state')?.value !== 'true';
+  const supabase = await createClient();
+  const { data: { session } } = await supabase.auth.getSession();
 
   return (
-    <>
-      <Script
-        src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"
-        strategy="beforeInteractive"
-      />
-      <SidebarProvider defaultOpen={!isCollapsed}>
+    <SidebarProvider>
+      <div className="flex h-dvh">
         <AppSidebar user={session?.user} />
         <SidebarInset>{children}</SidebarInset>
-      </SidebarProvider>
-    </>
+      </div>
+    </SidebarProvider>
   );
 }
