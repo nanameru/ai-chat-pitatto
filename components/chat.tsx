@@ -2,7 +2,7 @@
 
 import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
 import { useChat } from 'ai/react';
-import { useState, useEffect } from 'react';
+import { useEffect, useOptimistic, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 
 import { ChatHeader } from '@/components/chat-header';
@@ -71,7 +71,7 @@ export function Chat({
     cleanupLocalStorage();
   }, []);
 
-  const [optimisticModelId, setOptimisticModelId] = useState(selectedChatModel);
+  const [optimisticModelId, setOptimisticModelId] = useOptimistic(selectedChatModel);
 
   const {
     messages,
