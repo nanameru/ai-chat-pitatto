@@ -17,9 +17,13 @@ export default async function ChatLayout({
 
   return (
     <SidebarProvider>
-      <div className="flex h-dvh">
+      <div className="flex h-dvh w-full">
         <AppSidebar user={session?.user} />
-        <SidebarInset>{children}</SidebarInset>
+        <div className="flex-1">
+          <div className="w-full">
+            <SidebarInset>{children}</SidebarInset>
+          </div>
+        </div>
       </div>
     </SidebarProvider>
   );

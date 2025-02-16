@@ -59,9 +59,11 @@ export function AppSidebar({ user }: { user: User | undefined }) {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
-        <SidebarHistory user={user} />
+        <SidebarHistory />
       </SidebarContent>
-      <SidebarFooter>{user && <SidebarUserNav user={user} />}</SidebarFooter>
+      <SidebarFooter className="fixed bottom-0 w-[--sidebar-width] bg-background border-t">
+        {user ? <SidebarUserNav user={user} /> : null}
+      </SidebarFooter>
     </Sidebar>
   );
 }

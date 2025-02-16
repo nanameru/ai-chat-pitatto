@@ -117,28 +117,49 @@ function PureMultimodalInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
-  const submitForm = useCallback(() => {
-    window.history.replaceState({}, '', `/chat/${chatId}`);
+  const submitForm = useCallback(async () => {
+    try {
+      window.history.replaceState({}, '', `/chat/${chatId}`);
 
-    handleSubmit(undefined, {
-      experimental_attachments: attachments,
-    });
+      // 現在の入力とアタッチメントを保持
+      const currentInput = input;
+      const currentAttachments = [...attachments];
 
-    setAttachments([]);
-    setLocalStorageInput('');
-    resetHeight();
+      // 入力フィールドをクリア
+      setInput('');
+      setLocalStorageInput('');
+      resetHeight();
 
-    if (width && width > 768) {
-      textareaRef.current?.focus();
+      // メッセージを送信
+      if (currentInput.trim() || currentAttachments.length > 0) {
+        const message = {
+          content: currentInput.trim(),
+          role: 'user'
+        };
+
+        await handleSubmit(undefined, {
+          body: {
+            message,
+            attachments: currentAttachments,
+            options: {
+              stream: true,
+              temperature: 0.7,
+            }
+          },
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream'
+          }
+        });
+      }
+
+      // 送信完了後にアタッチメントをクリア
+      setAttachments([]);
+    } catch (error) {
+      console.error('Failed to submit message:', error);
+      toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
     }
-  }, [
-    attachments,
-    handleSubmit,
-    setAttachments,
-    setLocalStorageInput,
-    width,
-    chatId,
-  ]);
+  }, [input, attachments, chatId, handleSubmit, setInput, setAttachments, setLocalStorageInput, resetHeight]);
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -192,6 +213,114 @@ function PureMultimodalInput({
     },
     [setAttachments],
   );
+
+  const onError = (error: Error) => {
+    console.error('Chat error details:', {
+      error,
+      message: error.message,
+      stack: error.stack,
+      type: error.name,
+      timestamp: new Date().toISOString(),
+      localStorage: {
+        size: new Blob([JSON.stringify(localStorage)]).size,
+        keys: Object.keys(localStorage),
+      }
+    });
+
+    // ローカルストレージの使用状況を詳細に表示
+    let totalSize = 0;
+    const itemSizes: Record<string, { size: number; sizeKB: string }> = {};
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key) {
+        const value = localStorage.getItem(key);
+        const size = new Blob([value || '']).size;
+        totalSize += size;
+        itemSizes[key] = {
+          size,
+          sizeKB: (size / 1024).toFixed(2) + ' KB'
+        };
+      }
+    }
+    console.log('LocalStorage usage:', {
+      totalSize,
+      totalSizeKB: (totalSize / 1024).toFixed(2) + ' KB',
+      itemSizes
+    });
+
+    try {
+      // QUOTA_BYTESエラーの場合、関連するストレージのみをクリア
+      if (error.message.includes('QUOTA_BYTES')) {
+        try {
+          // チャット関連のストレージのみをクリア
+          const keysToKeep = ['supabase.auth.token'];
+          const keysToRemove = [];
+          
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key && !keysToKeep.includes(key)) {
+              keysToRemove.push(key);
+            }
+          }
+          
+          console.log('Clearing chat-related localStorage:', {
+            keysToRemove,
+            beforeSize: totalSize,
+            beforeSizeKB: (totalSize / 1024).toFixed(2) + ' KB'
+          });
+
+          keysToRemove.forEach(key => localStorage.removeItem(key));
+
+          // クリア後のサイズを再計算
+          let afterSize = 0;
+          for (let i = 0; i < localStorage.length; i++) {
+            const key = localStorage.key(i);
+            if (key) {
+              const value = localStorage.getItem(key);
+              afterSize += new Blob([value || '']).size;
+            }
+          }
+
+          console.log('Cleared localStorage:', {
+            removedKeys: keysToRemove,
+            afterSize,
+            afterSizeKB: (afterSize / 1024).toFixed(2) + ' KB',
+            freedSpace: (totalSize - afterSize) / 1024 + ' KB'
+          });
+        } catch (e) {
+          if (e instanceof Error) {
+            console.error('Failed to clear localStorage:', {
+              error: e,
+              message: e.message,
+              stack: e.stack
+            });
+          } else {
+            console.error('Failed to clear localStorage:', e);
+          }
+        }
+      }
+
+      let errorMessage = error.message;
+      try {
+        const errorData = JSON.parse(error.message);
+        console.log('Parsed error data:', errorData);
+        errorMessage = errorData.details || errorData.message || errorData.error || error.message;
+      } catch (e) {
+        console.log('Error message is not JSON:', {
+          message: error.message,
+          parseError: e instanceof Error ? e.message : String(e)
+        });
+      }
+
+      toast.error(errorMessage);
+    } catch (e: unknown) {
+      if (e instanceof Error) {
+        console.log('Error in error handling:', e.message);
+      } else {
+        console.log('Unknown error occurred');
+      }
+    }
+  };
 
   return (
     <div className="relative w-full flex flex-col gap-4">

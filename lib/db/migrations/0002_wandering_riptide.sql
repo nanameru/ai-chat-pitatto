@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS "Vote" (
 	"chatId" uuid NOT NULL,
 	"messageId" uuid NOT NULL,
 	"isUpvoted" boolean NOT NULL,
+	"createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	CONSTRAINT "Vote_chatId_messageId_pk" PRIMARY KEY("chatId","messageId")
 );
 --> statement-breakpoint

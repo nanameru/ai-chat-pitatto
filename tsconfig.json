@@ -20,13 +20,19 @@
     ],
     "paths": {
       "@/*": ["./*"]
-    }
+    },
+    "baseUrl": ".",
+    "forceConsistentCasingInFileNames": true
   },
   "include": [
     "next-env.d.ts",
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
+    "app/**/*.ts",
+    "app/**/*.tsx",
+    "app/(chat)/**/*.ts",
+    "app/(chat)/**/*.tsx",
     "next.config.js"
   ],
   "exclude": ["node_modules"]

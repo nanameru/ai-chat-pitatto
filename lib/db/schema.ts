@@ -9,6 +9,7 @@ import {
   primaryKey,
   foreignKey,
   boolean,
+  sql,
 } from 'drizzle-orm/pg-core';
 
 export const user = pgTable('User', {

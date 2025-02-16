@@ -88,7 +88,12 @@ function addToolMessageToChat({
 export function convertToUIMessages(
   messages: Array<DBMessage>,
 ): Array<Message> {
-  return messages.reduce((chatMessages: Array<Message>, message) => {
+  // Sort messages by creation time in ascending order
+  const sortedMessages = [...messages].sort((a, b) => {
+    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+  });
+
+  return sortedMessages.reduce((chatMessages: Array<Message>, message) => {
     if (message.role === 'tool') {
       return addToolMessageToChat({
         toolMessage: message as CoreToolMessage,
@@ -100,29 +105,60 @@ export function convertToUIMessages(
     let reasoning: string | undefined = undefined;
     const toolInvocations: Array<ToolInvocation> = [];
 
+    // Try to parse content if it's a string that might be JSON
+    let parsedContent: any = message.content;
     if (typeof message.content === 'string') {
-      textContent = message.content;
-    } else if (Array.isArray(message.content)) {
-      for (const content of message.content) {
-        if (content.type === 'text') {
-          textContent += content.text;
-        } else if (content.type === 'tool-call') {
-          toolInvocations.push({
-            state: 'call',
-            toolCallId: content.toolCallId,
-            toolName: content.toolName,
-            args: content.args,
-          });
-        } else if (content.type === 'reasoning') {
-          reasoning = content.reasoning;
+      try {
+        parsedContent = JSON.parse(message.content);
+      } catch (e) {
+        // If it's not valid JSON, use it as is
+        textContent = message.content;
+        parsedContent = null;
+      }
+    }
+
+    if (parsedContent) {
+      if (Array.isArray(parsedContent)) {
+        for (const content of parsedContent) {
+          if (content.type === 'text') {
+            textContent += content.text;
+          } else if (content.type === 'tool-call') {
+            toolInvocations.push({
+              state: 'call',
+              toolCallId: content.toolCallId,
+              toolName: content.toolName,
+              args: content.args,
+            });
+          } else if (content.type === 'reasoning') {
+            reasoning = content.reasoning;
+          }
+        }
+      } else if (typeof parsedContent === 'object') {
+        // Handle JSON object content
+        if (parsedContent.type === 'text') {
+          textContent = parsedContent.text;
+        } else if (parsedContent.text) {
+          textContent = parsedContent.text;
+        } else if (parsedContent.content) {
+          textContent = typeof parsedContent.content === 'string' 
+            ? parsedContent.content 
+            : JSON.stringify(parsedContent.content);
+        } else {
+          // If we can't find a valid text field, stringify the entire content
+          textContent = JSON.stringify(parsedContent);
         }
       }
+    }
+
+    // If we still don't have any text content, use the original content as string
+    if (!textContent && typeof message.content === 'string') {
+      textContent = message.content;
     }
 
     chatMessages.push({
       id: message.id,
       role: message.role as Message['role'],
-      content: textContent,
+      content: textContent || '',  // Ensure we always have a string
       reasoning,
       toolInvocations,
     });

@@ -8,11 +8,19 @@ config({
 });
 
 const runMigrate = async () => {
-  if (!process.env.POSTGRES_URL) {
-    throw new Error('POSTGRES_URL is not defined');
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_DB_PASSWORD) {
+    throw new Error('Supabase credentials are not defined');
   }
 
-  const connection = postgres(process.env.POSTGRES_URL, { max: 1 });
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const projectRef = supabaseUrl.match(/https:\/\/(.+)\.supabase\.co/)?.[1];
+  
+  if (!projectRef) {
+    throw new Error('Invalid Supabase URL format');
+  }
+
+  const connectionString = `postgresql://postgres:${process.env.SUPABASE_DB_PASSWORD}@db.${projectRef}.supabase.co:5432/postgres`;
+  const connection = postgres(connectionString, { max: 1 });
   const db = drizzle(connection);
 
   console.log('⏳ Running migrations...');

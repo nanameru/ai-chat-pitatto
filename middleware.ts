@@ -8,9 +8,13 @@ export async function middleware(request: NextRequest) {
     },
   })
 
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error('Missing Supabase credentials')
+  }
+
   const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
     {
       cookies: {
         get(name: string) {
@@ -54,19 +58,7 @@ export async function middleware(request: NextRequest) {
     }
   )
 
-  const { data: { session } } = await supabase.auth.getSession()
-
-  // 認証が必要なパスの場合
-  if (request.nextUrl.pathname.startsWith('/api/') || request.nextUrl.pathname === '/') {
-    if (!session) {
-      return NextResponse.redirect(new URL('/login', request.url))
-    }
-  }
-
-  // ログイン済みユーザーがログインページやサインアップページにアクセスした場合はホームページにリダイレクト
-  if (session && (request.nextUrl.pathname === '/login' || request.nextUrl.pathname === '/register')) {
-    return NextResponse.redirect(new URL('/', request.url))
-  }
+  await supabase.auth.getSession()
 
   return response
 }
@@ -78,7 +70,8 @@ export const config = {
      * - _next/static (static files)
      * - _next/image (image optimization files)
      * - favicon.ico (favicon file)
+     * - public files (public/*)
      */
-    '/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
+    '/((?!_next/static|_next/image|favicon.ico|public/|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)',
   ],
 }

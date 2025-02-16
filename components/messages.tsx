@@ -9,12 +9,12 @@ import equal from 'fast-deep-equal';
 interface MessagesProps {
   chatId: string;
   isLoading: boolean;
-  votes: Array<Vote> | undefined;
+  votes?: Array<Vote> | undefined;
   messages: Array<Message>;
   setMessages: (
     messages: Message[] | ((messages: Message[]) => Message[]),
   ) => void;
-  reload: (
+  reload?: (
     chatRequestOptions?: ChatRequestOptions,
   ) => Promise<string | null | undefined>;
   isReadonly: boolean;

@@ -43,14 +43,15 @@ export function MessageReasoning({
       ) : (
         <div className="flex flex-row gap-2 items-center">
           <div className="font-medium">Reasoned for a few seconds</div>
-          <div
+          <button
             className="cursor-pointer"
             onClick={() => {
               setIsExpanded(!isExpanded);
             }}
+            aria-label="Toggle reasoning details"
           >
             <ChevronDownIcon />
-          </div>
+          </button>
         </div>
       )}
 

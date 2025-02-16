@@ -149,7 +149,7 @@ export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   return true;
 });
 
-export function SidebarHistory({ user }: { user: User | undefined }) {
+export function SidebarHistory() {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
   const pathname = usePathname();
@@ -157,7 +157,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
     data: history,
     isLoading,
     mutate,
-  } = useSWR<Array<Chat>>(user ? '/api/history' : null, fetcher, {
+  } = useSWR<Array<Chat>>('/api/history', fetcher, {
     fallbackData: [],
   });
 
@@ -192,18 +192,6 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
       router.push('/');
     }
   };
-
-  if (!user) {
-    return (
-      <SidebarGroup>
-        <SidebarGroupContent>
-          <div className="px-2 text-zinc-500 w-full flex flex-row justify-center items-center text-sm gap-2">
-            Login to save and revisit previous chats!
-          </div>
-        </SidebarGroupContent>
-      </SidebarGroup>
-    );
-  }
 
   if (isLoading) {
     return (
@@ -280,7 +268,7 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
   };
 
   return (
-    <>
+    <div className="flex flex-col h-full pb-20">
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
@@ -412,6 +400,6 @@ export function SidebarHistory({ user }: { user: User | undefined }) {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </>
+    </div>
   );
 }

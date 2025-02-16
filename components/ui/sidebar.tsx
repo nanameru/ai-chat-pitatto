@@ -18,6 +18,8 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -214,7 +216,11 @@ const Sidebar = React.forwardRef<
             }
             side={side}
           >
-            <div className="flex h-full w-full flex-col">{children}</div>
+            <div className="flex h-full w-full flex-col">
+              {children}
+              <Separator />
+              <SidebarUserMenu />
+            </div>
           </SheetContent>
         </Sheet>
       );
@@ -258,7 +264,11 @@ const Sidebar = React.forwardRef<
             data-sidebar="sidebar"
             className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
           >
-            {children}
+            <div className="flex flex-col flex-1 gap-4">
+              {children}
+            </div>
+            <Separator />
+            <SidebarUserMenu />
           </div>
         </div>
       </div>
@@ -266,6 +276,37 @@ const Sidebar = React.forwardRef<
   },
 );
 Sidebar.displayName = 'Sidebar';
+
+const SidebarUserMenu = () => {
+  const router = useRouter();
+  const supabase = createClient();
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
+
+  return (
+    <div className="flex flex-col gap-1 p-2">
+      <Button
+        variant="ghost"
+        className="w-full justify-start"
+        onClick={() => {
+          document.documentElement.classList.toggle('dark');
+        }}
+      >
+        Toggle dark mode
+      </Button>
+      <Button
+        variant="ghost"
+        className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
+        onClick={handleSignOut}
+      >
+        Sign out
+      </Button>
+    </div>
+  );
+};
 
 const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
@@ -330,7 +371,7 @@ const SidebarInset = React.forwardRef<
     <main
       ref={ref}
       className={cn(
-        'relative flex min-h-svh flex-1 flex-col bg-background',
+        'relative flex min-h-svh w-full flex-1 flex-col bg-background',
         'peer-data-[variant=inset]:min-h-[calc(100svh-theme(spacing.4))] md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:shadow',
         className,
       )}
@@ -767,5 +808,6 @@ export {
   SidebarRail,
   SidebarSeparator,
   SidebarTrigger,
+  SidebarUserMenu,
   useSidebar,
 };

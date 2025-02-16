@@ -42,7 +42,7 @@ const PurePreviewMessage = ({
   setMessages: (
     messages: Message[] | ((messages: Message[]) => Message[]),
   ) => void;
-  reload: (
+  reload?: (
     chatRequestOptions?: ChatRequestOptions,
   ) => Promise<string | null | undefined>;
   isReadonly: boolean;
@@ -52,7 +52,7 @@ const PurePreviewMessage = ({
   return (
     <AnimatePresence>
       <motion.div
-        className="w-full mx-auto max-w-3xl px-4 group/message"
+        className="w-full mx-auto px-4 group/message"
         initial={{ y: 5, opacity: 0 }}
         animate={{ y: 0, opacity: 1 }}
         data-role={message.role}
@@ -118,12 +118,16 @@ const PurePreviewMessage = ({
                       message.role === 'user',
                   })}
                 >
-                  <Markdown>{message.content as string}</Markdown>
+                  <Markdown>
+                    {typeof message.content === 'string'
+                      ? message.content
+                      : JSON.stringify(message.content)}
+                  </Markdown>
                 </div>
               </div>
             )}
 
-            {message.content && mode === 'edit' && (
+            {message.content && mode === 'edit' && reload && (
               <div className="flex flex-row gap-2 items-start">
                 <div className="size-8" />
 
@@ -243,7 +247,7 @@ export const ThinkingMessage = () => {
 
   return (
     <motion.div
-      className="w-full mx-auto max-w-3xl px-4 group/message "
+      className="w-full mx-auto px-4 group/message "
       initial={{ y: 5, opacity: 0 }}
       animate={{ y: 0, opacity: 1, transition: { delay: 1 } }}
       data-role={role}
