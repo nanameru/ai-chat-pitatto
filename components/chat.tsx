@@ -210,41 +210,41 @@ export function Chat({
         setMessages={originalSetMessages}
         append={originalAppend}
         reload={async (chatRequestOptions) => {
-          useChat({
-            api: '/api/chat',
-            id,
-            initialMessages,
-            body: {
+          // 既存のチャットインスタンスを使用して新しいメッセージを送信
+          const response = await fetch('/api/chat', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
               chatId: id,
               model: optimisticModelId,
               visibilityType: selectedVisibilityType,
-            },
-            onResponse: (response) => {
-              console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-            },
-            onError: (error) => {
-              console.error('Chat error details:', {
-                name: error.name,
-                message: error.message,
-                stack: error.stack,
-                cause: error.cause
-              });
-
-              // エラーが発生しても、メッセージが表示されている場合は
-              // ユーザーエクスペリエンスを維持するためにエラーを表示しない
-              if (!messages.length || messages[messages.length - 1].role === 'user') {
-                toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-              }
-              
-              stop();
-              cleanupLocalStorage();
-            },
-            onFinish: (message) => {
-              console.log('Finished message:', message);
-              cleanupLocalStorage();
-            }
+              messages: initialMessages
+            }),
           });
-          return Promise.resolve(null);
+
+          if (!response.ok) {
+            console.error('Chat error:', await response.text());
+            toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
+            return null;
+          }
+
+          const reader = response.body?.getReader();
+          if (!reader) return null;
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              // 進行状況をコンソールに表示
+              console.log('Response chunk:', new TextDecoder().decode(value));
+            }
+          } finally {
+            reader.releaseLock();
+          }
+
+          return null;
         }}
         votes={votes}
         isReadonly={isReadonly}
