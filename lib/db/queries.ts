@@ -6,7 +6,7 @@ import { createServerClient } from '@supabase/ssr';
 
 import { ArtifactKind } from '@/components/artifact';
 import { VisibilityType } from '@/components/visibility-selector';
-import { DBMessage } from './types';
+import type { DBMessage } from '@/lib/db/types';
 
 export async function getUser(email: string): Promise<Array<any>> {
   const supabase = await createClient();
