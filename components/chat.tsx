@@ -16,6 +16,8 @@ import { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { chatModels } from '@/lib/ai/models';
+import { Overview } from './overview';
+import { SuggestedActions } from './suggested-actions';
 
 export function Chat({
   id,
@@ -153,44 +155,90 @@ export function Chat({
   };
 
   return (
-    <>
-      <div className="flex flex-col min-w-0 h-dvh bg-background">
-        <div className="w-full">
-          <ChatHeader
-            chatId={id}
-            selectedModelId={selectedChatModel}
-            selectedVisibilityType={selectedVisibilityType}
-            isReadonly={isReadonly}
-          />
-        </div>
+    <div className="relative flex flex-col min-h-screen">
+      <ChatHeader
+        chatId={id}
+        selectedModelId={selectedChatModel}
+        selectedVisibilityType={selectedVisibilityType}
+        isReadonly={isReadonly}
+      />
 
-        <div className="flex-1 flex justify-center">
-          <div className="w-full max-w-3xl">
-            <Messages
-              chatId={id}
-              isLoading={isLoading}
-              votes={votes}
-              messages={messages}
-              setMessages={originalSetMessages}
-              isReadonly={isReadonly}
-              isArtifactVisible={isArtifactVisible}
-            />
+      <div className="flex-1 flex justify-center">
+        <div className="w-full max-w-3xl flex flex-col h-full">
+          {messages.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center">
+              <Overview />
+            </div>
+          ) : (
+            <div className="flex-1">
+              <Messages
+                chatId={id}
+                isLoading={isLoading}
+                votes={votes}
+                messages={messages}
+                setMessages={originalSetMessages}
+                isReadonly={isReadonly}
+                isArtifactVisible={isArtifactVisible}
+              />
+            </div>
+          )}
 
-            <form className="flex px-4 bg-background pb-4 md:pb-6 gap-2 w-full">
+          <div className="sticky bottom-0 z-10 bg-background">
+            <form className="flex flex-col px-4 bg-background pb-4 md:pb-6 gap-2 w-full" onSubmit={(e) => e.preventDefault()}>
               {!isReadonly && (
-                <MultimodalInput
-                  chatId={id}
-                  input={input}
-                  setInput={handleSetInput}
-                  isLoading={isLoading}
-                  stop={stop}
-                  attachments={attachments}
-                  setAttachments={setAttachments}
-                  messages={messages}
-                  setMessages={originalSetMessages}
-                  append={originalAppend}
-                  handleSubmit={handleSubmit}
-                />
+                <>
+                  <MultimodalInput
+                    chatId={id}
+                    input={input}
+                    setInput={handleSetInput}
+                    isLoading={isLoading}
+                    stop={stop}
+                    attachments={attachments}
+                    setAttachments={setAttachments}
+                    messages={messages}
+                    setMessages={originalSetMessages}
+                    append={originalAppend}
+                    handleSubmit={handleSubmit}
+                  />
+                  {messages.length === 0 && (
+                    <div className="mt-4">
+                      <SuggestedActions
+                        suggestions={[
+                          {
+                            title: "AIの最新情報を教えて",
+                            description: "最新のAI技術動向やニュースについて",
+                            onClick: () => {
+                              handleSetInput("AIの最新情報を教えてください。特に注目すべき進展や重要なニュースを教えてください。");
+                            }
+                          },
+                          {
+                            title: "1日前のAI情報を教えて",
+                            description: "昨日のAIに関する重要な出来事",
+                            onClick: () => {
+                              handleSetInput("1日前のAI関連の情報を教えてください。昨日起きた重要な出来事や発表について知りたいです。");
+                            }
+                          },
+                          {
+                            title: "10月のAI情報を教えて",
+                            description: "10月の主要なAIニュースやトレンド",
+                            onClick: () => {
+                              handleSetInput("10月のAI関連の情報を教えてください。その月の主要な出来事、発表、トレンドについてまとめてください。");
+                            }
+                          },
+                          {
+                            title: "アカウントを分析して",
+                            description: "あなたのアカウントの利用状況を分析",
+                            onClick: () => {
+                              handleSetInput("私のアカウントについて分析してください。利用パターンや特徴的な傾向について教えてください。");
+                            }
+                          }
+                        ]}
+                        append={originalAppend}
+                        chatId={id}
+                      />
+                    </div>
+                  )}
+                </>
               )}
             </form>
           </div>
@@ -249,6 +297,6 @@ export function Chat({
         votes={votes}
         isReadonly={isReadonly}
       />
-    </>
+    </div>
   );
 }

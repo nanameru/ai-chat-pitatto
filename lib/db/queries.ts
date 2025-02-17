@@ -337,19 +337,27 @@ export async function voteMessage({
 }) {
   const supabase = await createClient();
   try {
+    console.log('Saving vote:', { chatId, messageId, type });
     const { data, error } = await supabase
       .from('Vote')
       .upsert({
         chatId,
         messageId,
         isUpvoted: type === 'up',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+      }, {
+        onConflict: 'chatId,messageId'
       });
 
-    if (error) throw error;
+    if (error) {
+      console.error('Database error while saving vote:', error);
+      throw error;
+    }
+
+    console.log('Vote saved successfully:', data);
     return data;
   } catch (error) {
-    console.error('Failed to vote message in database');
+    console.error('Failed to vote message in database:', error);
     throw error;
   }
 }
