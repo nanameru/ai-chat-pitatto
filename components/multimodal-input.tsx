@@ -499,6 +499,8 @@ export const MultimodalInput = memo(
   },
 );
 
+MultimodalInput.displayName = 'MultimodalInput';
+
 const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) => {
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
 
@@ -529,7 +531,7 @@ const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void;
 
 const WebSearchButton = memo(PureWebSearchButton);
 
-const PureXSearchButton = memo(({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) => {
+const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
   return (
     <TooltipProvider>
       <Tooltip>
@@ -554,6 +556,8 @@ const PureXSearchButton = memo(({ onClick, isLoading, isEnabled }: { onClick: ()
     </TooltipProvider>
   );
 });
+
+PureXSearchButton.displayName = 'PureXSearchButton';
 
 const XSearchButton = memo(PureXSearchButton);
 
@@ -615,7 +619,7 @@ PureStopButton.displayName = 'PureStopButton';
 
 const StopButton = memo(PureStopButton);
 
-function PureSendButton({
+const SendButton = memo(function SendButton({
   submitForm,
   input,
   uploadQueue,
@@ -638,11 +642,6 @@ function PureSendButton({
       <ArrowUpIcon size={16} />
     </Button>
   );
-}
-
-const SendButton = memo(PureSendButton, (prevProps, nextProps) => {
-  if (prevProps.uploadQueue.length !== nextProps.uploadQueue.length)
-    return false;
-  if (prevProps.input !== nextProps.input) return false;
-  return true;
 });
+
+SendButton.displayName = 'SendButton';
