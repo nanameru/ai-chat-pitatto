@@ -501,7 +501,26 @@ export const MultimodalInput = memo(
 MultimodalInput.displayName = 'MultimodalInput';
 
 const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
+  const [mounted, setMounted] = useState(false);
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // サーバーサイドレンダリング時はデフォルトのスタイルを使用
+  if (!mounted) {
+    return (
+      <Button
+        type="button"
+        disabled={true}
+        className="size-8 px-3 rounded-full text-sm border border-gray-200 bg-white text-gray-700"
+        aria-label="Webで検索"
+      >
+        <span className="whitespace-nowrap">Webで検索</span>
+      </Button>
+    );
+  }
 
   const buttonClassName = cx(
     "size-8 px-3 rounded-full text-sm border border-gray-200",
@@ -536,6 +555,26 @@ const WebSearchButton = memo(PureWebSearchButton);
 WebSearchButton.displayName = 'WebSearchButton';
 
 const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // サーバーサイドレンダリング時はデフォルトのスタイルを使用
+  if (!mounted) {
+    return (
+      <Button
+        type="button"
+        disabled={true}
+        className="size-8 px-3 rounded-full text-sm border border-gray-200 bg-white text-gray-700"
+        aria-label="Xから検索"
+      >
+        <span className="whitespace-nowrap">Xから検索</span>
+      </Button>
+    );
+  }
+
   const buttonClassName = cx(
     "size-8 px-3 rounded-full text-sm border",
     isEnabled
