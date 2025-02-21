@@ -23,12 +23,21 @@ import { useLocalStorage, useWindowSize } from 'usehooks-ts';
 
 import { sanitizeUIMessages } from '@/lib/utils';
 
-import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
 import { SuggestedActions } from './suggested-actions';
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/tooltip';
 import equal from 'fast-deep-equal';
+import { nanoid } from 'nanoid';
+import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
+import { ModelSelector } from '@/components/model-selector';
+import { XSearchState } from '@/lib/ai/x-search';
+
+interface XSearchResponse {
+  xSearchState?: XSearchState;
+  [key: string]: any;
+}
 
 function PureMultimodalInput({
   chatId,
@@ -43,6 +52,7 @@ function PureMultimodalInput({
   append,
   handleSubmit,
   className,
+  selectedModelId,
 }: {
   chatId: string;
   input: string;
@@ -62,8 +72,9 @@ function PureMultimodalInput({
       preventDefault?: () => void;
     },
     chatRequestOptions?: ChatRequestOptions,
-  ) => void;
+  ) => Promise<XSearchResponse | void>;
   className?: string;
+  selectedModelId: string;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -117,6 +128,9 @@ function PureMultimodalInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
+  const [isXSearchEnabled, setIsXSearchEnabled] = useState(false);
+  const [xSearchState, setXSearchState] = useState<XSearchState | undefined>();
+
   const submitForm = useCallback(async () => {
     try {
       window.history.replaceState({}, '', `/chat/${chatId}`);
@@ -137,13 +151,15 @@ function PureMultimodalInput({
           role: 'user'
         };
 
-        await handleSubmit(undefined, {
+        const response = await handleSubmit(undefined, {
           body: {
             message,
             attachments: currentAttachments,
             options: {
               stream: true,
               temperature: 0.7,
+              isXSearch: isXSearchEnabled,
+              xSearchState,
             }
           },
           headers: {
@@ -151,6 +167,15 @@ function PureMultimodalInput({
             'Accept': 'text/event-stream'
           }
         });
+
+        // レスポンスからX検索の状態を更新
+        if (response?.xSearchState) {
+          setXSearchState(response.xSearchState);
+        } else {
+          // 検索が完了したらリセット
+          setXSearchState(undefined);
+          // X検索の有効状態は維持する
+        }
       }
 
       // 送信完了後にアタッチメントをクリア
@@ -158,8 +183,22 @@ function PureMultimodalInput({
     } catch (error) {
       console.error('Failed to submit message:', error);
       toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
+      // エラー時は状態をリセット
+      setXSearchState(undefined);
+      setIsXSearchEnabled(false);
     }
-  }, [input, attachments, chatId, handleSubmit, setInput, setAttachments, setLocalStorageInput, resetHeight]);
+  }, [
+    input,
+    attachments,
+    chatId,
+    handleSubmit,
+    setInput,
+    setAttachments,
+    setLocalStorageInput,
+    resetHeight,
+    isXSearchEnabled,
+    xSearchState,
+  ]);
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -273,7 +312,7 @@ function PureMultimodalInput({
 
           // クリア後のサイズを再計算
           let afterSize = 0;
-          for (let i = 0; i < localStorage.length; i++) {
+          for (let i = 0; i <localStorage.length; i++) {
             const key = localStorage.key(i);
             if (key) {
               const value = localStorage.getItem(key);
@@ -322,6 +361,48 @@ function PureMultimodalInput({
     }
   };
 
+  const handleKeyDown = useCallback(
+    (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+      if (
+        event.key === 'Enter' &&
+        !event.shiftKey &&
+        !event.nativeEvent.isComposing && // IME入力中は送信しない
+        !isLoading
+      ) {
+        event.preventDefault();
+        submitForm();
+      }
+    },
+    [isLoading, submitForm],
+  );
+
+  const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+
+  const handleXSearch = useCallback(() => {
+    setIsXSearchEnabled(prev => !prev);
+    setXSearchState(prev => prev ? undefined : {
+      stage: 'subquery_generation'
+    });
+  }, []);
+
+  const handleWebSearch = useCallback(() => {
+    const searchQuery = input;
+    const message: CreateMessage = {
+      id: nanoid(),
+      content: input,
+      role: 'user',
+      createdAt: new Date(),
+    };
+
+    append(message, {
+      data: {
+        searchType: 'web',
+        query: searchQuery,
+        isWebSearchEnabled,
+      }
+    });
+  }, [input, append, isWebSearchEnabled]);
+
   return (
     <div className="relative w-full flex flex-col gap-4">
       {messages.length === 0 &&
@@ -359,44 +440,49 @@ function PureMultimodalInput({
         </div>
       )}
 
-      <Textarea
-        ref={textareaRef}
-        placeholder="Send a message..."
-        value={input}
-        onChange={handleInput}
-        className={cx(
-          'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-2xl !text-base bg-muted pb-10 dark:border-zinc-700',
-          className,
-        )}
-        rows={2}
-        autoFocus
-        onKeyDown={(event) => {
-          if (event.key === 'Enter' && !event.shiftKey) {
-            event.preventDefault();
+      <div className="relative">
+        <Textarea
+          ref={textareaRef}
+          placeholder="Pitatto AIにメッセージを送信する"
+          value={input}
+          onChange={handleInput}
+          onKeyDown={handleKeyDown}
+          className={cx(
+            'min-h-[24px] max-h-[calc(75dvh)] overflow-hidden resize-none rounded-3xl !text-base bg-white py-4 pb-14 px-5 border border-gray-200 focus:border-gray-200 focus-visible:ring-0 focus:outline-none shadow-[0_2px_12px_0_rgba(0,0,0,0.08)] dark:bg-zinc-900 dark:border-zinc-700 dark:focus:border-zinc-700 dark:shadow-[0_2px_12px_0_rgba(0,0,0,0.2)]',
+            className,
+          )}
+          rows={2}
+          autoFocus
+        />
 
-            if (isLoading) {
-              toast.error('Please wait for the model to finish its response!');
-            } else {
-              submitForm();
-            }
-          }
-        }}
-      />
+        <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
+          <Button
+            className="h-8 w-8 rounded-full bg-white p-0 text-gray-700 hover:bg-gray-100 border border-gray-200"
+            onClick={(event) => {
+              event.preventDefault();
+              fileInputRef.current?.click();
+            }}
+            disabled={isLoading}
+            aria-label="ファイルを添付"
+          >
+            <PaperclipIcon size={16} />
+          </Button>
+          <WebSearchButton onClick={handleWebSearch} isLoading={isLoading} />
+          <XSearchButton onClick={handleXSearch} isLoading={isLoading} isEnabled={isXSearchEnabled} />
+        </div>
 
-      <div className="absolute bottom-0 p-2 w-fit flex flex-row justify-start">
-        <AttachmentsButton fileInputRef={fileInputRef} isLoading={isLoading} />
-      </div>
-
-      <div className="absolute bottom-0 right-0 p-2 w-fit flex flex-row justify-end">
-        {isLoading ? (
-          <StopButton stop={stop} setMessages={setMessages} />
-        ) : (
-          <SendButton
-            input={input}
-            submitForm={submitForm}
-            uploadQueue={uploadQueue}
-          />
-        )}
+        <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
+          <ModelSelector selectedModelId={selectedModelId} className="h-8" />
+          {isLoading ? (
+            <StopButton stop={stop} setMessages={setMessages} />
+          ) : (
+            <SendButton
+              input={input}
+              submitForm={submitForm}
+              uploadQueue={uploadQueue}
+            />
+          )}
+        </div>
       </div>
     </div>
   );
@@ -406,12 +492,76 @@ export const MultimodalInput = memo(
   PureMultimodalInput,
   (prevProps, nextProps) => {
     if (prevProps.input !== nextProps.input) return false;
+    if (prevProps.selectedModelId !== nextProps.selectedModelId) return false;
     if (prevProps.isLoading !== nextProps.isLoading) return false;
     if (!equal(prevProps.attachments, nextProps.attachments)) return false;
 
     return true;
   },
 );
+
+const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) => {
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+
+  const handleClick = () => {
+    setIsWebSearchEnabled(!isWebSearchEnabled);
+    onClick();
+  };
+
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            onClick={handleClick}
+            disabled={isLoading}
+            className={cx(
+              "h-8 px-3 rounded-full text-sm border border-gray-200",
+              isWebSearchEnabled
+                ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                : "bg-white text-gray-700 hover:bg-gray-100"
+            )}
+            aria-label="Webで検索"
+          >
+            Webで検索
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>インターネットで検索</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+});
+
+const WebSearchButton = memo(PureWebSearchButton);
+
+const PureXSearchButton = memo(({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) => {
+  return (
+    <TooltipProvider>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            onClick={onClick}
+            disabled={isLoading}
+            className={cx(
+              "h-8 px-3 rounded-full text-sm border",
+              isEnabled
+                ? "bg-blue-100 text-blue-600 hover:bg-blue-200 border-blue-200"
+                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
+            )}
+            aria-label="Xから検索"
+          >
+            Xから検索
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>X（旧Twitter）で検索</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+});
+
+const XSearchButton = memo(PureXSearchButton);
 
 function PureAttachmentsButton({
   fileInputRef,
@@ -430,7 +580,7 @@ function PureAttachmentsButton({
       disabled={isLoading}
       variant="ghost"
     >
-      <PaperclipIcon size={14} />
+      ファイルを添付
     </Button>
   );
 }
@@ -446,14 +596,21 @@ function PureStopButton({
 }) {
   return (
     <Button
-      className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
-      onClick={(event) => {
-        event.preventDefault();
+      type="button"
+      onClick={() => {
         stop();
-        setMessages((messages) => sanitizeUIMessages(messages));
+        setMessages((messages) => {
+          const lastMessage = messages[messages.length - 1];
+          if (lastMessage?.role === 'assistant') {
+            return messages.slice(0, -1);
+          }
+          return messages;
+        });
       }}
+      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      aria-label="送信を停止"
     >
-      <StopIcon size={14} />
+      <StopIcon size={16} />
     </Button>
   );
 }
@@ -471,14 +628,16 @@ function PureSendButton({
 }) {
   return (
     <Button
-      className="rounded-full p-1.5 h-fit border dark:border-zinc-600"
-      onClick={(event) => {
-        event.preventDefault();
+      type="button"
+      onClick={(e) => {
+        e.preventDefault();
         submitForm();
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
+      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      aria-label="送信"
     >
-      <ArrowUpIcon size={14} />
+      <ArrowUpIcon size={16} />
     </Button>
   );
 }
