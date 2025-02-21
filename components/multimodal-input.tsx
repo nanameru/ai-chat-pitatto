@@ -503,6 +503,13 @@ MultimodalInput.displayName = 'MultimodalInput';
 const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
 
+  const buttonClassName = cx(
+    "size-8 px-3 rounded-full text-sm border border-gray-200",
+    isWebSearchEnabled
+      ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
+      : "bg-white text-gray-700 hover:bg-gray-100"
+  );
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -511,12 +518,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
             type="button"
             onClick={onClick}
             disabled={isLoading}
-            className={cx(
-              "size-8 px-3 rounded-full text-sm border border-gray-200",
-              isWebSearchEnabled
-                ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                : "bg-white text-gray-700 hover:bg-gray-100"
-            )}
+            className={buttonClassName}
             aria-label="Webで検索"
           >
             <span className="whitespace-nowrap">Webで検索</span>
@@ -534,6 +536,13 @@ const WebSearchButton = memo(PureWebSearchButton);
 WebSearchButton.displayName = 'WebSearchButton';
 
 const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
+  const buttonClassName = cx(
+    "size-8 px-3 rounded-full text-sm border",
+    isEnabled
+      ? "bg-blue-100 text-blue-600 hover:bg-blue-200 border-blue-200"
+      : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
+  );
+
   return (
     <TooltipProvider>
       <Tooltip>
@@ -542,15 +551,10 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
             type="button"
             onClick={onClick}
             disabled={isLoading}
-            className={cx(
-              "size-8 px-3 rounded-full text-sm border",
-              isEnabled
-                ? "bg-blue-100 text-blue-600 hover:bg-blue-200 border-blue-200"
-                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
-            )}
+            className={buttonClassName}
             aria-label="Xから検索"
           >
-            Xから検索
+            <span className="whitespace-nowrap">Xから検索</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>X（旧Twitter）で検索</TooltipContent>
