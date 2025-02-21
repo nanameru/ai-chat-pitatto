@@ -92,12 +92,12 @@ function PureMultimodalInput({
     }
   };
 
-  const resetHeight = () => {
+  const resetHeight = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
       textareaRef.current.style.height = '98px';
     }
-  };
+  }, []);
 
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     'input',
@@ -499,6 +499,7 @@ export const MultimodalInput = memo(
     return true;
   },
 );
+MultimodalInput.displayName = 'MultimodalInput';
 
 const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) => {
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
@@ -586,6 +587,7 @@ function PureAttachmentsButton({
 }
 
 const AttachmentsButton = memo(PureAttachmentsButton);
+AttachmentsButton.displayName = 'AttachmentsButton';
 
 function PureStopButton({
   stop,
@@ -610,7 +612,7 @@ function PureStopButton({
       className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
-      <StopIcon size={16} />
+      <StopIcon className="size-8" />
     </Button>
   );
 }
@@ -637,7 +639,7 @@ function PureSendButton({
       className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信"
     >
-      <ArrowUpIcon size={16} />
+      <ArrowUpIcon className="size-8" />
     </Button>
   );
 }

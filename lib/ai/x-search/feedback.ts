@@ -2,7 +2,7 @@ import { XSearchOptions } from './index';
 import { type Message } from 'ai';
 import { streamText, createDataStreamResponse, smoothStream } from 'ai';
 import { myProvider } from '@/lib/ai/models';
-import { generateCozeResponse } from '../coze/coze';
+import { generateCozeResponse } from '@/lib/ai/coze/coze';
 import { nanoid } from 'nanoid';
 
 const FEEDBACK_PROMPT = `
