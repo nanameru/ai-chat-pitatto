@@ -32,6 +32,7 @@ export const ExampleComponent: React.FC<ExampleComponentProps> = ({
       {isCurrentVersion && onSaveContent && (
         <div className="flex justify-end">
           <button
+            type="button"
             onClick={() => onSaveContent(content)}
             className="px-3 py-1 text-sm bg-primary text-primary-foreground rounded-md hover:bg-primary/90"
           >

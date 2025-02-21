@@ -589,7 +589,7 @@ PureAttachmentsButton.displayName = 'PureAttachmentsButton';
 
 const AttachmentsButton = memo(PureAttachmentsButton);
 
-const PureStopButton = React.memo(function PureStopButton({
+const PureStopButton = memo(function PureStopButton({
   stop,
   setMessages,
 }: {
