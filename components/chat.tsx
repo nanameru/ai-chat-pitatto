@@ -4,6 +4,7 @@ import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai'
 import { useChat } from 'ai/react';
 import { useEffect, useOptimistic, useState } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
+import type { XSearchResponse } from '@/lib/ai/x-search';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -79,7 +80,7 @@ export function Chat({
     messages,
     input,
     handleInputChange,
-    handleSubmit,
+    handleSubmit: originalHandleSubmit,
     isLoading,
     error,
     data,
@@ -164,7 +165,7 @@ export function Chat({
       />
 
       <div className="flex-1 flex justify-center">
-        <div className="w-full max-w-3xl flex flex-col h-full">
+        <div className="size-full max-w-3xl flex flex-col">
           {messages.length === 0 ? (
             <div className="flex-1 flex items-center justify-center">
               <Overview />
@@ -198,7 +199,11 @@ export function Chat({
                     messages={messages}
                     setMessages={originalSetMessages}
                     append={originalAppend}
-                    handleSubmit={handleSubmit}
+                    selectedModelId={selectedChatModel}
+                    handleSubmit={async (event, chatRequestOptions) => {
+                      const result = await originalHandleSubmit(event, chatRequestOptions);
+                      return result as void | XSearchResponse;
+                    }}
                   />
                   {messages.length === 0 && (
                     <div className="mt-4">
@@ -249,7 +254,7 @@ export function Chat({
         chatId={id}
         input={input}
         setInput={handleSetInput}
-        handleSubmit={handleSubmit}
+        handleSubmit={originalHandleSubmit}
         isLoading={isLoading}
         stop={stop}
         attachments={attachments}

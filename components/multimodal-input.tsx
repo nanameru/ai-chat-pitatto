@@ -7,7 +7,7 @@ import type {
   Message,
 } from 'ai';
 import cx from 'classnames';
-import type React from 'react';
+import React, { type ReactNode } from 'react';
 import {
   useRef,
   useEffect,
@@ -31,7 +31,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/t
 import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
-import { ModelSelector } from '@/components/model-selector';
+import { ModelSelector } from './model-selector';
 import { XSearchState } from '@/lib/ai/x-search';
 
 interface XSearchResponse {
@@ -92,13 +92,6 @@ function PureMultimodalInput({
     }
   };
 
-  const resetHeight = useCallback(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = '98px';
-    }
-  }, []);
-
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     'input',
     '',
@@ -132,6 +125,13 @@ function PureMultimodalInput({
   const [xSearchState, setXSearchState] = useState<XSearchState | undefined>();
 
   const submitForm = useCallback(async () => {
+    const resetHeight = () => {
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        textareaRef.current.style.height = '98px';
+      }
+    };
+
     try {
       window.history.replaceState({}, '', `/chat/${chatId}`);
 
@@ -195,7 +195,6 @@ function PureMultimodalInput({
     setInput,
     setAttachments,
     setLocalStorageInput,
-    resetHeight,
     isXSearchEnabled,
     xSearchState,
   ]);
@@ -457,7 +456,7 @@ function PureMultimodalInput({
 
         <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
           <Button
-            className="h-8 w-8 rounded-full bg-white p-0 text-gray-700 hover:bg-gray-100 border border-gray-200"
+            className="size-8 inline-flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               fileInputRef.current?.click();
@@ -499,15 +498,9 @@ export const MultimodalInput = memo(
     return true;
   },
 );
-MultimodalInput.displayName = 'MultimodalInput';
 
 const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) => {
-  const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
-
-  const handleClick = () => {
-    setIsWebSearchEnabled(!isWebSearchEnabled);
-    onClick();
-  };
+  const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
 
   return (
     <TooltipProvider>
@@ -515,17 +508,17 @@ const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void;
         <TooltipTrigger asChild>
           <Button
             type="button"
-            onClick={handleClick}
+            onClick={onClick}
             disabled={isLoading}
             className={cx(
-              "h-8 px-3 rounded-full text-sm border border-gray-200",
+              "size-8 px-3 rounded-full text-sm border border-gray-200",
               isWebSearchEnabled
                 ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
                 : "bg-white text-gray-700 hover:bg-gray-100"
             )}
             aria-label="Webで検索"
           >
-            Webで検索
+            <span className="whitespace-nowrap">Webで検索</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>インターネットで検索</TooltipContent>
@@ -546,7 +539,7 @@ const PureXSearchButton = memo(({ onClick, isLoading, isEnabled }: { onClick: ()
             onClick={onClick}
             disabled={isLoading}
             className={cx(
-              "h-8 px-3 rounded-full text-sm border",
+              "size-8 px-3 rounded-full text-sm border",
               isEnabled
                 ? "bg-blue-100 text-blue-600 hover:bg-blue-200 border-blue-200"
                 : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
@@ -564,7 +557,7 @@ const PureXSearchButton = memo(({ onClick, isLoading, isEnabled }: { onClick: ()
 
 const XSearchButton = memo(PureXSearchButton);
 
-function PureAttachmentsButton({
+const PureAttachmentsButton = React.memo(function PureAttachmentsButton({
   fileInputRef,
   isLoading,
 }: {
@@ -584,12 +577,13 @@ function PureAttachmentsButton({
       ファイルを添付
     </Button>
   );
-}
+});
+
+PureAttachmentsButton.displayName = 'PureAttachmentsButton';
 
 const AttachmentsButton = memo(PureAttachmentsButton);
-AttachmentsButton.displayName = 'AttachmentsButton';
 
-function PureStopButton({
+const PureStopButton = React.memo(function PureStopButton({
   stop,
   setMessages,
 }: {
@@ -609,13 +603,15 @@ function PureStopButton({
           return messages;
         });
       }}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
-      <StopIcon className="size-8" />
+      <StopIcon size={16} />
     </Button>
   );
-}
+});
+
+PureStopButton.displayName = 'PureStopButton';
 
 const StopButton = memo(PureStopButton);
 
@@ -636,10 +632,10 @@ function PureSendButton({
         submitForm();
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信"
     >
-      <ArrowUpIcon className="size-8" />
+      <ArrowUpIcon size={16} />
     </Button>
   );
 }
