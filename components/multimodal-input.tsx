@@ -1,5 +1,16 @@
 'use client';
 
+import {
+  useRef,
+  useEffect,
+  useState,
+  useCallback,
+  memo,
+  type ReactNode,
+  type Dispatch,
+  type SetStateAction,
+  type ChangeEvent,
+} from 'react';
 import type {
   Attachment,
   ChatRequestOptions,
@@ -7,22 +18,10 @@ import type {
   Message,
 } from 'ai';
 import cx from 'classnames';
-import React, { type ReactNode } from 'react';
-import {
-  useRef,
-  useEffect,
-  useState,
-  useCallback,
-  type Dispatch,
-  type SetStateAction,
-  type ChangeEvent,
-  memo,
-} from 'react';
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
 
 import { sanitizeUIMessages } from '@/lib/utils';
-
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -501,7 +500,7 @@ export const MultimodalInput = memo(
 
 MultimodalInput.displayName = 'MultimodalInput';
 
-const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) => {
+const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
 
   return (
@@ -529,7 +528,10 @@ const PureWebSearchButton = memo(({ onClick, isLoading }: { onClick: () => void;
   );
 });
 
+PureWebSearchButton.displayName = 'PureWebSearchButton';
+
 const WebSearchButton = memo(PureWebSearchButton);
+WebSearchButton.displayName = 'WebSearchButton';
 
 const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
   return (
@@ -561,7 +563,7 @@ PureXSearchButton.displayName = 'PureXSearchButton';
 
 const XSearchButton = memo(PureXSearchButton);
 
-const PureAttachmentsButton = React.memo(function PureAttachmentsButton({
+const PureAttachmentsButton = memo(function PureAttachmentsButton({
   fileInputRef,
   isLoading,
 }: {
