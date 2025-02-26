@@ -1,7 +1,7 @@
 import { streamText, createDataStreamResponse, smoothStream } from 'ai';
 import { createClient } from '@/utils/supabase/server';
 import { myProvider } from '@/lib/ai/models';
-import { systemPrompt } from '@/lib/ai/prompts';
+import { regularPrompt, artifactsPrompt } from '@/lib/ai/prompts';
 import {
   saveChat,
   saveMessages,
@@ -11,6 +11,7 @@ import {
   deleteChatById,
 } from '@/lib/db/queries';
 import { Message as DBMessage } from '@/lib/db/schema';
+import { nanoid } from 'nanoid';
 
 // 定数の定義
 const MESSAGE_SIZE_LIMIT = 1024 * 1024; // 1MB
@@ -66,13 +67,33 @@ export async function POST(request: Request): Promise<Response> {
 
     try {
       const json = await request.json();
-      console.log('Request payload:', JSON.stringify(json, null, 2));
+      console.log('[Debug] Full request payload:', {
+        rawJson: JSON.stringify(json, null, 2),
+        chatRequestOptions: json.chatRequestOptions,
+        xSearchEnabled: json.chatRequestOptions?.xSearchEnabled,
+        model: json.model
+      });
       
-      const { messages, chatId, model }: { messages: any[], chatId: string, model: string } = json;
+      const { messages, chatId, model, chatRequestOptions } = json;
       console.log('Parsed request data:', {
         messagesCount: messages?.length,
         chatId,
-        model
+        model,
+        chatRequestOptions
+      });
+
+      // chatRequestOptionsが存在することを確認
+      if (!chatRequestOptions) {
+        console.warn('No chatRequestOptions provided');
+      }
+
+      const { xSearchEnabled = false } = chatRequestOptions || {};
+      
+      console.log('[Chat] Request options:', { 
+        xSearchEnabled,
+        model,
+        userId: user.id,
+        chatRequestOptions
       });
 
       const userId = user.id;
@@ -99,7 +120,7 @@ export async function POST(request: Request): Promise<Response> {
         .from('User')
         .select('id')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
       if (!existingUser) {
         const { error: createUserError } = await supabase
@@ -185,14 +206,27 @@ export async function POST(request: Request): Promise<Response> {
           }
         }
 
+        console.log('[Chat] Starting normal chat processing');
         const selectedModel = model ?? 'chat-model-small';
+        const useArtifacts = selectedModel !== 'chat-model-reasoning';
 
-        // Prepare all messages with system prompt
+        // プロンプトの使用状況をログ出力
+        console.log('[Chat] Using prompt:', {
+          type: 'REGULAR_CHAT_PROMPT',
+          prompt: useArtifacts ? 'regularPrompt + artifactsPrompt' : 'regularPrompt',
+          promptContent: useArtifacts 
+            ? `${regularPrompt}\n\n${artifactsPrompt}`
+            : regularPrompt
+        });
+
+        // 通常モード用のプロンプトを設定
         const aiMessages: any[] = [
           {
             id: crypto.randomUUID(),
             role: 'system' as const,
-            content: systemPrompt({ selectedChatModel: selectedModel }),
+            content: useArtifacts 
+              ? `${regularPrompt}\n\n${artifactsPrompt}`
+              : regularPrompt,
           },
           ...typedMessages
         ];
@@ -236,6 +270,15 @@ export async function POST(request: Request): Promise<Response> {
             type: "regular"
           },
           prompt: modelMessages
+        });
+
+        // プロンプト情報をログに出力
+        console.log('Using prompt:', {
+          type: 'REGULAR_CHAT_PROMPT',
+          systemPrompt: useArtifacts 
+            ? `${regularPrompt}\n\n${artifactsPrompt}`
+            : regularPrompt,
+          modelMessages
         });
 
         // UUIDを生成
@@ -366,7 +409,7 @@ export async function POST(request: Request): Promise<Response> {
             execute: (dataStream) => {
               const result = streamText({
                 model: myProvider.languageModel(selectedModel),
-                system: systemPrompt({ selectedChatModel: selectedModel }),
+                system: regularPrompt,
                 messages: modelMessages,
                 experimental_transform: smoothStream({ chunking: 'word' }),
                 onFinish: async ({ response }) => {
@@ -374,7 +417,13 @@ export async function POST(request: Request): Promise<Response> {
                     try {
                       console.log('Chat completion finished', {
                         chatId: id,
-                        timestamp: new Date().toISOString()
+                        timestamp: new Date().toISOString(),
+                        usedPrompt: {
+                          type: 'REGULAR_CHAT_PROMPT',
+                          systemPrompt: useArtifacts 
+                            ? `${regularPrompt}\n\n${artifactsPrompt}`
+                            : regularPrompt
+                        }
                       });
                     } catch (error) {
                       console.error('Error in onFinish callback:', error);

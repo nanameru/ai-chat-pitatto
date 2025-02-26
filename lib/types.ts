@@ -6,3 +6,7 @@ export interface Response {
   createdAt?: Date;
   [key: string]: any; // Allow additional properties
 }
+
+export interface XSearchResponse {
+  [key: string]: any;
+}

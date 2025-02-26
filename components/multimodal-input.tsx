@@ -13,10 +13,22 @@ import {
 } from 'react';
 import type {
   Attachment,
-  ChatRequestOptions,
+  ChatRequestOptions as BaseChatRequestOptions,
   CreateMessage,
   Message,
 } from 'ai';
+
+// ChatRequestOptionsを拡張
+interface ChatRequestOptions extends BaseChatRequestOptions {
+  xSearchEnabled?: boolean;
+  attachments?: Array<Attachment>;
+  id?: string;
+}
+
+interface XSearchResponse {
+  [key: string]: any;
+}
+
 import cx from 'classnames';
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
@@ -31,12 +43,6 @@ import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { ModelSelector } from './model-selector';
-import { XSearchState } from '@/lib/ai/x-search';
-
-interface XSearchResponse {
-  xSearchState?: XSearchState;
-  [key: string]: any;
-}
 
 function PureMultimodalInput({
   chatId,
@@ -52,6 +58,8 @@ function PureMultimodalInput({
   handleSubmit,
   className,
   selectedModelId,
+  isXSearchEnabled: propIsXSearchEnabled,
+  onXSearchToggle,
 }: {
   chatId: string;
   input: string;
@@ -64,16 +72,18 @@ function PureMultimodalInput({
   setMessages: Dispatch<SetStateAction<Array<Message>>>;
   append: (
     message: Message | CreateMessage,
-    chatRequestOptions?: ChatRequestOptions,
+    options?: ChatRequestOptions & { xSearchEnabled?: boolean }
   ) => Promise<string | null | undefined>;
   handleSubmit: (
     event?: {
       preventDefault?: () => void;
     },
-    chatRequestOptions?: ChatRequestOptions,
+    options?: ChatRequestOptions & { xSearchEnabled?: boolean }
   ) => Promise<XSearchResponse | void>;
   className?: string;
   selectedModelId: string;
+  isXSearchEnabled?: boolean;
+  onXSearchToggle?: (newValue: boolean) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -120,82 +130,284 @@ function PureMultimodalInput({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadQueue, setUploadQueue] = useState<Array<string>>([]);
 
-  const [isXSearchEnabled, setIsXSearchEnabled] = useState(false);
-  const [xSearchState, setXSearchState] = useState<XSearchState | undefined>();
+  // ローカルストレージの値をバックアップとして使用
+  const [localIsXSearchEnabled, setLocalIsXSearchEnabled] = useLocalStorage('searchMode', false);
+  
+  // 親コンポーネントから渡された値を優先
+  const isXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : localIsXSearchEnabled;
 
-  const submitForm = useCallback(async () => {
-    const resetHeight = () => {
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-        textareaRef.current.style.height = '98px';
-      }
-    };
+  const handleXSearchToggle = useCallback(() => {
+    const oldState = isXSearchEnabled;
+    const newState = !oldState;
+    
+    // モード変更のログ出力を詳細に
+    console.log(`----- X検索モード切替 -----`);
+    console.log(`X検索ボタンがクリックされました`);
+    console.log(`モード変更: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
+    console.log(`ボタンがクリックされました。現在の状態: ${newState}`);
+    
+    // ローカルの状態を即座に更新
+    setLocalIsXSearchEnabled(newState);
+    
+    // LocalStorageに保存（他のコンポーネントも確実に値を取得できるようにする）
+    try {
+      window.localStorage.setItem('searchMode', JSON.stringify(newState));
+      console.log(`[X検索] LocalStorageに値を保存しました: ${newState}`);
+    } catch (error) {
+      console.error(`[X検索] LocalStorageへの保存に失敗しました:`, error);
+    }
+    
+    // まず親コンポーネントのコールバックを呼び出す（最優先）
+    if (onXSearchToggle) {
+      console.log(`[X検索] 親コンポーネントにモード変更を通知: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
+      onXSearchToggle(newState);
+    }
+    
+    // カスタムイベントを発火して他のコンポーネントに即座に通知
+    try {
+      const event = new CustomEvent('xsearch-mode-changed', { 
+        detail: { 
+          enabled: newState,
+          previous: oldState,
+          timestamp: Date.now() 
+        } 
+      });
+      window.dispatchEvent(event);
+      console.log(`[X検索] カスタムイベントを発火しました`);
+    } catch (error) {
+      console.error(`[X検索] カスタムイベント発火に失敗しました:`, error);
+    }
+    
+    console.log(`----- X検索モード切替完了 -----`);
+  }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle]);
+
+  const handleXSearchSubmit = async (
+    event?: { preventDefault?: () => void },
+    chatRequestOptions?: ChatRequestOptions
+  ) => {
+    console.log('[XSearch] X検索処理を実行');
+    
+    try {
+      const options: ChatRequestOptions = {
+        ...chatRequestOptions,
+        xSearchEnabled: true
+      };
+      
+      return await handleSubmit(event, options);
+    } catch (error) {
+      console.error('[XSearch] X検索処理でエラーが発生:', error);
+      throw error;
+    }
+  };
+
+  const handleNormalChatSubmit = async (
+    event?: { preventDefault?: () => void },
+    chatRequestOptions?: ChatRequestOptions
+  ) => {
+    console.log('[Chat] 通常チャット処理を実行');
+    
+    try {
+      const options: ChatRequestOptions = {
+        ...chatRequestOptions,
+        xSearchEnabled: false
+      };
+      
+      return await handleSubmit(event, options);
+    } catch (error) {
+      console.error('[Chat] 通常チャット処理でエラーが発生:', error);
+      throw error;
+    }
+  };
+
+  // ストリーミングレスポンスを処理する関数
+  const processStreamingResponse = async (response: Response) => {
+    const reader = response.body?.getReader();
+    if (!reader) {
+      throw new Error('Response body is not readable');
+    }
+
+    let assistantMessage = '';
+    let decoder = new TextDecoder();
+    let buffer = '';
 
     try {
-      window.history.replaceState({}, '', `/chat/${chatId}`);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        // デコードして既存のバッファに追加
+        buffer += decoder.decode(value, { stream: true });
+        
+        // データの行を処理
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // 最後の不完全な行をバッファに保持
+        
+        for (const line of lines) {
+          if (line.trim() === '') continue;
+          
+          // "data: "で始まる行を処理
+          if (line.startsWith('data: ')) {
+            const data = line.slice(5).trim();
+            
+            // [DONE]メッセージをチェック
+            if (data === '[DONE]') {
+              console.log('Stream complete');
+              continue;
+            }
+            
+            try {
+              // JSONデータをパース
+              const parsed = JSON.parse(data);
+              if (parsed.text) {
+                assistantMessage += parsed.text;
+                
+                // UIを部分的に更新（オプション）
+                // ここでUIの部分更新を行うことができます
+              }
+            } catch (e) {
+              console.warn('Failed to parse stream data:', data);
+            }
+          }
+        }
+      }
+    } finally {
+      reader.releaseLock();
+    }
 
-      // 現在の入力とアタッチメントを保持
+    return assistantMessage;
+  };
+
+  const handleSubmitWithLogging = useCallback(
+    async (event?: { preventDefault?: () => void }, chatRequestOptions?: ChatRequestOptions) => {
+      if (event?.preventDefault) {
+        event.preventDefault();
+      }
+
+      if (isLoading) return;
+
+      // 親コンポーネントから渡された値を優先的に使用
+      const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
+      const currentMode = effectiveXSearchEnabled ? 'X検索モード' : 'チャットモード';
+      console.log('[Submit] 送信を開始します:', { currentMode, input });
+
+      try {
+        // useChatフックをバイパスして直接fetchを使用
+        const endpoint = effectiveXSearchEnabled ? '/api/x-search/feedback' : '/api/chat';
+        console.log(`[Mode] 現在のモード: ${currentMode}, エンドポイント: ${endpoint}`);
+        
+        // 共通のオプション
+        const options: ChatRequestOptions = {
+          ...chatRequestOptions,
+          xSearchEnabled: effectiveXSearchEnabled,
+          data: {
+            ...((chatRequestOptions?.data as Record<string, unknown>) || {}),
+            chatId,
+            model: selectedModelId,
+            xSearchEnabled: effectiveXSearchEnabled
+          }
+        };
+
+        // メッセージを作成
+        const message: CreateMessage = {
+          id: nanoid(),
+          content: input,
+          role: 'user',
+          createdAt: new Date()
+        };
+
+        // UIにユーザーメッセージを追加
+        await append(message, options);
+        
+        // 直接APIを呼び出す
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [...messages, message],
+            chatId,
+            model: selectedModelId,
+            chatRequestOptions: options
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API request failed with status ${response.status}`);
+        }
+
+        // ストリーミングレスポンスを処理
+        const assistantMessage = await processStreamingResponse(response);
+
+        // 完了したら、アシスタントのメッセージを追加
+        if (assistantMessage) {
+          const assistantResponseMessage: Message = {
+            id: nanoid(),
+            content: assistantMessage,
+            role: 'assistant',
+            createdAt: new Date()
+          };
+          
+          // UIにアシスタントメッセージを追加
+          setMessages(prev => [...prev, assistantResponseMessage]);
+        }
+
+        return { success: true };
+      } catch (error) {
+        console.error('[Error] 処理中にエラーが発生:', error);
+        onError(error as Error);
+        return { error };
+      }
+    },
+    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, messages, append, setMessages, processStreamingResponse]
+  );
+
+  const submitForm = useCallback(async () => {
+    // 親コンポーネントから渡された値を優先的に使用
+    const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
+    console.log('[Submit] フォーム送信を開始:', {
+      mode: effectiveXSearchEnabled ? 'X検索' : '通常チャット',
+      input,
+      attachments
+    });
+
+    try {
       const currentInput = input;
       const currentAttachments = [...attachments];
 
-      // 入力フィールドをクリア
       setInput('');
       setLocalStorageInput('');
-      resetHeight();
+      setAttachments([]);
 
-      // メッセージを送信
       if (currentInput.trim() || currentAttachments.length > 0) {
-        const message = {
-          content: currentInput.trim(),
-          role: 'user'
+        // 共通のオプション
+        const options: ChatRequestOptions = {
+          xSearchEnabled: effectiveXSearchEnabled,
+          attachments: currentAttachments.length > 0 ? currentAttachments : undefined,
+          data: {
+            chatId,
+            model: selectedModelId
+          }
         };
 
-        const response = await handleSubmit(undefined, {
-          body: {
-            message,
-            attachments: currentAttachments,
-            options: {
-              stream: true,
-              temperature: 0.7,
-              isXSearch: isXSearchEnabled,
-              xSearchState,
-            }
-          },
-          headers: {
-            'Content-Type': 'application/json',
-            'Accept': 'text/event-stream'
-          }
-        });
-
-        // レスポンスからX検索の状態を更新
-        if (response?.xSearchState) {
-          setXSearchState(response.xSearchState);
-        } else {
-          // 検索が完了したらリセット
-          setXSearchState(undefined);
-          // X検索の有効状態は維持する
-        }
+        // 直接handleSubmitWithLoggingを呼び出す
+        await handleSubmitWithLogging(undefined, options);
       }
-
-      // 送信完了後にアタッチメントをクリア
-      setAttachments([]);
     } catch (error) {
-      console.error('Failed to submit message:', error);
+      console.error('[Error] フォーム送信中にエラーが発生:', error);
       toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-      // エラー時は状態をリセット
-      setXSearchState(undefined);
-      setIsXSearchEnabled(false);
     }
   }, [
     input,
     attachments,
     chatId,
-    handleSubmit,
+    isXSearchEnabled,
+    propIsXSearchEnabled,
+    handleSubmitWithLogging,
     setInput,
     setAttachments,
     setLocalStorageInput,
-    isXSearchEnabled,
-    xSearchState,
+    selectedModelId
   ]);
 
   const uploadFile = async (file: File) => {
@@ -252,110 +464,28 @@ function PureMultimodalInput({
   );
 
   const onError = (error: Error) => {
-    console.error('Chat error details:', {
+    console.error('[Error] 詳細なエラー情報:', {
       error,
       message: error.message,
       stack: error.stack,
       type: error.name,
+      mode: isXSearchEnabled ? 'X検索' : '通常チャット',
       timestamp: new Date().toISOString(),
-      localStorage: {
-        size: new Blob([JSON.stringify(localStorage)]).size,
-        keys: Object.keys(localStorage),
-      }
     });
 
-    // ローカルストレージの使用状況を詳細に表示
-    let totalSize = 0;
-    const itemSizes: Record<string, { size: number; sizeKB: string }> = {};
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key) {
-        const value = localStorage.getItem(key);
-        const size = new Blob([value || '']).size;
-        totalSize += size;
-        itemSizes[key] = {
-          size,
-          sizeKB: (size / 1024).toFixed(2) + ' KB'
-        };
-      }
-    }
-    console.log('LocalStorage usage:', {
-      totalSize,
-      totalSizeKB: (totalSize / 1024).toFixed(2) + ' KB',
-      itemSizes
-    });
-
-    try {
-      // QUOTA_BYTESエラーの場合、関連するストレージのみをクリア
-      if (error.message.includes('QUOTA_BYTES')) {
-        try {
-          // チャット関連のストレージのみをクリア
-          const keysToKeep = ['supabase.auth.token'];
-          const keysToRemove = [];
-          
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key && !keysToKeep.includes(key)) {
-              keysToRemove.push(key);
-            }
-          }
-          
-          console.log('Clearing chat-related localStorage:', {
-            keysToRemove,
-            beforeSize: totalSize,
-            beforeSizeKB: (totalSize / 1024).toFixed(2) + ' KB'
-          });
-
-          keysToRemove.forEach(key => localStorage.removeItem(key));
-
-          // クリア後のサイズを再計算
-          let afterSize = 0;
-          for (let i = 0; i <localStorage.length; i++) {
-            const key = localStorage.key(i);
-            if (key) {
-              const value = localStorage.getItem(key);
-              afterSize += new Blob([value || '']).size;
-            }
-          }
-
-          console.log('Cleared localStorage:', {
-            removedKeys: keysToRemove,
-            afterSize,
-            afterSizeKB: (afterSize / 1024).toFixed(2) + ' KB',
-            freedSpace: (totalSize - afterSize) / 1024 + ' KB'
-          });
-        } catch (e) {
-          if (e instanceof Error) {
-            console.error('Failed to clear localStorage:', {
-              error: e,
-              message: e.message,
-              stack: e.stack
-            });
-          } else {
-            console.error('Failed to clear localStorage:', e);
-          }
-        }
-      }
-
-      let errorMessage = error.message;
+    let errorMessage = 'エラーが発生しました。';
+    
       try {
         const errorData = JSON.parse(error.message);
-        console.log('Parsed error data:', errorData);
         errorMessage = errorData.details || errorData.message || errorData.error || error.message;
       } catch (e) {
-        console.log('Error message is not JSON:', {
-          message: error.message,
-          parseError: e instanceof Error ? e.message : String(e)
-        });
-      }
+      errorMessage = error.message;
+    }
 
-      toast.error(errorMessage);
-    } catch (e: unknown) {
-      if (e instanceof Error) {
-        console.log('Error in error handling:', e.message);
+    if (isXSearchEnabled) {
+      toast.error(`X検索処理中にエラーが発生しました: ${errorMessage}`);
       } else {
-        console.log('Unknown error occurred');
-      }
+      toast.error(`チャット処理中にエラーが発生しました: ${errorMessage}`);
     }
   };
 
@@ -375,13 +505,6 @@ function PureMultimodalInput({
   );
 
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
-
-  const handleXSearch = useCallback(() => {
-    setIsXSearchEnabled(prev => !prev);
-    setXSearchState(prev => prev ? undefined : {
-      stage: 'subquery_generation'
-    });
-  }, []);
 
   const handleWebSearch = useCallback(() => {
     const searchQuery = input;
@@ -455,7 +578,8 @@ function PureMultimodalInput({
 
         <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
           <Button
-            className="size-8 inline-flex items-center justify-center"
+            type="button"
+            className="size-8 w-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               fileInputRef.current?.click();
@@ -466,7 +590,7 @@ function PureMultimodalInput({
             <PaperclipIcon size={16} />
           </Button>
           <WebSearchButton onClick={handleWebSearch} isLoading={isLoading} />
-          <XSearchButton onClick={handleXSearch} isLoading={isLoading} isEnabled={isXSearchEnabled} />
+          <XSearchButton onClick={handleXSearchToggle} isLoading={isLoading} isEnabled={isXSearchEnabled} />
         </div>
 
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
@@ -476,7 +600,7 @@ function PureMultimodalInput({
           ) : (
             <SendButton
               input={input}
-              submitForm={submitForm}
+              submitForm={handleSubmitWithLogging}
               uploadQueue={uploadQueue}
             />
           )}
@@ -514,16 +638,23 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
       <Button
         type="button"
         disabled={true}
-        className="size-8 px-3 rounded-full text-sm border border-gray-200 bg-white text-gray-700"
+        className="h-8 px-4 rounded-full text-sm border border-gray-200 bg-white text-gray-700 flex items-center gap-2"
         aria-label="Webで検索"
       >
-        <span className="whitespace-nowrap">Webで検索</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3.6001 9H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M3.6001 15H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M12 3C14.5 7.5 14.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M12 3C9.5 7.5 9.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span>Webで検索</span>
       </Button>
     );
   }
 
   const buttonClassName = cx(
-    "size-8 px-3 rounded-full text-sm border border-gray-200",
+    "h-8 px-4 rounded-full text-sm border border-gray-200 flex items-center gap-2",
     isWebSearchEnabled
       ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
       : "bg-white text-gray-700 hover:bg-gray-100"
@@ -540,7 +671,14 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
             className={buttonClassName}
             aria-label="Webで検索"
           >
-            <span className="whitespace-nowrap">Webで検索</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M3.6001 9H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M3.6001 15H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 3C14.5 7.5 14.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M12 3C9.5 7.5 9.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span>Webで検索</span>
           </Button>
         </TooltipTrigger>
         <TooltipContent>インターネットで検索</TooltipContent>
@@ -567,18 +705,22 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
       <Button
         type="button"
         disabled={true}
-        className="size-8 px-3 rounded-full text-sm border border-gray-200 bg-white text-gray-700"
+        className="h-8 px-4 rounded-full text-sm border border-gray-200 bg-white text-gray-700 flex items-center gap-2"
         aria-label="Xから検索"
       >
-        <span className="whitespace-nowrap">Xから検索</span>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+        </svg>
+        <span>Xから検索</span>
       </Button>
     );
   }
 
+  // 改良されたボタンスタイル - よりコントラストの高い配色と明確なモード表示
   const buttonClassName = cx(
-    "size-8 px-3 rounded-full text-sm border",
+    "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-300",
     isEnabled
-      ? "bg-blue-100 text-blue-600 hover:bg-blue-200 border-blue-200"
+      ? "bg-blue-500 text-white hover:bg-blue-600 border-blue-400 font-medium shadow-sm"
       : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
   );
 
@@ -588,15 +730,21 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
         <TooltipTrigger asChild>
           <Button
             type="button"
-            onClick={onClick}
+            onClick={(e) => {
+              e.preventDefault();
+              onClick();
+            }}
             disabled={isLoading}
             className={buttonClassName}
-            aria-label="Xから検索"
+            aria-label={isEnabled ? "X検索モードを無効化" : "Xから検索"}
           >
-            <span className="whitespace-nowrap">Xから検索</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill={isEnabled ? "currentColor" : "none"} xmlns="http://www.w3.org/2000/svg">
+              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+            <span>{isEnabled ? "X検索モード中" : "Xから検索"}</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>X（旧Twitter）で検索</TooltipContent>
+        <TooltipContent>{isEnabled ? "通常チャットモードに戻す" : "X（旧Twitter）で検索"}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

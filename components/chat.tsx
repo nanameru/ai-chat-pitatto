@@ -2,9 +2,9 @@
 
 import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
 import { useChat } from 'ai/react';
-import { useEffect, useOptimistic, useState } from 'react';
+import { useEffect, useOptimistic, useState, useRef, useCallback } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
-import type { XSearchResponse } from '@/lib/ai/x-search';
+import type { XSearchResponse } from '@/lib/types';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -19,6 +19,7 @@ import { toast } from 'sonner';
 import { chatModels } from '@/lib/ai/models';
 import { Overview } from './overview';
 import { SuggestedActions } from './suggested-actions';
+import { useLocalStorage } from '../hooks/use-local-storage';
 
 export function Chat({
   id,
@@ -35,6 +36,32 @@ export function Chat({
 }) {
   const { mutate } = useSWRConfig();
   const { data: session } = useSWR('/api/auth/session', fetcher);
+  
+  // カスタムフックを使用して、isXSearchEnabledの値を監視
+  const [isXSearchEnabled, setIsXSearchEnabled] = useLocalStorage('searchMode', false);
+  
+  // useChat の再初期化のための一意のキーを生成
+  const [chatKey, setChatKey] = useState(`${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}`);
+  
+  // isXSearchEnabled が変更されたときにchatKeyを更新
+  useEffect(() => {
+    console.log(`[Mode] モードが変更されました: ${isXSearchEnabled ? 'X検索モード' : 'チャットモード'}`);
+    console.log(`[Mode] 使用するAPI: ${isXSearchEnabled ? '/api/x-search/feedback' : '/api/chat'}`);
+    
+    // useChat を強制的に再初期化するためのキーを更新
+    const newKey = `${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${Date.now()}`;
+    console.log(`[Chat] チャットキーを更新します: ${newKey}`);
+    setChatKey(newKey);
+  }, [isXSearchEnabled, id]);
+  
+  // チャットの状態を保持するための参照
+  const chatStateRef = useRef<{
+    messages: Array<Message>;
+    input: string;
+  }>({
+    messages: [],
+    input: '',
+  });
 
   useEffect(() => {
     if (!session) {
@@ -76,6 +103,57 @@ export function Chat({
 
   const [optimisticModelId, setOptimisticModelId] = useOptimistic(selectedChatModel);
 
+  // チャットの状態が変わったときに参照を更新
+  const updateChatStateRef = useCallback((messages: Array<Message>, input: string) => {
+    chatStateRef.current = {
+      messages,
+      input,
+    };
+  }, []);
+
+  // 共通のチャットオプション
+  const chatOptions = {
+    id,
+    initialMessages,
+    body: {
+      chatId: id,
+      model: selectedChatModel,
+      visibilityType: selectedVisibilityType,
+    },
+    onResponse: (response: Response) => {
+      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
+      console.log('Response status:', response.status);
+      console.log('Response ok:', response.ok);
+      
+      const currentModel = chatModels.find(model => model.id === selectedChatModel);
+      console.log('🤖 Generating with:', {
+        name: currentModel?.name,
+        version: currentModel?.modelVersion,
+        mode: isXSearchEnabled ? 'X Search' : 'Regular Chat'
+      });
+    },
+    onFinish: (message: Message) => {
+      console.log('Finished message:', message);
+    },
+    onError: (error: Error) => {
+      console.error('Chat error details:', {
+        name: error.name,
+        message: error.message,
+        stack: error.stack,
+        cause: error.cause,
+        raw: error,
+        mode: isXSearchEnabled ? 'X Search' : 'Regular Chat'
+      });
+
+      if (!chatStateRef.current.messages.length || 
+          chatStateRef.current.messages[chatStateRef.current.messages.length - 1].role === 'user') {
+        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
+      }
+    }
+  };
+
+  // モードに応じたuseChat hookの使用
+  // key プロパティを追加して isXSearchEnabled が変更されたときに再初期化されるようにする
   const {
     messages,
     input,
@@ -87,49 +165,87 @@ export function Chat({
     stop,
     setInput,
     append: originalAppend,
-    setMessages: originalSetMessages
+    setMessages: originalSetMessages,
+    reload
   } = useChat({
-    api: '/api/chat',
-    id,
-    initialMessages,
+    ...chatOptions,
+    // モードに応じたAPIエンドポイントを明示的に指定
+    api: isXSearchEnabled ? '/api/x-search/feedback' : '/api/chat', 
     body: {
-      chatId: id,
-      model: optimisticModelId,
-      visibilityType: selectedVisibilityType,
+      ...chatOptions.body,
+      xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
     },
-    onResponse: (response) => {
-      console.log('Response headers:', Object.fromEntries(response.headers.entries()));
-      console.log('Response status:', response.status);
-      console.log('Response ok:', response.ok);
-      
-      // 現在使用中のモデル情報を表示
-      const currentModel = chatModels.find(model => model.id === optimisticModelId);
-      console.log('🤖 Generating with:', {
-        name: currentModel?.name,
-        version: currentModel?.modelVersion
-      });
-    },
-    onFinish: (message) => {
-      console.log('Finished message:', message);
-    },
-    onError: (error) => {
-      console.error('Chat error details:', {
-        name: error.name,
-        message: error.message,
-        stack: error.stack,
-        cause: error.cause,
-        raw: error
-      });
-
-      // エラーが発生しても、メッセージが表示されている場合は
-      // ユーザーエクスペリエンスを維持するためにエラーを表示しない
-      if (!messages.length || messages[messages.length - 1].role === 'user') {
-        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-      }
-      
-      stop();
-    }
+    id: chatKey, // 動的に生成されたキーを使用して再初期化を強制
+    // initialMessages を空にすることでチャットの初期状態をリセット
+    initialMessages: [] 
   });
+
+  // モード変更時に既存のメッセージをクリア
+  useEffect(() => {
+    console.log(`[Force Reset] モード変更による useChat の再初期化: ${isXSearchEnabled ? 'X検索モード' : 'チャットモード'}`);
+    // 既存のメッセージをクリア
+    if (messages.length > 0) {
+      console.log(`[Force Reset] 既存のメッセージをクリア（${messages.length}件）`);
+      originalSetMessages([]);
+    }
+  }, [chatKey, isXSearchEnabled]);
+
+  // チャットの状態が変わったときに参照を更新
+  useEffect(() => {
+    updateChatStateRef(messages, input);
+  }, [messages, input, updateChatStateRef]);
+
+  // カスタムイベントをリッスンして、ローカルストレージの値を直接確認
+  useEffect(() => {
+    const handleModeChange = (event: CustomEvent) => {
+      const { enabled, previous, timestamp } = event.detail;
+      console.log('[Event] X検索モード変更イベントを受信:', {
+        前のモード: previous ? 'X検索モード' : '通常チャットモード',
+        新しいモード: enabled ? 'X検索モード' : '通常チャットモード',
+        タイムスタンプ: new Date(timestamp).toLocaleTimeString()
+      });
+      
+      // モードが変更された場合のみ処理を実行
+      if (enabled !== isXSearchEnabled) {
+        console.log('[Event] モード変更を検出、チャットを再初期化します');
+        
+        // 既存のメッセージをクリア
+        if (messages.length > 0) {
+          console.log(`[Event] 既存のメッセージをクリア（${messages.length}件）`);
+          originalSetMessages([]);
+        }
+        
+        // 状態を即座に更新
+        setIsXSearchEnabled(enabled);
+        
+        // 即座に新しいキーを生成して useChat を強制的に再初期化
+        const forcedNewKey = `${id}-${enabled ? 'xsearch' : 'chat'}-${Date.now()}-forced`;
+        console.log(`[Event] チャットキーを強制更新: ${forcedNewKey}`);
+        setChatKey(forcedNewKey);
+        
+        // APIを即座に切り替え
+        if (reload) {
+          console.log(`[Event] useChat のリロードを実行`);
+          reload({
+            data: {
+              chatId: id,
+              model: selectedChatModel,
+              xSearchEnabled: enabled
+            }
+          });
+          console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+        }
+      }
+    };
+
+    // イベントリスナーを追加
+    window.addEventListener('xsearch-mode-changed', handleModeChange as EventListener);
+
+    // クリーンアップ関数
+    return () => {
+      window.removeEventListener('xsearch-mode-changed', handleModeChange as EventListener);
+    };
+  }, [isXSearchEnabled, id, setIsXSearchEnabled, setChatKey, originalSetMessages, selectedChatModel, reload, messages.length]);
 
   const { data: votes, error: votesError } = useSWR<Array<Vote>>(
     `/api/vote?chatId=${id}`,
@@ -200,9 +316,75 @@ export function Chat({
                     setMessages={originalSetMessages}
                     append={originalAppend}
                     selectedModelId={selectedChatModel}
-                    handleSubmit={async (event, chatRequestOptions) => {
-                      const result = await originalHandleSubmit(event, chatRequestOptions);
-                      return result as void | XSearchResponse;
+                    isXSearchEnabled={isXSearchEnabled}
+                    onXSearchToggle={(newValue) => {
+                      const oldValue = isXSearchEnabled;
+                      
+                      // ボタンクリック時のフィードバックを詳細にログ出力
+                      console.log(`[Parent] X検索ボタンがクリックされました`);
+                      console.log(`[Parent] X検索モード変更: ${oldValue ? 'X検索モード' : '通常チャットモード'} → ${newValue ? 'X検索モード' : '通常チャットモード'}`);
+                      console.log(`[Parent] 現在の状態: ${newValue}`);
+                      console.log(`[Parent] API変更: ${oldValue ? '/api/x-search/feedback' : '/api/chat'} → ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                      
+                      // まず既存のメッセージをクリア（モード切替時は常にチャットをリセット）
+                      if (messages.length > 0) {
+                        console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
+                        originalSetMessages([]);
+                      }
+                      
+                      // 状態を即座に更新
+                      setIsXSearchEnabled(newValue);
+                      
+                      // 即座に新しいキーを生成して useChat を強制的に再初期化
+                      // タイムスタンプを含めることで必ず異なるキーになる
+                      const forcedNewKey = `${id}-${newValue ? 'xsearch' : 'chat'}-${Date.now()}`;
+                      console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
+                      setChatKey(forcedNewKey);
+                      
+                      // APIエンドポイントを即座に切り替える
+                      console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                      
+                      // useChat を強制的に再初期化
+                      if (reload) {
+                        console.log(`[Refresh] useChat を強制的に再初期化します`);
+                        reload({
+                          data: {
+                            chatId: id,
+                            model: selectedChatModel,
+                            xSearchEnabled: newValue
+                          }
+                        });
+                        console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                      }
+                    }}
+                    handleSubmit={async (
+                      event?: {
+                        preventDefault?: () => void;
+                      },
+                      options?: ChatRequestOptions & { xSearchEnabled?: boolean }
+                    ) => {
+                      if (event?.preventDefault) {
+                        event.preventDefault();
+                      }
+                      try {
+                        return await originalHandleSubmit(event, {
+                          ...options,
+                          data: {
+                            chatId: id,
+                            model: selectedChatModel,
+                            ...(options?.data as Record<string, unknown> || {}),
+                            id: generateUUID()
+                          }
+                        });
+                      } catch (error) {
+                        console.error('Chat submission error:', {
+                          error,
+                          mode: options?.xSearchEnabled ? 'X Search' : 'Regular Chat',
+                          timestamp: new Date().toISOString()
+                        });
+                        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
+                        throw error;
+                      }
                     }}
                   />
                   {messages.length === 0 && (
@@ -254,7 +436,23 @@ export function Chat({
         chatId={id}
         input={input}
         setInput={handleSetInput}
-        handleSubmit={originalHandleSubmit}
+        handleSubmit={async (
+          event?: {
+            preventDefault?: () => void;
+          },
+          options?: ChatRequestOptions & { xSearchEnabled?: boolean }
+        ) => {
+          if (event?.preventDefault) {
+            event.preventDefault();
+          }
+          const message: CreateMessage = {
+            id: generateUUID(),
+            content: input,
+            role: 'user',
+            createdAt: new Date()
+          };
+          await originalAppend(message, options);
+        }}
         isLoading={isLoading}
         stop={stop}
         attachments={attachments}
@@ -262,6 +460,7 @@ export function Chat({
         messages={messages}
         setMessages={originalSetMessages}
         append={originalAppend}
+        selectedModelId={selectedChatModel}
         reload={async (chatRequestOptions) => {
           // 既存のチャットインスタンスを使用して新しいメッセージを送信
           const response = await fetch('/api/chat', {

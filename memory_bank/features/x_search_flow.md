@@ -33,6 +33,22 @@
       - `smoothStream({ chunking: 'word' })`で単語単位のストリーミング
       - リアルタイムでの結果表示
 
+    - **実装の詳細**
+      - `PureXSearchButton`クリック
+        - `handleXSearchClick`関数が呼び出される
+        - `xSearchState.stage`を'subquery_generation'に設定
+      - `handleSubmit`関数での処理
+        - `XSearchOptions`に基づいて処理を分岐
+        - `generateXSearchSubqueries`関数を呼び出し
+      - `generateXSearchSubqueries`での処理
+        - `FEEDBACK_PROMPT`を使用（初回質問時）
+        - 現在時刻を動的に挿入
+        - `myProvider.languageModel('chat-model-small')`でAIモデルを使用
+        - `streamText`と`smoothStream`でストリーミング処理
+      - レスポンス生成
+        - `XSearchResponse`型で応答を返却
+        - `xSearchState`を更新して次のステージへ
+
   - **フィードバック後の処理**
     - `generateCozeResponse`を使用してサブクエリを生成（非ストリーミング）
     - JSON形式でのサブクエリ生成（6～10個）
