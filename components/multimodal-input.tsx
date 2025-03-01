@@ -139,6 +139,12 @@ function PureMultimodalInput({
     console.log(`モード変更: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
     console.log(`ボタンがクリックされました。現在の状態: ${newState}`);
     
+    // 親コンポーネントのコールバックを最初に呼び出す（最優先）
+    if (onXSearchToggle) {
+      console.log(`[X検索] 親コンポーネントにモード変更を通知: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
+      onXSearchToggle(newState);
+    }
+    
     // ローカルの状態を即座に更新
     setLocalIsXSearchEnabled(newState);
     
@@ -148,12 +154,6 @@ function PureMultimodalInput({
       console.log(`[X検索] LocalStorageに値を保存しました: ${newState}`);
     } catch (error) {
       console.error(`[X検索] LocalStorageへの保存に失敗しました:`, error);
-    }
-    
-    // まず親コンポーネントのコールバックを呼び出す（最優先）
-    if (onXSearchToggle) {
-      console.log(`[X検索] 親コンポーネントにモード変更を通知: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
-      onXSearchToggle(newState);
     }
     
     // カスタムイベントを発火して他のコンポーネントに即座に通知
@@ -562,6 +562,8 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
             type="button"
             onClick={(e) => {
               e.preventDefault();
+              // 即座に状態を更新して視覚的なフィードバックを提供
+              setClientSideEnabled(!clientSideEnabled);
               onClick();
             }}
             disabled={isLoading}
