@@ -29,6 +29,7 @@ function PureMessages({
   setMessages,
   reload,
   isReadonly,
+  isArtifactVisible,
 }: MessagesProps) {
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
@@ -36,7 +37,13 @@ function PureMessages({
   useEffect(() => {
     console.log(`[PureMessages] chatId changed: ${chatId}`);
     console.log(`[PureMessages] messages count: ${messages.length}`);
-  }, [chatId, messages.length]);
+    
+    // Ensure we scroll to bottom when messages change
+    const scrollContainer = messagesContainerRef.current;
+    if (scrollContainer) {
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }
+  }, [chatId, messages.length, messagesContainerRef]);
 
   return (
     <div

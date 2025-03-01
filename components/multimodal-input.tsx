@@ -234,7 +234,8 @@ function PureMultimodalInput({
             ...((chatRequestOptions?.data as Record<string, unknown>) || {}),
             chatId,
             model: selectedModelId,
-            xSearchEnabled: effectiveXSearchEnabled
+            xSearchEnabled: effectiveXSearchEnabled,
+            preserveMessages: true // 既存のメッセージを保持するフラグを追加
           }
         };
 

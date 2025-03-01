@@ -8,7 +8,8 @@ import type { XSearchResponse } from '@/lib/types';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
-import { fetcher, generateUUID } from '@/lib/utils';
+import { fetcher } from '@/lib/utils';
+import { nanoid } from 'nanoid'; // nanoid をインポート
 
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
@@ -187,32 +188,57 @@ export function Chat({
     body: {
       ...chatOptions.body,
       xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
+      preserveMessages: true // 既存のメッセージを保持するフラグを追加
     },
-    id: chatKey, // 動的に生成されたキーを使用して再初期化を強制
+    id: chatKey, // 動的に生成されたキーを使用して再初期化
     // 初期メッセージを設定
     initialMessages: currentMessages
   });
 
   // useChatの初期化後に初期メッセージを設定
   useEffect(() => {
-    if (currentMessages.length > 0) {
+    if (currentMessages.length > 0 && messages.length === 0) {
       console.log(`[Chat] 初期メッセージを設定します (${currentMessages.length}件)`);
       originalSetMessages(currentMessages);
       
       // 設定後のメッセージ数を確認
       console.log(`[Chat] 設定後のメッセージ数: ${messages.length}`);
     }
-  }, [chatKey, currentMessages, originalSetMessages]);
+  }, [chatKey, currentMessages, originalSetMessages, messages.length]);
 
-  // モード変更時に既存のメッセージをクリア
-  useEffect(() => {
-    console.log(`[Force Reset] モード変更による useChat の再初期化: ${isXSearchEnabled ? 'X検索モード' : 'チャットモード'}`);
-    // 既存のメッセージをクリア
-    if (messages.length > 0) {
-      console.log(`[Force Reset] 既存のメッセージをクリア（${messages.length}件）`);
-      originalSetMessages([]);
-    }
-  }, [chatKey, isXSearchEnabled]);
+  // カスタムappend関数を作成して既存のメッセージを保持
+  const append = useCallback(
+    async (message: Message | CreateMessage, options?: ChatRequestOptions) => {
+      // 現在のメッセージを保存
+      const currentMsgs = [...messages];
+      
+      // 通常のappendを呼び出す
+      const result = await originalAppend(message, {
+        ...options,
+        data: {
+          ...((options?.data as Record<string, unknown>) || {}),
+          preserveMessages: true
+        }
+      });
+      
+      // もしメッセージが失われた場合は復元
+      if (messages.length < currentMsgs.length + 1) {
+        console.log('[Chat] メッセージが失われたため復元します');
+        const newMessages = [...currentMsgs, {
+          id: typeof message === 'object' && 'id' in message ? 
+              (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
+              nanoid(),
+          content: typeof message === 'string' ? message : message.content,
+          role: typeof message === 'string' ? 'user' : message.role,
+          createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
+        }];
+        originalSetMessages(newMessages);
+      }
+      
+      return result;
+    },
+    [messages, originalAppend, originalSetMessages]
+  );
 
   // チャットの状態が変わったときに参照を更新
   useEffect(() => {
@@ -314,12 +340,12 @@ export function Chat({
           ) : (
             <div className="flex-1">
               <Messages
-                key={`messages-${id}-${chatKey}`} // チャットキーを追加して強制的に再レンダリング
                 chatId={id}
                 isLoading={isLoading}
                 votes={votes}
                 messages={messages.length > 0 ? messages : currentMessages}
                 setMessages={originalSetMessages}
+                reload={reload}
                 isReadonly={isReadonly}
                 isArtifactVisible={isArtifactVisible}
               />
@@ -339,7 +365,7 @@ export function Chat({
                     attachments={attachments}
                     setAttachments={setAttachments}
                     messages={messages}
-                    append={originalAppend}
+                    append={append}
                     selectedModelId={selectedChatModel}
                     isXSearchEnabled={isXSearchEnabled}
                     onXSearchToggle={(newValue) => {
@@ -420,7 +446,7 @@ export function Chat({
                             }
                           }
                         ]}
-                        append={originalAppend}
+                        append={append}
                         chatId={id}
                       />
                     </div>
@@ -446,12 +472,12 @@ export function Chat({
             event.preventDefault();
           }
           const message: CreateMessage = {
-            id: generateUUID(),
+            id: nanoid(),
             content: input,
             role: 'user',
             createdAt: new Date()
           };
-          await originalAppend(message, options);
+          await append(message, options);
         }}
         isLoading={isLoading}
         stop={stop}
@@ -459,7 +485,7 @@ export function Chat({
         setAttachments={setAttachments}
         messages={messages}
         setMessages={originalSetMessages}
-        append={originalAppend}
+        append={append}
         selectedModelId={selectedChatModel}
         reload={async (chatRequestOptions) => {
           // 既存のチャットインスタンスを使用して新しいメッセージを送信
