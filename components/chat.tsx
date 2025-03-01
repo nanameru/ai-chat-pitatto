@@ -235,6 +235,14 @@ export function Chat({
         originalSetMessages(newMessages);
       }
       
+      // ストリーミング完了後にメッセージが正しく表示されていることを確認
+      if (options?.data && (options.data as Record<string, unknown>).isStreaming === false) {
+        setTimeout(() => {
+          console.log('[Chat] ストリーミング完了後のメッセージ状態を確認');
+          originalSetMessages(current => [...current]); // 強制的に再レンダリング
+        }, 100);
+      }
+      
       return result;
     },
     [messages, originalAppend, originalSetMessages]

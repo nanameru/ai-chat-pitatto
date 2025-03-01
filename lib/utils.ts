@@ -88,12 +88,9 @@ function addToolMessageToChat({
 export function convertToUIMessages(
   messages: Array<DBMessage>,
 ): Array<Message> {
-  // Sort messages by creation time in ascending order
-  const sortedMessages = [...messages].sort((a, b) => {
-    return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-  });
-
-  return sortedMessages.reduce((chatMessages: Array<Message>, message) => {
+  // データベースのクエリで既にcreatedAtの昇順でソートされているため、
+  // ここでの重複したソートは不要
+  return messages.reduce((chatMessages: Array<Message>, message) => {
     if (message.role === 'tool') {
       return addToolMessageToChat({
         toolMessage: message as CoreToolMessage,

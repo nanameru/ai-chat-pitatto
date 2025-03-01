@@ -225,10 +225,15 @@ const PurePreviewMessage = ({
 export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
+    // isLoadingが変更された場合は再レンダリング
     if (prevProps.isLoading !== nextProps.isLoading) return false;
+    
+    // メッセージの内容が変更された場合は再レンダリング
     if (prevProps.message.reasoning !== nextProps.message.reasoning)
       return false;
     if (prevProps.message.content !== nextProps.message.content) return false;
+    
+    // ツール呼び出しが変更された場合は再レンダリング
     if (
       !equal(
         prevProps.message.toolInvocations,
@@ -236,7 +241,12 @@ export const PreviewMessage = memo(
       )
     )
       return false;
+      
+    // 投票が変更された場合は再レンダリング
     if (!equal(prevProps.vote, nextProps.vote)) return false;
+
+    // ストリーミング中は常に再レンダリングする
+    if (nextProps.isLoading) return false;
 
     return true;
   },

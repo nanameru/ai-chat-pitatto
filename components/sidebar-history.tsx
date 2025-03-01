@@ -81,12 +81,12 @@ const PureChatItem = ({
     e.preventDefault(); // デフォルトのLinkの動作を防止
     console.log(`[PureChatItem] チャットアイテムがクリックされました: ${chat.id}`);
     
+    // モバイルメニューを閉じる
+    setOpenMobile(false);
+    
     // 強制的にルーターを使用してナビゲーション - タイムスタンプを追加して強制的に再レンダリング
     const timestamp = Date.now();
     router.push(`/chat/${chat.id}?refresh=${timestamp}`);
-    
-    // モバイルメニューを閉じる
-    setOpenMobile(false);
   };
 
   return (
