@@ -284,7 +284,7 @@ export function SidebarHistory() {
   };
 
   return (
-    <div className="flex flex-col h-full pb-20">
+    <div className="flex flex-col h-full">
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>

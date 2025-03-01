@@ -3,7 +3,7 @@
 import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
 
-import { PlusIcon } from '@/components/icons';
+import { PencilEditIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -50,7 +50,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                     router.refresh();
                   }}
                 >
-                  <PlusIcon />
+                  <PencilEditIcon />
                 </Button>
               </TooltipTrigger>
               <TooltipContent align="end">New Chat</TooltipContent>
@@ -61,7 +61,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
       <SidebarContent>
         <SidebarHistory />
       </SidebarContent>
-      <SidebarFooter className="fixed bottom-0 w-[--sidebar-width] bg-background border-t">
+      <SidebarFooter className="border-t">
         {user ? <SidebarUserNav user={user} /> : null}
       </SidebarFooter>
     </Sidebar>
