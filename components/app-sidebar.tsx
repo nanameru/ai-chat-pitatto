@@ -2,6 +2,7 @@
 
 import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
+import Image from 'next/image';
 
 import { PencilEditIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
@@ -32,11 +33,20 @@ export function AppSidebar({ user }: { user: User | undefined }) {
               onClick={() => {
                 setOpenMobile(false);
               }}
-              className="flex flex-row gap-3 items-center"
+              className="flex flex-row gap-2 items-center"
             >
-              <span className="text-lg font-semibold px-2 hover:bg-muted rounded-md cursor-pointer">
-                Chatbot
-              </span>
+              <div className="flex items-center bg-sidebar rounded-lg shadow-sm p-1.5 transition-colors">
+                <Image 
+                  src="/images/pitattologo.png" 
+                  alt="Pitatto Logo" 
+                  width={28} 
+                  height={28}
+                  className="rounded-md" 
+                />
+                <span className="text-lg font-semibold ml-1.5 text-sidebar-foreground">
+                  Pitatto
+                </span>
+              </div>
             </Link>
             <Tooltip>
               <TooltipTrigger asChild>

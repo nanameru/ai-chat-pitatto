@@ -475,7 +475,7 @@ function PureMultimodalInput({
         </div>
 
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
-          <ModelSelector selectedModelId={selectedModelId} className="h-8" />
+          <ModelSelector selectedModelId={selectedModelId} className="mr-1" />
           {isLoading ? (
             <StopButton stop={stop} />
           ) : (

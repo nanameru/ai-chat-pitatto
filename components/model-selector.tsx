@@ -39,19 +39,28 @@ export function ModelSelector({
           className,
         )}
       >
-        <Button variant="outline" className="md:px-2 md:h-[34px]">
-          <span className="flex items-center gap-2">
+        <Button 
+          variant="ghost" 
+          className="flex items-center gap-1 px-2 h-8 text-sm font-medium"
+        >
+          <span className="flex items-center gap-1">
             {selectedChatModel?.name}
-            <span className="text-xs text-muted-foreground">
-              ({selectedChatModel?.modelVersion})
-            </span>
+            {selectedChatModel?.id === 'chat-model-large' && (
+              <span className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded-full">
+                beta
+              </span>
+            )}
           </span>
-          <ChevronDownIcon />
+          <ChevronDownIcon size={16} />
         </Button>
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="start" className="min-w-[300px]">
+      <DropdownMenuContent align="start" className="min-w-[220px] p-1">
+        <div className="py-1 px-2 text-xs text-muted-foreground">
+          {selectedChatModel?.id === 'chat-model-small' ? 'Smartest' : 'Previous generation model'}
+        </div>
         {chatModels.map((chatModel) => {
           const { id } = chatModel;
+          const isBeta = id === 'chat-model-large';
 
           return (
             <DropdownMenuItem
@@ -64,27 +73,35 @@ export function ModelSelector({
                   saveChatModelAsCookie(id);
                 });
               }}
-              className="gap-4 group/item flex flex-row justify-between items-center"
+              className="flex items-center justify-between px-2 py-1.5 rounded-md"
               data-active={id === optimisticModelId}
             >
-              <div className="flex flex-col gap-1 items-start">
-                <div className="flex items-center gap-2">
-                  <span>{chatModel.name}</span>
-                  <span className="text-xs text-muted-foreground">
-                    ({chatModel.modelVersion})
+              <div className="flex items-center gap-1">
+                <span>{chatModel.name}</span>
+                {isBeta && (
+                  <span className="text-xs px-1.5 py-0.5 bg-gray-200 dark:bg-gray-700 rounded-full">
+                    beta
                   </span>
-                </div>
-                <div className="text-xs text-muted-foreground">
-                  {chatModel.description}
-                </div>
+                )}
               </div>
 
-              <div className="text-foreground dark:text-foreground opacity-0 group-data-[active=true]/item:opacity-100">
-                <CheckCircleFillIcon />
-              </div>
+              {id === optimisticModelId && (
+                <CheckCircleFillIcon size={16} />
+              )}
             </DropdownMenuItem>
           );
         })}
+        
+        <div className="mt-2 border-t border-gray-100 dark:border-gray-800 pt-2">
+          <DropdownMenuItem className="flex items-center justify-between px-2 py-1.5 rounded-md">
+            <div className="flex items-center gap-1">
+              <span>Enable Search</span>
+            </div>
+            <div className="h-6 w-10 bg-gray-200 dark:bg-gray-700 rounded-full relative">
+              <div className="h-5 w-5 bg-white dark:bg-gray-900 rounded-full absolute right-0.5 top-0.5"></div>
+            </div>
+          </DropdownMenuItem>
+        </div>
       </DropdownMenuContent>
     </DropdownMenu>
   );
