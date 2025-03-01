@@ -53,13 +53,12 @@ function PureMultimodalInput({
   attachments,
   setAttachments,
   messages,
-  setMessages,
   append,
-  handleSubmit,
   className,
   selectedModelId,
   isXSearchEnabled: propIsXSearchEnabled,
   onXSearchToggle,
+  onError,
 }: {
   chatId: string;
   input: string;
@@ -69,21 +68,15 @@ function PureMultimodalInput({
   attachments: Array<Attachment>;
   setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
   messages: Array<Message>;
-  setMessages: Dispatch<SetStateAction<Array<Message>>>;
   append: (
     message: Message | CreateMessage,
     options?: ChatRequestOptions & { xSearchEnabled?: boolean }
   ) => Promise<string | null | undefined>;
-  handleSubmit: (
-    event?: {
-      preventDefault?: () => void;
-    },
-    options?: ChatRequestOptions & { xSearchEnabled?: boolean }
-  ) => Promise<XSearchResponse | void>;
   className?: string;
   selectedModelId: string;
   isXSearchEnabled?: boolean;
   onXSearchToggle?: (newValue: boolean) => void;
+  onError?: (error: Error) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -193,7 +186,7 @@ function PureMultimodalInput({
         xSearchEnabled: true
       };
       
-      return await handleSubmit(event, options);
+      return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
     } catch (error) {
       console.error('[XSearch] X検索処理でエラーが発生:', error);
       throw error;
@@ -212,69 +205,11 @@ function PureMultimodalInput({
         xSearchEnabled: false
       };
       
-      return await handleSubmit(event, options);
+      return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
     } catch (error) {
       console.error('[Chat] 通常チャット処理でエラーが発生:', error);
       throw error;
     }
-  };
-
-  // ストリーミングレスポンスを処理する関数
-  const processStreamingResponse = async (response: Response) => {
-    const reader = response.body?.getReader();
-    if (!reader) {
-      throw new Error('Response body is not readable');
-    }
-
-    let assistantMessage = '';
-    let decoder = new TextDecoder();
-    let buffer = '';
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        
-        // デコードして既存のバッファに追加
-        buffer += decoder.decode(value, { stream: true });
-        
-        // データの行を処理
-        const lines = buffer.split('\n');
-        buffer = lines.pop() || ''; // 最後の不完全な行をバッファに保持
-        
-        for (const line of lines) {
-          if (line.trim() === '') continue;
-          
-          // "data: "で始まる行を処理
-          if (line.startsWith('data: ')) {
-            const data = line.slice(5).trim();
-            
-            // [DONE]メッセージをチェック
-            if (data === '[DONE]') {
-              console.log('Stream complete');
-              continue;
-            }
-            
-            try {
-              // JSONデータをパース
-              const parsed = JSON.parse(data);
-              if (parsed.text) {
-                assistantMessage += parsed.text;
-                
-                // UIを部分的に更新（オプション）
-                // ここでUIの部分更新を行うことができます
-              }
-            } catch (e) {
-              console.warn('Failed to parse stream data:', data);
-            }
-          }
-        }
-      }
-    } finally {
-      reader.releaseLock();
-    }
-
-    return assistantMessage;
   };
 
   const handleSubmitWithLogging = useCallback(
@@ -291,10 +226,6 @@ function PureMultimodalInput({
       console.log('[Submit] 送信を開始します:', { currentMode, input });
 
       try {
-        // useChatフックをバイパスして直接fetchを使用
-        const endpoint = effectiveXSearchEnabled ? '/api/x-search/feedback' : '/api/chat';
-        console.log(`[Mode] 現在のモード: ${currentMode}, エンドポイント: ${endpoint}`);
-        
         // 共通のオプション
         const options: ChatRequestOptions = {
           ...chatRequestOptions,
@@ -315,51 +246,20 @@ function PureMultimodalInput({
           createdAt: new Date()
         };
 
-        // UIにユーザーメッセージを追加
-        await append(message, options);
-        
-        // 直接APIを呼び出す
-        const response = await fetch(endpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: [...messages, message],
-            chatId,
-            model: selectedModelId,
-            chatRequestOptions: options
-          }),
-        });
-
-        if (!response.ok) {
-          throw new Error(`API request failed with status ${response.status}`);
-        }
-
-        // ストリーミングレスポンスを処理
-        const assistantMessage = await processStreamingResponse(response);
-
-        // 完了したら、アシスタントのメッセージを追加
-        if (assistantMessage) {
-          const assistantResponseMessage: Message = {
-            id: nanoid(),
-            content: assistantMessage,
-            role: 'assistant',
-            createdAt: new Date()
-          };
-          
-          // UIにアシスタントメッセージを追加
-          setMessages(prev => [...prev, assistantResponseMessage]);
-        }
+        // UIにユーザーメッセージを追加し、AIの応答を取得する
+        // appendはすでにAPIを呼び出すので、二重に呼び出さない
+        console.log('[Submit] appendを呼び出します');
+        const result = await append(message, options);
+        console.log('[Submit] append完了:', result);
 
         return { success: true };
       } catch (error) {
         console.error('[Error] 処理中にエラーが発生:', error);
-        onError(error as Error);
+        onError?.(error as Error);
         return { error };
       }
     },
-    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, messages, append, setMessages, processStreamingResponse]
+    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError]
   );
 
   const submitForm = useCallback(async () => {
@@ -462,32 +362,6 @@ function PureMultimodalInput({
     },
     [setAttachments],
   );
-
-  const onError = (error: Error) => {
-    console.error('[Error] 詳細なエラー情報:', {
-      error,
-      message: error.message,
-      stack: error.stack,
-      type: error.name,
-      mode: isXSearchEnabled ? 'X検索' : '通常チャット',
-      timestamp: new Date().toISOString(),
-    });
-
-    let errorMessage = 'エラーが発生しました。';
-    
-      try {
-        const errorData = JSON.parse(error.message);
-        errorMessage = errorData.details || errorData.message || errorData.error || error.message;
-      } catch (e) {
-      errorMessage = error.message;
-    }
-
-    if (isXSearchEnabled) {
-      toast.error(`X検索処理中にエラーが発生しました: ${errorMessage}`);
-      } else {
-      toast.error(`チャット処理中にエラーが発生しました: ${errorMessage}`);
-    }
-  };
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -596,7 +470,7 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
           <ModelSelector selectedModelId={selectedModelId} className="h-8" />
           {isLoading ? (
-            <StopButton stop={stop} setMessages={setMessages} />
+            <StopButton stop={stop} />
           ) : (
             <SendButton
               input={input}
@@ -625,40 +499,7 @@ export const MultimodalInput = memo(
 MultimodalInput.displayName = 'MultimodalInput';
 
 const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
-  const [mounted, setMounted] = useState(false);
   const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // サーバーサイドレンダリング時はデフォルトのスタイルを使用
-  if (!mounted) {
-    return (
-      <Button
-        type="button"
-        disabled={true}
-        className="h-8 px-4 rounded-full text-sm border border-gray-200 bg-white text-gray-700 flex items-center gap-2"
-        aria-label="Webで検索"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M3.6001 9H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M3.6001 15H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M12 3C14.5 7.5 14.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-          <path d="M12 3C9.5 7.5 9.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        <span>Webで検索</span>
-      </Button>
-    );
-  }
-
-  const buttonClassName = cx(
-    "h-8 px-4 rounded-full text-sm border border-gray-200 flex items-center gap-2",
-    isWebSearchEnabled
-      ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
-      : "bg-white text-gray-700 hover:bg-gray-100"
-  );
 
   return (
     <TooltipProvider>
@@ -668,7 +509,12 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
             type="button"
             onClick={onClick}
             disabled={isLoading}
-            className={buttonClassName}
+            className={cx(
+              "h-8 px-4 rounded-full text-sm border border-gray-200 flex items-center gap-2",
+              isWebSearchEnabled
+                ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
+                : "bg-white text-gray-700 hover:bg-gray-100"
+            )}
             aria-label="Webで検索"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -693,37 +539,6 @@ const WebSearchButton = memo(PureWebSearchButton);
 WebSearchButton.displayName = 'WebSearchButton';
 
 const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // サーバーサイドレンダリング時はデフォルトのスタイルを使用
-  if (!mounted) {
-    return (
-      <Button
-        type="button"
-        disabled={true}
-        className="h-8 px-4 rounded-full text-sm border border-gray-200 bg-white text-gray-700 flex items-center gap-2"
-        aria-label="Xから検索"
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
-        </svg>
-        <span>Xから検索</span>
-      </Button>
-    );
-  }
-
-  // 改良されたボタンスタイル - よりコントラストの高い配色と明確なモード表示
-  const buttonClassName = cx(
-    "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-300",
-    isEnabled
-      ? "bg-blue-500 text-white hover:bg-blue-600 border-blue-400 font-medium shadow-sm"
-      : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
-  );
-
   return (
     <TooltipProvider>
       <Tooltip>
@@ -735,7 +550,12 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
               onClick();
             }}
             disabled={isLoading}
-            className={buttonClassName}
+            className={cx(
+              "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-300",
+              isEnabled
+                ? "bg-blue-500 text-white hover:bg-blue-600 border-blue-400 font-medium shadow-sm"
+                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
+            )}
             aria-label={isEnabled ? "X検索モードを無効化" : "Xから検索"}
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill={isEnabled ? "currentColor" : "none"} xmlns="http://www.w3.org/2000/svg">
@@ -782,23 +602,14 @@ const AttachmentsButton = memo(PureAttachmentsButton);
 
 const PureStopButton = memo(function PureStopButton({
   stop,
-  setMessages,
 }: {
   stop: () => void;
-  setMessages: Dispatch<SetStateAction<Array<Message>>>;
 }) {
   return (
     <Button
       type="button"
       onClick={() => {
         stop();
-        setMessages((messages) => {
-          const lastMessage = messages[messages.length - 1];
-          if (lastMessage?.role === 'assistant') {
-            return messages.slice(0, -1);
-          }
-          return messages;
-        });
       }}
       className="size-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"

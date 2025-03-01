@@ -20,6 +20,7 @@ import { chatModels } from '@/lib/ai/models';
 import { Overview } from './overview';
 import { SuggestedActions } from './suggested-actions';
 import { useLocalStorage } from '../hooks/use-local-storage';
+import { useSearchParams } from 'next/navigation';
 
 export function Chat({
   id,
@@ -29,7 +30,7 @@ export function Chat({
   isReadonly,
 }: {
   id: string;
-  initialMessages: Array<Message>;
+  initialMessages: Message[];
   selectedChatModel: string;
   selectedVisibilityType: VisibilityType;
   isReadonly: boolean;
@@ -40,19 +41,32 @@ export function Chat({
   // カスタムフックを使用して、isXSearchEnabledの値を監視
   const [isXSearchEnabled, setIsXSearchEnabled] = useLocalStorage('searchMode', false);
   
-  // useChat の再初期化のための一意のキーを生成
-  const [chatKey, setChatKey] = useState(`${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}`);
+  // URLからクエリパラメータを取得
+  const searchParams = useSearchParams();
+  const refreshParam = searchParams.get('refresh');
   
-  // isXSearchEnabled が変更されたときにchatKeyを更新
+  // 内部で管理するメッセージ状態
+  const [currentMessages, setCurrentMessages] = useState<Message[]>(initialMessages);
+  
+  // useChat の再初期化のための一意のキーを生成
+  const [chatKey, setChatKey] = useState(`${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`);
+  
+  // チャットIDが変更されたときに内部状態を更新
   useEffect(() => {
-    console.log(`[Mode] モードが変更されました: ${isXSearchEnabled ? 'X検索モード' : 'チャットモード'}`);
-    console.log(`[Mode] 使用するAPI: ${isXSearchEnabled ? '/api/x-search/feedback' : '/api/chat'}`);
+    console.log(`[Chat] チャットIDが変更されました: ${id}`);
+    console.log(`[Chat] 初期メッセージ数: ${initialMessages.length}`);
+    console.log(`[Chat] 初期メッセージの内容:`, JSON.stringify(initialMessages));
+    console.log(`[Chat] リフレッシュパラメータ: ${refreshParam}`);
     
-    // useChat を強制的に再初期化するためのキーを更新
-    const newKey = `${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${Date.now()}`;
+    // 内部状態を更新
+    setCurrentMessages(initialMessages);
+    
+    // チャットキーを更新して強制的に再初期化
+    const newKey = `${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`;
     console.log(`[Chat] チャットキーを更新します: ${newKey}`);
     setChatKey(newKey);
-  }, [isXSearchEnabled, id]);
+    
+  }, [id, initialMessages, isXSearchEnabled, refreshParam]);
   
   // チャットの状態を保持するための参照
   const chatStateRef = useRef<{
@@ -153,7 +167,6 @@ export function Chat({
   };
 
   // モードに応じたuseChat hookの使用
-  // key プロパティを追加して isXSearchEnabled が変更されたときに再初期化されるようにする
   const {
     messages,
     input,
@@ -176,9 +189,20 @@ export function Chat({
       xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
     },
     id: chatKey, // 動的に生成されたキーを使用して再初期化を強制
-    // initialMessages を空にすることでチャットの初期状態をリセット
-    initialMessages: [] 
+    // 初期メッセージを設定
+    initialMessages: currentMessages
   });
+
+  // useChatの初期化後に初期メッセージを設定
+  useEffect(() => {
+    if (currentMessages.length > 0) {
+      console.log(`[Chat] 初期メッセージを設定します (${currentMessages.length}件)`);
+      originalSetMessages(currentMessages);
+      
+      // 設定後のメッセージ数を確認
+      console.log(`[Chat] 設定後のメッセージ数: ${messages.length}`);
+    }
+  }, [chatKey, currentMessages, originalSetMessages]);
 
   // モード変更時に既存のメッセージをクリア
   useEffect(() => {
@@ -282,17 +306,19 @@ export function Chat({
 
       <div className="flex-1 flex justify-center">
         <div className="size-full max-w-3xl flex flex-col">
-          {messages.length === 0 ? (
+          {/* 初期メッセージがある場合は常にMessagesを表示 */}
+          {(messages.length === 0 && currentMessages.length === 0) ? (
             <div className="flex-1 flex items-center justify-center">
               <Overview />
             </div>
           ) : (
             <div className="flex-1">
               <Messages
+                key={`messages-${id}-${chatKey}`} // チャットキーを追加して強制的に再レンダリング
                 chatId={id}
                 isLoading={isLoading}
                 votes={votes}
-                messages={messages}
+                messages={messages.length > 0 ? messages : currentMessages}
                 setMessages={originalSetMessages}
                 isReadonly={isReadonly}
                 isArtifactVisible={isArtifactVisible}
@@ -313,7 +339,6 @@ export function Chat({
                     attachments={attachments}
                     setAttachments={setAttachments}
                     messages={messages}
-                    setMessages={originalSetMessages}
                     append={originalAppend}
                     selectedModelId={selectedChatModel}
                     isXSearchEnabled={isXSearchEnabled}
@@ -357,34 +382,9 @@ export function Chat({
                         console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
                       }
                     }}
-                    handleSubmit={async (
-                      event?: {
-                        preventDefault?: () => void;
-                      },
-                      options?: ChatRequestOptions & { xSearchEnabled?: boolean }
-                    ) => {
-                      if (event?.preventDefault) {
-                        event.preventDefault();
-                      }
-                      try {
-                        return await originalHandleSubmit(event, {
-                          ...options,
-                          data: {
-                            chatId: id,
-                            model: selectedChatModel,
-                            ...(options?.data as Record<string, unknown> || {}),
-                            id: generateUUID()
-                          }
-                        });
-                      } catch (error) {
-                        console.error('Chat submission error:', {
-                          error,
-                          mode: options?.xSearchEnabled ? 'X Search' : 'Regular Chat',
-                          timestamp: new Date().toISOString()
-                        });
-                        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-                        throw error;
-                      }
+                    onError={(error) => {
+                      console.error('Error in MultimodalInput:', error);
+                      toast.error('エラーが発生しました: ' + error.message);
                     }}
                   />
                   {messages.length === 0 && (

@@ -2,7 +2,7 @@
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import Link from 'next/link';
-import { useParams, usePathname, useRouter } from 'next/navigation';
+import { useRouter, usePathname, useParams } from 'next/navigation';
 import type { User } from 'next-auth';
 import { memo, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -73,11 +73,26 @@ const PureChatItem = ({
     chatId: chat.id,
     initialVisibility: chat.visibility,
   });
+  
+  const router = useRouter();
+  
+  // シンプルなハンドラーに戻す - 常にrouter.pushを使用
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault(); // デフォルトのLinkの動作を防止
+    console.log(`[PureChatItem] チャットアイテムがクリックされました: ${chat.id}`);
+    
+    // 強制的にルーターを使用してナビゲーション - タイムスタンプを追加して強制的に再レンダリング
+    const timestamp = Date.now();
+    router.push(`/chat/${chat.id}?refresh=${timestamp}`);
+    
+    // モバイルメニューを閉じる
+    setOpenMobile(false);
+  };
 
   return (
     <SidebarMenuItem>
       <SidebarMenuButton asChild isActive={isActive}>
-        <Link href={`/chat/${chat.id}`} onClick={() => setOpenMobile(false)}>
+        <Link href={`/chat/${chat.id}`} onClick={handleClick}>
           <span>{chat.title}</span>
         </Link>
       </SidebarMenuButton>
@@ -146,6 +161,7 @@ const PureChatItem = ({
 
 export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   if (prevProps.isActive !== nextProps.isActive) return false;
+  if (prevProps.chat.id !== nextProps.chat.id) return false;
   return true;
 });
 

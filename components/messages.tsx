@@ -2,7 +2,7 @@ import { ChatRequestOptions, Message } from 'ai';
 import { PreviewMessage, ThinkingMessage } from './message';
 import { useScrollToBottom } from './use-scroll-to-bottom';
 import { Overview } from './overview';
-import { memo } from 'react';
+import { memo, useEffect } from 'react';
 import { Vote } from '@/lib/db/schema';
 import equal from 'fast-deep-equal';
 
@@ -33,13 +33,16 @@ function PureMessages({
   const [messagesContainerRef, messagesEndRef] =
     useScrollToBottom<HTMLDivElement>();
 
+  useEffect(() => {
+    console.log(`[PureMessages] chatId changed: ${chatId}`);
+    console.log(`[PureMessages] messages count: ${messages.length}`);
+  }, [chatId, messages.length]);
+
   return (
     <div
       ref={messagesContainerRef}
       className="flex flex-col min-w-0 gap-6 flex-1 overflow-y-scroll pt-4"
     >
-      {messages.length === 0 && <Overview />}
-
       {messages.map((message, index) => (
         <PreviewMessage
           key={message.id}
@@ -70,13 +73,31 @@ function PureMessages({
 }
 
 export const Messages = memo(PureMessages, (prevProps, nextProps) => {
-  if (prevProps.isArtifactVisible && nextProps.isArtifactVisible) return true;
-
+  // chatIdが変更された場合は必ず再レンダリングする
+  if (prevProps.chatId !== nextProps.chatId) {
+    console.log(`[Messages] chatId changed: ${prevProps.chatId} -> ${nextProps.chatId}`);
+    return false; // 必ず再レンダリング
+  }
+  
+  // メッセージが変更された場合も必ず再レンダリング
+  if (prevProps.messages.length !== nextProps.messages.length) {
+    console.log(`[Messages] messages length changed: ${prevProps.messages.length} -> ${nextProps.messages.length}`);
+    return false;
+  }
+  
+  // メッセージの内容が変更された場合も再レンダリング
+  if (!equal(prevProps.messages, nextProps.messages)) {
+    console.log(`[Messages] messages content changed`);
+    return false;
+  }
+  
   if (prevProps.isLoading !== nextProps.isLoading) return false;
+  
   if (prevProps.isLoading && nextProps.isLoading) return false;
-  if (prevProps.messages.length !== nextProps.messages.length) return false;
-  if (!equal(prevProps.messages, nextProps.messages)) return false;
+  
   if (!equal(prevProps.votes, nextProps.votes)) return false;
+  
+  if (prevProps.isArtifactVisible !== nextProps.isArtifactVisible) return false;
 
   return true;
 });
