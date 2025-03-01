@@ -220,10 +220,15 @@ function PureMultimodalInput({
 
       if (isLoading) return;
 
+      // 送信時に即座に入力フィールドをクリア
+      const currentInput = input;
+      setInput('');
+      setLocalStorageInput('');
+
       // 親コンポーネントから渡された値を優先的に使用
       const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
       const currentMode = effectiveXSearchEnabled ? 'X検索モード' : 'チャットモード';
-      console.log('[Submit] 送信を開始します:', { currentMode, input });
+      console.log('[Submit] 送信を開始します:', { currentMode, currentInput });
 
       try {
         // 共通のオプション
@@ -242,7 +247,7 @@ function PureMultimodalInput({
         // メッセージを作成
         const message: CreateMessage = {
           id: nanoid(),
-          content: input,
+          content: currentInput, // 保存したinputの値を使用
           role: 'user',
           createdAt: new Date()
         };
@@ -260,7 +265,7 @@ function PureMultimodalInput({
         return { error };
       }
     },
-    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError]
+    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError, setInput, setLocalStorageInput]
   );
 
   const submitForm = useCallback(async () => {
@@ -276,6 +281,7 @@ function PureMultimodalInput({
       const currentInput = input;
       const currentAttachments = [...attachments];
 
+      // 送信時に即座に入力フィールドとファイル添付をクリア
       setInput('');
       setLocalStorageInput('');
       setAttachments([]);
@@ -305,8 +311,8 @@ function PureMultimodalInput({
     isXSearchEnabled,
     propIsXSearchEnabled,
     handleSubmitWithLogging,
-    setInput,
     setAttachments,
+    setInput,
     setLocalStorageInput,
     selectedModelId
   ]);
