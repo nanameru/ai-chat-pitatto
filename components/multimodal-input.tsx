@@ -520,7 +520,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
               "h-8 px-4 rounded-full text-sm border border-gray-200 flex items-center gap-2",
               isWebSearchEnabled
                 ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
-                : "bg-white text-gray-700 hover:bg-gray-100"
+                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
             )}
             aria-label="Webで検索"
           >
@@ -570,7 +570,7 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
             className={cx(
               "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-300",
               clientSideEnabled
-                ? "bg-blue-500 text-white hover:bg-blue-600 border-blue-400 shadow-sm"
+                ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
                 : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
             )}
             aria-label="Xから検索"
@@ -578,10 +578,10 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span>{clientSideEnabled ? "X検索モード中" : "Xから検索"}</span>
+            <span>Xから検索</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{clientSideEnabled ? "通常チャットモードに戻す" : "X（旧Twitter）で検索"}</TooltipContent>
+        <TooltipContent>{clientSideEnabled ? "X検索モード中 - クリックで通常モードに戻す" : "X検索モードに切り替え"}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
