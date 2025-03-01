@@ -149,6 +149,28 @@ export function Chat({
     },
     onFinish: (message: Message) => {
       console.log('Finished message:', message);
+      
+      // ストリーミング終了時に最終メッセージを確実に保持
+      setTimeout(() => {
+        // 現在のメッセージ配列を取得
+        const currentMessages = chatStateRef.current.messages;
+        
+        // 最後のメッセージが完了したメッセージと一致するか確認
+        const lastMessage = currentMessages.length > 0 ? 
+          currentMessages[currentMessages.length - 1] : null;
+          
+        // 最後のメッセージが存在しないか、内容が異なる場合は更新
+        if (!lastMessage || 
+            (lastMessage.role === 'assistant' && lastMessage.content !== message.content)) {
+          console.log('[Chat] ストリーミング完了後のメッセージを確保します');
+          
+          // 既存のメッセージ配列から完了したメッセージと同じIDのものを除外
+          const filteredMessages = currentMessages.filter(m => m.id !== message.id);
+          
+          // 完了したメッセージを追加
+          originalSetMessages([...filteredMessages, message]);
+        }
+      }, 50);
     },
     onError: (error: Error) => {
       console.error('Chat error details:', {
@@ -221,31 +243,56 @@ export function Chat({
         }
       });
       
-      // もしメッセージが失われた場合は復元
-      if (messages.length < currentMsgs.length + 1) {
-        console.log('[Chat] メッセージが失われたため復元します');
-        const newMessages = [...currentMsgs, {
-          id: typeof message === 'object' && 'id' in message ? 
-              (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
-              nanoid(),
-          content: typeof message === 'string' ? message : message.content,
-          role: typeof message === 'string' ? 'user' : message.role,
-          createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
-        }];
-        originalSetMessages(newMessages);
-      }
-      
-      // ストリーミング完了後にメッセージが正しく表示されていることを確認
-      if (options?.data && (options.data as Record<string, unknown>).isStreaming === false) {
-        setTimeout(() => {
-          console.log('[Chat] ストリーミング完了後のメッセージ状態を確認');
-          originalSetMessages(current => [...current]); // 強制的に再レンダリング
-        }, 100);
-      }
+      // ストリーミング完了時またはメッセージが失われた場合に復元
+      setTimeout(() => {
+        // 最新のメッセージを取得
+        const latestMessages = chatStateRef.current.messages;
+        
+        // ストリーミング完了後のメッセージ数をチェック
+        if (latestMessages.length < currentMsgs.length + 1) {
+          console.log('[Chat] メッセージが失われたため復元します');
+          
+          // 新しいメッセージを作成
+          const newMessage = {
+            id: typeof message === 'object' && 'id' in message ? 
+                (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
+                nanoid(),
+            content: typeof message === 'string' ? message : message.content,
+            role: typeof message === 'string' ? 'user' : message.role,
+            createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
+          };
+          
+          // 完全なメッセージリストを再構築
+          const restoredMessages = [...currentMsgs, newMessage];
+          console.log('[Chat] 復元後のメッセージ数:', restoredMessages.length);
+          
+          // メッセージを更新
+          originalSetMessages(restoredMessages);
+        } else {
+          // メッセージが正しく存在する場合でも、内容が最新であることを確認
+          const lastMessage = latestMessages[latestMessages.length - 1];
+          const expectedContent = typeof message === 'string' ? message : message.content;
+          
+          // 最後のメッセージの内容が期待と異なる場合は更新
+          if (lastMessage && lastMessage.role === (typeof message === 'string' ? 'user' : message.role) && 
+              lastMessage.content !== expectedContent) {
+            console.log('[Chat] 最後のメッセージの内容を更新します');
+            
+            // 最後のメッセージを更新
+            const updatedMessages = [...latestMessages];
+            updatedMessages[updatedMessages.length - 1] = {
+              ...updatedMessages[updatedMessages.length - 1],
+              content: expectedContent
+            };
+            
+            originalSetMessages(updatedMessages);
+          }
+        }
+      }, 100); // 少し遅延させて状態の更新を確実にする
       
       return result;
     },
-    [messages, originalAppend, originalSetMessages]
+    [messages, originalAppend, originalSetMessages, chatStateRef]
   );
 
   // チャットの状態が変わったときに参照を更新

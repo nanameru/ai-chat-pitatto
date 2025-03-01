@@ -226,12 +226,48 @@ export const PreviewMessage = memo(
   PurePreviewMessage,
   (prevProps, nextProps) => {
     // isLoadingが変更された場合は再レンダリング
-    if (prevProps.isLoading !== nextProps.isLoading) return false;
+    if (prevProps.isLoading !== nextProps.isLoading) {
+      console.log('[PreviewMessage] isLoading changed:', prevProps.isLoading, '->', nextProps.isLoading);
+      return false;
+    }
+    
+    // メッセージIDが変わった場合は再レンダリング
+    if (prevProps.message.id !== nextProps.message.id) {
+      console.log('[PreviewMessage] message ID changed');
+      return false;
+    }
+    
+    // ストリーミング中は、内容が変更された場合のみ再レンダリング
+    if (prevProps.isLoading && nextProps.isLoading) {
+      // メッセージの内容が変更された場合は再レンダリング
+      if (prevProps.message.content !== nextProps.message.content) {
+        console.log('[PreviewMessage] ストリーミング中にメッセージ内容が変更されました');
+        return false;
+      }
+      
+      // 推論内容が変更された場合も再レンダリング
+      if (prevProps.message.reasoning !== nextProps.message.reasoning) return false;
+      
+      // ツール呼び出しが変更された場合も再レンダリング
+      if (!equal(
+        prevProps.message.toolInvocations,
+        nextProps.message.toolInvocations,
+      )) return false;
+      
+      // 内容が変わっていない場合は再レンダリングしない（パフォーマンス向上）
+      return true;
+    }
     
     // メッセージの内容が変更された場合は再レンダリング
-    if (prevProps.message.reasoning !== nextProps.message.reasoning)
+    if (prevProps.message.content !== nextProps.message.content) {
+      console.log('[PreviewMessage] メッセージ内容が変更されました');
       return false;
-    if (prevProps.message.content !== nextProps.message.content) return false;
+    }
+    
+    if (prevProps.message.reasoning !== nextProps.message.reasoning) {
+      console.log('[PreviewMessage] 推論内容が変更されました');
+      return false;
+    }
     
     // ツール呼び出しが変更された場合は再レンダリング
     if (
@@ -239,14 +275,16 @@ export const PreviewMessage = memo(
         prevProps.message.toolInvocations,
         nextProps.message.toolInvocations,
       )
-    )
+    ) {
+      console.log('[PreviewMessage] ツール呼び出しが変更されました');
       return false;
+    }
       
     // 投票が変更された場合は再レンダリング
-    if (!equal(prevProps.vote, nextProps.vote)) return false;
-
-    // ストリーミング中は常に再レンダリングする
-    if (nextProps.isLoading) return false;
+    if (!equal(prevProps.vote, nextProps.vote)) {
+      console.log('[PreviewMessage] 投票が変更されました');
+      return false;
+    }
 
     return true;
   },
