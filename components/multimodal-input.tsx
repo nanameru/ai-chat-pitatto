@@ -134,14 +134,14 @@ function PureMultimodalInput({
     const newState = !oldState;
     
     // モード変更のログ出力を詳細に
-    console.log(`----- X検索モード切替 -----`);
-    console.log(`X検索ボタンがクリックされました`);
-    console.log(`モード変更: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
+    console.log(`----- Deep Researchモード切替 -----`);
+    console.log(`Deep Researchボタンがクリックされました`);
+    console.log(`モード変更: ${oldState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
     console.log(`ボタンがクリックされました。現在の状態: ${newState}`);
     
     // 親コンポーネントのコールバックを最初に呼び出す（最優先）
     if (onXSearchToggle) {
-      console.log(`[X検索] 親コンポーネントにモード変更を通知: ${oldState ? 'X検索モード' : '通常チャットモード'} → ${newState ? 'X検索モード' : '通常チャットモード'}`);
+      console.log(`[Deep Research] 親コンポーネントにモード変更を通知: ${oldState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
       onXSearchToggle(newState);
     }
     
@@ -151,9 +151,9 @@ function PureMultimodalInput({
     // LocalStorageに保存（他のコンポーネントも確実に値を取得できるようにする）
     try {
       window.localStorage.setItem('searchMode', JSON.stringify(newState));
-      console.log(`[X検索] LocalStorageに値を保存しました: ${newState}`);
+      console.log(`[Deep Research] LocalStorageに値を保存しました: ${newState}`);
     } catch (error) {
-      console.error(`[X検索] LocalStorageへの保存に失敗しました:`, error);
+      console.error(`[Deep Research] LocalStorageへの保存に失敗しました:`, error);
     }
     
     // カスタムイベントを発火して他のコンポーネントに即座に通知
@@ -166,19 +166,19 @@ function PureMultimodalInput({
         } 
       });
       window.dispatchEvent(event);
-      console.log(`[X検索] カスタムイベントを発火しました`);
+      console.log(`[Deep Research] カスタムイベントを発火しました`);
     } catch (error) {
-      console.error(`[X検索] カスタムイベント発火に失敗しました:`, error);
+      console.error(`[Deep Research] カスタムイベント発火に失敗しました:`, error);
     }
     
-    console.log(`----- X検索モード切替完了 -----`);
+    console.log(`----- Deep Researchモード切替完了 -----`);
   }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle]);
 
   const handleXSearchSubmit = async (
     event?: { preventDefault?: () => void },
     chatRequestOptions?: ChatRequestOptions
   ) => {
-    console.log('[XSearch] X検索処理を実行');
+    console.log('[Deep Research] Deep Research処理を実行');
     
     try {
       const options: ChatRequestOptions = {
@@ -188,7 +188,7 @@ function PureMultimodalInput({
       
       return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
     } catch (error) {
-      console.error('[XSearch] X検索処理でエラーが発生:', error);
+      console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
       throw error;
     }
   };
@@ -227,7 +227,7 @@ function PureMultimodalInput({
 
       // 親コンポーネントから渡された値を優先的に使用
       const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
-      const currentMode = effectiveXSearchEnabled ? 'X検索モード' : 'チャットモード';
+      const currentMode = effectiveXSearchEnabled ? 'Deep Researchモード' : 'チャットモード';
       console.log('[Submit] 送信を開始します:', { currentMode, currentInput });
 
       try {
@@ -272,7 +272,7 @@ function PureMultimodalInput({
     // 親コンポーネントから渡された値を優先的に使用
     const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
     console.log('[Submit] フォーム送信を開始:', {
-      mode: effectiveXSearchEnabled ? 'X検索' : '通常チャット',
+      mode: effectiveXSearchEnabled ? 'Deep Research' : '通常チャット',
       input,
       attachments
     });
@@ -573,15 +573,15 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
                 ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
                 : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
             )}
-            aria-label="Xから検索"
+            aria-label="Deep Research"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" stroke="currentColor" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round"/>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
+              <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
             </svg>
-            <span>Xから検索</span>
+            <span>Deep Research</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{clientSideEnabled ? "X検索モード中 - クリックで通常モードに戻す" : "X検索モードに切り替え"}</TooltipContent>
+        <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
