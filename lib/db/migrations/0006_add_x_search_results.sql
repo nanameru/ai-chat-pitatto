@@ -5,14 +5,15 @@ CREATE EXTENSION IF NOT EXISTS vector;
 CREATE TABLE IF NOT EXISTS "XSearchSession" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "userId" uuid NOT NULL,
-  "messageId" text NOT NULL,
+  "messageId" uuid NOT NULL,
   "query" text NOT NULL,
   "modelId" varchar(64) NOT NULL,
   "status" varchar(32) NOT NULL,
   "progress" integer DEFAULT 0,
   "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   "updatedAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "XSearchSession_userId_User_id_fk" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE
+  CONSTRAINT "XSearchSession_userId_User_id_fk" FOREIGN KEY ("userId") REFERENCES "User"("id") ON DELETE CASCADE,
+  CONSTRAINT "XSearchSession_messageId_Message_id_fk" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE
 );
 
 -- X検索結果テーブル（X投稿の一意な保存）
@@ -20,6 +21,8 @@ CREATE TABLE IF NOT EXISTS "XSearchResult" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "xPostId" text NOT NULL UNIQUE,  -- X投稿の一意なID
   "content" text NOT NULL,
+  "source_title" text,  -- 「Twitter Post by @username」形式のソースタイトル
+  "source_url" text,    -- 「https://twitter.com/username/status/id」形式のURL
   "embedding" vector(1536),
   "metadata" jsonb,
   "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -31,13 +34,14 @@ CREATE TABLE IF NOT EXISTS "XSearchResultMessage" (
   "id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
   "resultId" uuid NOT NULL,
   "sessionId" uuid NOT NULL,
-  "messageId" text NOT NULL,
+  "messageId" uuid NOT NULL,
   "embeddingScore" real,
   "rerankScore" real,
   "finalScore" real,
   "createdAt" timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT "XSearchResultMessage_resultId_fk" FOREIGN KEY ("resultId") REFERENCES "XSearchResult"("id") ON DELETE CASCADE,
-  CONSTRAINT "XSearchResultMessage_sessionId_fk" FOREIGN KEY ("sessionId") REFERENCES "XSearchSession"("id") ON DELETE CASCADE
+  CONSTRAINT "XSearchResultMessage_sessionId_fk" FOREIGN KEY ("sessionId") REFERENCES "XSearchSession"("id") ON DELETE CASCADE,
+  CONSTRAINT "XSearchResultMessage_messageId_Message_id_fk" FOREIGN KEY ("messageId") REFERENCES "Message"("id") ON DELETE CASCADE
 );
 
 -- インデックスの作成
