@@ -4,8 +4,8 @@ import { genSaltSync, hashSync } from 'bcrypt-ts';
 import { cookies } from 'next/headers';
 import { createServerClient } from '@supabase/ssr';
 
-import { ArtifactKind } from '@/components/artifact';
-import { VisibilityType } from '@/components/visibility-selector';
+import type { ArtifactKind } from '@/components/artifact';
+import type { VisibilityType } from '@/components/visibility-selector';
 import type { DBMessage } from '@/lib/db/types';
 
 export async function getUser(email: string): Promise<Array<any>> {

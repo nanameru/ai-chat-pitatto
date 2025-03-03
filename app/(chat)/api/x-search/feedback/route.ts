@@ -2,16 +2,10 @@ import { streamText, createDataStreamResponse, smoothStream } from 'ai';
 import { createClient } from '@/utils/supabase/server';
 import { myProvider } from '@/lib/ai/models';
 import {
-  saveChat,
   saveMessages,
-  getMessagesByChatId,
-  deleteMessagesByChatIdAfterTimestamp,
   getChatById,
   deleteChatById,
 } from '@/lib/db/queries';
-import { Message as DBMessage } from '@/lib/db/schema';
-import { nanoid } from 'nanoid';
-import { Message } from 'ai';
 import { generateUUID } from '@/lib/utils';
 
 // 定数の定義

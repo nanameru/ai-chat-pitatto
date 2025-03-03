@@ -1,9 +1,7 @@
-import { Artifact, ArtifactActionContext } from "@/components/create-artifact";
+import { Artifact, type ArtifactActionContext } from "@/components/create-artifact";
 import { ExampleComponent } from "@/components/example-component";
-import { toast } from "sonner";
-import { ComponentType, Dispatch, SetStateAction } from "react";
-import { Suggestion } from "@/lib/db/schema";
-import { DataStreamDelta } from "@/components/data-stream-handler";
+import type { ComponentType, Dispatch, SetStateAction } from "react";
+import type { Suggestion } from "@/lib/db/schema";
 
 interface CustomArtifactMetadata {
   info: string;

@@ -4,10 +4,11 @@ import type {
   CreateMessage,
   Message,
 } from 'ai';
-import type { XSearchState } from '@/lib/ai/x-search';
 
 interface XSearchResponse {
-  xSearchState?: XSearchState;
+  xSearchState?: {
+    [key: string]: any;
+  };
   [key: string]: any;
 }
 
@@ -37,6 +38,7 @@ import { imageArtifact } from '@/artifacts/image/client';
 import { codeArtifact } from '@/artifacts/code/client';
 import { sheetArtifact } from '@/artifacts/sheet/client';
 import { textArtifact } from '@/artifacts/text/client';
+import { customArtifact } from '@/artifacts/custom/client';
 import equal from 'fast-deep-equal';
 
 export const artifactDefinitions = [
@@ -44,6 +46,7 @@ export const artifactDefinitions = [
   codeArtifact,
   imageArtifact,
   sheetArtifact,
+  customArtifact,
 ];
 export type ArtifactKind = (typeof artifactDefinitions)[number]['kind'];
 
@@ -82,6 +85,12 @@ function PureArtifact({
   chatId: string;
   input: string;
   setInput: (input: string) => void;
+  handleSubmit: (
+    event?: {
+      preventDefault?: () => void;
+    },
+    chatRequestOptions?: ChatRequestOptions,
+  ) => Promise<undefined | XSearchResponse>;
   isLoading: boolean;
   stop: () => void;
   attachments: Array<Attachment>;
@@ -93,12 +102,6 @@ function PureArtifact({
     message: Message | CreateMessage,
     chatRequestOptions?: ChatRequestOptions,
   ) => Promise<string | null | undefined>;
-  handleSubmit: (
-    event?: {
-      preventDefault?: () => void;
-    },
-    chatRequestOptions?: ChatRequestOptions,
-  ) => Promise<void | XSearchResponse>;
   reload: (
     chatRequestOptions?: ChatRequestOptions,
   ) => Promise<string | null | undefined>;
@@ -348,7 +351,6 @@ function PureArtifact({
                     chatId={chatId}
                     input={input}
                     setInput={setInput}
-                    handleSubmit={handleSubmit}
                     isLoading={isLoading}
                     stop={stop}
                     attachments={attachments}
@@ -356,7 +358,6 @@ function PureArtifact({
                     messages={messages}
                     append={append}
                     className="bg-background dark:bg-muted"
-                    setMessages={setMessages}
                     selectedModelId={selectedModelId}
                   />
                 </form>

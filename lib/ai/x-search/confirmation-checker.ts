@@ -1,4 +1,4 @@
-import { Message } from 'ai';
+import type { Message } from 'ai';
 
 const CONFIRMATION_PATTERNS = [
   '実行', 'はい', 'いいよ', 'お願い',

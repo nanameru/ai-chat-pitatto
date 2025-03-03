@@ -97,7 +97,7 @@ function formatTwitterPost(rawPost: any): TwitterPost {
       } else {
         // 文字列の場合の処理
         const date = new Date(created_at);
-        if (!isNaN(date.getTime())) {
+        if (!Number.isNaN(date.getTime())) {
           created_at = date.toISOString();
         } else {
           // 無効な日付の場合は現在時刻を使用
@@ -177,7 +177,7 @@ function parseStreamContent(content: string): any {
 
     // データ部分の抽出
     const startIndex = content.indexOf(dataPrefix) + dataPrefix.length;
-    let jsonStr = content.slice(startIndex).trim();
+    const jsonStr = content.slice(startIndex).trim();
     console.log('First parse - extracted JSON string length:', jsonStr.length);
 
     try {

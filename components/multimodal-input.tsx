@@ -477,7 +477,9 @@ function PureMultimodalInput({
           <WebSearchButton onClick={handleWebSearch} isLoading={isLoading} />
           <XSearchButton
             initialValue={isXSearchEnabled}
-            onXSearchToggle={onXSearchToggle}
+            onXSearchToggle={onXSearchToggle || ((enabled, silentMode) => {
+              console.log('[MultimodalInput] onXSearchToggle が未定義のため、デフォルト処理を実行します');
+            })}
           />
         </div>
 

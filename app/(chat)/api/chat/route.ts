@@ -3,15 +3,11 @@ import { createClient } from '@/utils/supabase/server';
 import { myProvider } from '@/lib/ai/models';
 import { regularPrompt, artifactsPrompt } from '@/lib/ai/prompts';
 import {
-  saveChat,
   saveMessages,
-  getMessagesByChatId,
-  deleteMessagesByChatIdAfterTimestamp,
   getChatById,
   deleteChatById,
 } from '@/lib/db/queries';
-import { Message as DBMessage } from '@/lib/db/schema';
-import { nanoid } from 'nanoid';
+import type { Message as DBMessage } from '@/lib/db/schema';
 
 // 定数の定義
 const MESSAGE_SIZE_LIMIT = 1024 * 1024; // 1MB
@@ -341,7 +337,7 @@ export async function POST(request: Request): Promise<Response> {
           const messagesSize = JSON.stringify(typedMessages).length;
           console.log('Messages validation:', {
             size: messagesSize,
-            sizeKB: (messagesSize / 1024).toFixed(2) + ' KB',
+            sizeKB: `${(messagesSize / 1024).toFixed(2)} KB`,
             limit: '1MB',
             isOverLimit: messagesSize > 1024 * 1024
           });
