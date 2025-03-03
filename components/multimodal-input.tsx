@@ -126,6 +126,8 @@ function PureMultimodalInput({
   // 親コンポーネントから渡された値を優先
   const isXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : localIsXSearchEnabled;
 
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+
   const handleXSearchToggle = useCallback(() => {
     const oldState = isXSearchEnabled;
     const newState = !oldState;
@@ -178,6 +180,19 @@ function PureMultimodalInput({
     }, 0);
   }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle]);
 
+  const handleWebSearchToggle = useCallback(() => {
+    const oldState = isWebSearchEnabled;
+    const newState = !oldState;
+    
+    console.log(`----- Web検索モード切替 -----`);
+    console.log(`Web検索ボタンがクリックされました`);
+    console.log(`モード変更: ${oldState ? 'Web検索モード' : '通常チャットモード'} → ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+    
+    setIsWebSearchEnabled(newState);
+    
+    console.log(`----- Web検索モード切替完了 -----`);
+  }, [isWebSearchEnabled, setIsWebSearchEnabled]);
+
   const handleXSearchSubmit = async (
     event?: { preventDefault?: () => void },
     chatRequestOptions?: ChatRequestOptions
@@ -196,6 +211,30 @@ function PureMultimodalInput({
       throw error;
     }
   };
+
+  const handleWebSearch = useCallback(async (
+    event?: { preventDefault?: () => void },
+    chatRequestOptions?: ChatRequestOptions
+  ) => {
+    console.log('[Web Search] Web検索処理を実行');
+    
+    try {
+      const options: ChatRequestOptions = {
+        ...chatRequestOptions,
+        data: {
+          ...((chatRequestOptions?.data as Record<string, unknown>) || {}),
+          searchType: 'web',
+          query: input,
+          isWebSearchEnabled: true
+        }
+      };
+      
+      return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
+    } catch (error) {
+      console.error('[Web Search] Web検索処理でエラーが発生:', error);
+      throw error;
+    }
+  }, [append, input]);
 
   const handleNormalChatSubmit = async (
     event?: { preventDefault?: () => void },
@@ -231,7 +270,7 @@ function PureMultimodalInput({
 
       // 親コンポーネントから渡された値を優先的に使用
       const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
-      const currentMode = effectiveXSearchEnabled ? 'Deep Researchモード' : 'チャットモード';
+      const currentMode = effectiveXSearchEnabled ? 'Deep Researchモード' : isWebSearchEnabled ? 'Web検索モード' : 'チャットモード';
       console.log('[Submit] 送信を開始します:', { currentMode, currentInput });
 
       try {
@@ -269,14 +308,14 @@ function PureMultimodalInput({
         return { error };
       }
     },
-    [propIsXSearchEnabled, isXSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError, setInput, setLocalStorageInput]
+    [propIsXSearchEnabled, isXSearchEnabled, isWebSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError, setInput, setLocalStorageInput]
   );
 
   const submitForm = useCallback(async () => {
     // 親コンポーネントから渡された値を優先的に使用
     const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
     console.log('[Submit] フォーム送信を開始:', {
-      mode: effectiveXSearchEnabled ? 'Deep Research' : '通常チャット',
+      mode: effectiveXSearchEnabled ? 'Deep Research' : isWebSearchEnabled ? 'Web検索' : '通常チャット',
       input,
       attachments
     });
@@ -291,6 +330,21 @@ function PureMultimodalInput({
       setAttachments([]);
 
       if (currentInput.trim() || currentAttachments.length > 0) {
+        // Web検索モードが有効な場合はWeb検索を実行
+        if (isWebSearchEnabled && !effectiveXSearchEnabled) {
+          const options: ChatRequestOptions = {
+            data: {
+              searchType: 'web',
+              query: currentInput,
+              isWebSearchEnabled: true,
+              chatId,
+              model: selectedModelId
+            }
+          };
+          await handleWebSearch(undefined, options);
+          return;
+        }
+        
         // 共通のオプション
         const options: ChatRequestOptions = {
           xSearchEnabled: effectiveXSearchEnabled,
@@ -313,8 +367,10 @@ function PureMultimodalInput({
     attachments,
     chatId,
     isXSearchEnabled,
+    isWebSearchEnabled,
     propIsXSearchEnabled,
     handleSubmitWithLogging,
+    handleWebSearch,
     setAttachments,
     setInput,
     setLocalStorageInput,
@@ -389,26 +445,6 @@ function PureMultimodalInput({
     [isLoading, submitForm],
   );
 
-  const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
-
-  const handleWebSearch = useCallback(() => {
-    const searchQuery = input;
-    const message: CreateMessage = {
-      id: nanoid(),
-      content: input,
-      role: 'user',
-      createdAt: new Date(),
-    };
-
-    append(message, {
-      data: {
-        searchType: 'web',
-        query: searchQuery,
-        isWebSearchEnabled,
-      }
-    });
-  }, [input, append, isWebSearchEnabled]);
-
   return (
     <div className="relative w-full flex flex-col gap-4">
       {messages.length === 0 &&
@@ -474,7 +510,7 @@ function PureMultimodalInput({
           >
             <PaperclipIcon size={16} />
           </Button>
-          <WebSearchButton onClick={handleWebSearch} isLoading={isLoading} />
+          <WebSearchButton onClick={handleWebSearchToggle} isLoading={isLoading} />
           <XSearchButton
             initialValue={isXSearchEnabled}
             onXSearchToggle={onXSearchToggle || ((enabled, silentMode) => {
@@ -515,7 +551,48 @@ export const MultimodalInput = memo(
 MultimodalInput.displayName = 'MultimodalInput';
 
 const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
-  const [isWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+  const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+  
+  // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
+  const [clientSideEnabled, setClientSideEnabled] = useState(false);
+  
+  // マウント後、localStorageの値に合わせて状態を更新
+  useEffect(() => {
+    setClientSideEnabled(isWebSearchEnabled);
+  }, [isWebSearchEnabled]);
+  
+  const handleButtonClick = useCallback(() => {
+    // 現在の状態を取得
+    const currentState = clientSideEnabled;
+    const newState = !currentState;
+    
+    console.log(`[PureWebSearchButton] ボタンがクリックされました: ${currentState ? 'Web検索モード' : '通常チャットモード'} → ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+    
+    // 即座に状態を更新して視覚的なフィードバックを提供
+    setClientSideEnabled(newState);
+    setIsWebSearchEnabled(newState);
+    
+    // カスタムイベントを即座に発火
+    try {
+      const event = new CustomEvent('websearch-mode-changed', { 
+        detail: { 
+          enabled: newState,
+          previous: currentState,
+          timestamp: new Date().toISOString(),
+          source: 'button-click'
+        } 
+      });
+      window.dispatchEvent(event);
+    } catch (error) {
+      // エラーログは表示しない
+    }
+    
+    // 親コンポーネントのハンドラを呼び出し
+    onClick();
+    
+    // 状態が確実に更新されたことを確認
+    console.log(`[PureWebSearchButton] モード切替完了: ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+  }, [clientSideEnabled, onClick, setIsWebSearchEnabled]);
 
   return (
     <TooltipProvider>
@@ -523,12 +600,12 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
         <TooltipTrigger asChild>
           <Button
             type="button"
-            onClick={onClick}
+            onClick={handleButtonClick}
             disabled={isLoading}
             className={cx(
-              "h-8 px-4 rounded-full text-sm border border-gray-200 flex items-center gap-2",
-              isWebSearchEnabled
-                ? "bg-gray-100 text-gray-500 hover:bg-gray-200"
+              "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200",
+              clientSideEnabled
+                ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
                 : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
             )}
             aria-label="Webで検索"
@@ -543,7 +620,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
             <span>Webで検索</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>インターネットで検索</TooltipContent>
+        <TooltipContent>{clientSideEnabled ? "Web検索モード中 - クリックで通常モードに戻す" : "Web検索モードに切り替え"}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );
