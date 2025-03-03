@@ -6,7 +6,6 @@ import {
   useState,
   useCallback,
   memo,
-  type ReactNode,
   type Dispatch,
   type SetStateAction,
   type ChangeEvent,
@@ -32,8 +31,6 @@ interface XSearchResponse {
 import cx from 'classnames';
 import { toast } from 'sonner';
 import { useLocalStorage, useWindowSize } from 'usehooks-ts';
-
-import { sanitizeUIMessages } from '@/lib/utils';
 import { PreviewAttachment } from './preview-attachment';
 import { Button } from './ui/button';
 import { Textarea } from './ui/textarea';
@@ -75,7 +72,7 @@ function PureMultimodalInput({
   className?: string;
   selectedModelId: string;
   isXSearchEnabled?: boolean;
-  onXSearchToggle?: (newValue: boolean) => void;
+  onXSearchToggle?: (newValue: boolean, silentMode?: boolean) => void;
   onError?: (error: Error) => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -137,18 +134,8 @@ function PureMultimodalInput({
     console.log(`----- Deep Researchモード切替 -----`);
     console.log(`Deep Researchボタンがクリックされました`);
     console.log(`モード変更: ${oldState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
-    console.log(`ボタンがクリックされました。現在の状態: ${newState}`);
     
-    // 親コンポーネントのコールバックを最初に呼び出す（最優先）
-    if (onXSearchToggle) {
-      console.log(`[Deep Research] 親コンポーネントにモード変更を通知: ${oldState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
-      onXSearchToggle(newState);
-    }
-    
-    // ローカルの状態を即座に更新
-    setLocalIsXSearchEnabled(newState);
-    
-    // LocalStorageに保存（他のコンポーネントも確実に値を取得できるようにする）
+    // LocalStorageに即座に保存（他のコンポーネントも確実に値を取得できるようにする）
     try {
       window.localStorage.setItem('searchMode', JSON.stringify(newState));
       console.log(`[Deep Research] LocalStorageに値を保存しました: ${newState}`);
@@ -156,22 +143,39 @@ function PureMultimodalInput({
       console.error(`[Deep Research] LocalStorageへの保存に失敗しました:`, error);
     }
     
-    // カスタムイベントを発火して他のコンポーネントに即座に通知
+    // ローカルの状態を即座に更新
+    setLocalIsXSearchEnabled(newState);
+    
+    // カスタムイベントを即座に発火して他のコンポーネントに通知
     try {
       const event = new CustomEvent('xsearch-mode-changed', { 
         detail: { 
           enabled: newState,
           previous: oldState,
-          timestamp: Date.now() 
+          timestamp: new Date().toLocaleTimeString(),
+          force: true, // 強制的に更新するフラグを追加
+          immediate: true // 即時更新フラグを追加
         } 
       });
       window.dispatchEvent(event);
-      console.log(`[Deep Research] カスタムイベントを発火しました`);
+      console.log(`[Deep Research] カスタムイベントを発火しました（即時更新）`);
     } catch (error) {
       console.error(`[Deep Research] カスタムイベント発火に失敗しました:`, error);
     }
     
+    // 親コンポーネントのコールバックを同期的に呼び出す
+    if (onXSearchToggle) {
+      console.log(`[Deep Research] 親コンポーネントにモード変更を通知: ${oldState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
+      onXSearchToggle(newState);
+    }
+    
     console.log(`----- Deep Researchモード切替完了 -----`);
+    
+    // 状態が確実に更新されたことを確認するためのチェック
+    setTimeout(() => {
+      const currentStorageValue = window.localStorage.getItem('searchMode');
+      console.log(`[Deep Research] 状態確認: LocalStorage=${currentStorageValue}, ローカル状態=${newState}`);
+    }, 0);
   }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle]);
 
   const handleXSearchSubmit = async (
@@ -471,7 +475,10 @@ function PureMultimodalInput({
             <PaperclipIcon size={16} />
           </Button>
           <WebSearchButton onClick={handleWebSearch} isLoading={isLoading} />
-          <XSearchButton onClick={handleXSearchToggle} isLoading={isLoading} isEnabled={isXSearchEnabled} />
+          <XSearchButton
+            initialValue={isXSearchEnabled}
+            onXSearchToggle={onXSearchToggle}
+          />
         </div>
 
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
@@ -545,14 +552,88 @@ PureWebSearchButton.displayName = 'PureWebSearchButton';
 const WebSearchButton = memo(PureWebSearchButton);
 WebSearchButton.displayName = 'WebSearchButton';
 
-const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, isEnabled }: { onClick: () => void; isLoading: boolean; isEnabled: boolean }) {
-  // Use useState to manage the button state with a default value of false for server rendering
-  const [clientSideEnabled, setClientSideEnabled] = useState(false);
+const PureXSearchButton = memo(function PureXSearchButton({
+  initialValue = false,
+  onXSearchToggle
+}: {
+  initialValue?: boolean;
+  onXSearchToggle: (enabled: boolean, silentMode?: boolean) => void;
+}) {
+  // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
+  const [clientSideEnabled, setClientSideEnabled] = useState(initialValue);
   
-  // After hydration, update the client-side state to match the prop
+  // マウント後、propsの値に合わせて状態を更新
   useEffect(() => {
-    setClientSideEnabled(isEnabled);
-  }, [isEnabled]);
+    setClientSideEnabled(initialValue);
+  }, [initialValue]);
+  
+  // ボタンの状態を視覚的に表示するためのクラス
+  const buttonClass = cx(
+    "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200",
+    clientSideEnabled 
+      ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
+      : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
+  );
+  
+  const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
+    
+    // 現在の状態を取得
+    const currentState = clientSideEnabled;
+    const newState = !currentState;
+    
+    console.log(`[PureXSearchButton] ボタンがクリックされました: ${currentState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
+    
+    // 即座に状態を更新して視覚的なフィードバックを提供
+    setClientSideEnabled(newState);
+    
+    // ボタンクリック時のフィードバックを即座に表示（DOM直接操作）
+    const button = e.currentTarget as HTMLButtonElement;
+    if (newState) {
+      button.classList.add('bg-blue-100', 'text-blue-500', 'border-blue-200');
+      button.classList.remove('bg-white', 'text-gray-700', 'border-gray-200');
+    } else {
+      button.classList.add('bg-white', 'text-gray-700', 'border-gray-200');
+      button.classList.remove('bg-blue-100', 'text-blue-500', 'border-blue-200');
+    }
+    
+    // LocalStorageに即座に保存
+    try {
+      window.localStorage.setItem('searchMode', JSON.stringify(newState));
+    } catch (error) {
+      // エラーログは表示しない
+    }
+    
+    // カスタムイベントを即座に発火（親コンポーネントのコールバックより先に）
+    try {
+      const event = new CustomEvent('xsearch-mode-changed', { 
+        detail: { 
+          enabled: newState,
+          previous: currentState,
+          timestamp: new Date().toISOString(),
+          force: true,
+          immediate: true,
+          source: 'button-click',
+          resetChat: true, // useChatを確実に初期化するフラグ
+          silentMode: true // ログを抑制するフラグ
+        } 
+      });
+      window.dispatchEvent(event);
+    } catch (error) {
+      // エラーログは表示しない
+    }
+    
+    // 親コンポーネントのハンドラを呼び出し
+    onXSearchToggle(newState, true);
+    
+    // 状態が確実に更新されたことを確認
+    console.log(`[PureXSearchButton] モード切替完了: ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
+  }, [clientSideEnabled, onXSearchToggle]);
+  
+  const onClick = useCallback(() => {
+    // 親コンポーネントのコールバックを呼び出し
+    onXSearchToggle(clientSideEnabled, true); // silentModeフラグを追加
+  }, [clientSideEnabled, onXSearchToggle]);
   
   return (
     <TooltipProvider>
@@ -560,19 +641,9 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
         <TooltipTrigger asChild>
           <Button
             type="button"
-            onClick={(e) => {
-              e.preventDefault();
-              // 即座に状態を更新して視覚的なフィードバックを提供
-              setClientSideEnabled(!clientSideEnabled);
-              onClick();
-            }}
-            disabled={isLoading}
-            className={cx(
-              "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-300",
-              clientSideEnabled
-                ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
-                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
-            )}
+            onClick={handleButtonClick}
+            disabled={false}
+            className={buttonClass}
             aria-label="Deep Research"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
@@ -590,6 +661,7 @@ const PureXSearchButton = memo(function PureXSearchButton({ onClick, isLoading, 
 PureXSearchButton.displayName = 'PureXSearchButton';
 
 const XSearchButton = memo(PureXSearchButton);
+XSearchButton.displayName = 'XSearchButton';
 
 const PureAttachmentsButton = memo(function PureAttachmentsButton({
   fileInputRef,

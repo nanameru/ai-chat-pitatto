@@ -4,7 +4,6 @@ import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai'
 import { useChat } from 'ai/react';
 import { useEffect, useOptimistic, useState, useRef, useCallback } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
-import type { XSearchResponse } from '@/lib/types';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -14,7 +13,7 @@ import { nanoid } from 'nanoid'; // nanoid をインポート
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
 import { Messages } from './messages';
-import { VisibilityType } from './visibility-selector';
+import type { VisibilityType } from './visibility-selector';
 import { useArtifactSelector } from '@/hooks/use-artifact';
 import { toast } from 'sonner';
 import { chatModels } from '@/lib/ai/models';
@@ -303,42 +302,100 @@ export function Chat({
   // カスタムイベントをリッスンして、ローカルストレージの値を直接確認
   useEffect(() => {
     const handleModeChange = (event: CustomEvent) => {
-      const { enabled, previous, timestamp } = event.detail;
-      console.log('[Event] X検索モード変更イベントを受信:', {
-        前のモード: previous ? 'X検索モード' : '通常チャットモード',
-        新しいモード: enabled ? 'X検索モード' : '通常チャットモード',
-        タイムスタンプ: new Date(timestamp).toLocaleTimeString()
-      });
+      const { enabled, previous, timestamp, force, immediate, source, resetChat, silentMode } = event.detail;
       
-      // モードが変更された場合のみ処理を実行
-      if (enabled !== isXSearchEnabled) {
-        console.log('[Event] モード変更を検出、チャットを再初期化します');
+      // silentModeフラグがある場合はログを抑制
+      if (!silentMode) {
+        console.log('[Event] X検索モード変更イベントを受信:', {
+          前のモード: previous ? 'X検索モード' : '通常チャットモード',
+          新しいモード: enabled ? 'X検索モード' : '通常チャットモード',
+          タイムスタンプ: timestamp,
+          強制更新: force ? 'あり' : 'なし',
+          即時更新: immediate ? 'あり' : 'なし',
+          ソース: source || '不明',
+          チャットリセット: resetChat ? '必須' : '任意'
+        });
+      }
+      
+      // モードが変更された場合、または強制更新フラグがある場合、またはチャットリセットが要求された場合に処理を実行
+      if (enabled !== isXSearchEnabled || force || resetChat) {
+        if (!silentMode) {
+          console.log('[Event] モード変更またはリセット要求を検出、チャットを再初期化します');
+        }
+        
+        // 即時更新フラグがある場合は、同期的に処理を実行
+        if (immediate && !silentMode) {
+          console.log('[Event] 即時更新フラグが検出されました。同期的に処理を実行します');
+        }
+        
+        // 状態を即座に更新（最優先）
+        setIsXSearchEnabled(enabled);
         
         // 既存のメッセージをクリア
         if (messages.length > 0) {
-          console.log(`[Event] 既存のメッセージをクリア（${messages.length}件）`);
+          if (!silentMode) {
+            console.log(`[Event] 既存のメッセージをクリア（${messages.length}件）`);
+          }
           originalSetMessages([]);
         }
         
-        // 状態を即座に更新
-        setIsXSearchEnabled(enabled);
-        
         // 即座に新しいキーを生成して useChat を強制的に再初期化
-        const forcedNewKey = `${id}-${enabled ? 'xsearch' : 'chat'}-${Date.now()}-forced`;
-        console.log(`[Event] チャットキーを強制更新: ${forcedNewKey}`);
+        // タイムスタンプをミリ秒単位で含めることで、確実に一意のキーになる
+        const timestampValue = Date.now();
+        const forcedNewKey = `${id}-${enabled ? 'xsearch' : 'chat'}-${timestampValue}-${resetChat ? 'reset' : (immediate ? 'immediate' : 'forced')}`;
+        if (!silentMode) {
+          console.log(`[Chat] チャットキーを強制更新: ${forcedNewKey}`);
+        }
         setChatKey(forcedNewKey);
         
-        // APIを即座に切り替え
-        if (reload) {
-          console.log(`[Event] useChat のリロードを実行`);
-          reload({
-            data: {
-              chatId: id,
-              model: selectedChatModel,
-              xSearchEnabled: enabled
+        // APIを即座に切り替え（同期的に実行）
+        if (immediate || resetChat) {
+          if (reload) {
+            if (!silentMode) {
+              console.log(`[Event] useChat のリロードを同期的に実行`);
             }
-          });
-          console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+            reload({
+              data: {
+                chatId: id,
+                model: selectedChatModel,
+                xSearchEnabled: enabled,
+                timestamp: timestampValue // タイムスタンプを含めて確実に再初期化
+              }
+            });
+            if (!silentMode) {
+              console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+            }
+          } else {
+            if (!silentMode) {
+              console.warn(`[Event] reloadが利用できません。強制的にページをリロードします`);
+            }
+            window.location.reload();
+          }
+        } else {
+          // 非同期的に実行（通常のケース）
+          setTimeout(() => {
+            if (reload) {
+              if (!silentMode) {
+                console.log(`[Event] useChat のリロードを実行`);
+              }
+              reload({
+                data: {
+                  chatId: id,
+                  model: selectedChatModel,
+                  xSearchEnabled: enabled,
+                  timestamp: timestampValue // タイムスタンプを含めて確実に再初期化
+                }
+              });
+              if (!silentMode) {
+                console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+              }
+            } else {
+              if (!silentMode) {
+                console.warn(`[Event] reloadが利用できません。強制的にページをリロードします`);
+              }
+              window.location.reload();
+            }
+          }, 0);
         }
       }
     };
@@ -423,49 +480,77 @@ export function Chat({
                     append={append}
                     selectedModelId={selectedChatModel}
                     isXSearchEnabled={isXSearchEnabled}
-                    onXSearchToggle={(newValue) => {
+                    onXSearchToggle={(newValue, silentMode) => {
                       const oldValue = isXSearchEnabled;
                       
-                      // ボタンクリック時のフィードバックを詳細にログ出力
-                      console.log(`[Parent] X検索ボタンがクリックされました`);
-                      console.log(`[Parent] X検索モード変更: ${oldValue ? 'X検索モード' : '通常チャットモード'} → ${newValue ? 'X検索モード' : '通常チャットモード'}`);
-                      console.log(`[Parent] 現在の状態: ${newValue}`);
-                      console.log(`[Parent] API変更: ${oldValue ? '/api/x-search/feedback' : '/api/chat'} → ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                      // silentModeフラグがある場合はログを抑制
+                      if (!silentMode) {
+                        console.log(`[Parent] X検索ボタンがクリックされました`);
+                        console.log(`[Parent] X検索モード変更: ${oldValue ? 'X検索モード' : '通常チャットモード'} → ${newValue ? 'X検索モード' : '通常チャットモード'}`);
+                      }
+                      
+                      // 状態を即座に更新（最優先）
+                      setIsXSearchEnabled(newValue);
+                      if (!silentMode) {
+                        console.log(`[Parent] 状態を更新しました: ${newValue}`);
+                      }
                       
                       // まず既存のメッセージをクリア（モード切替時は常にチャットをリセット）
                       if (messages.length > 0) {
-                        console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
+                        if (!silentMode) {
+                          console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
+                        }
                         originalSetMessages([]);
                       }
                       
-                      // 状態を即座に更新
-                      setIsXSearchEnabled(newValue);
-                      
                       // 即座に新しいキーを生成して useChat を強制的に再初期化
-                      // タイムスタンプを含めることで必ず異なるキーになる
-                      const forcedNewKey = `${id}-${newValue ? 'xsearch' : 'chat'}-${Date.now()}`;
-                      console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
+                      // タイムスタンプをミリ秒単位で含めることで、確実に一意のキーになる
+                      const timestamp = Date.now();
+                      const forcedNewKey = `${id}-${newValue ? 'xsearch' : 'chat'}-${timestamp}-reset`;
+                      if (!silentMode) {
+                        console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
+                      }
                       setChatKey(forcedNewKey);
                       
                       // APIエンドポイントを即座に切り替える
-                      console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                      if (!silentMode) {
+                        console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                      }
                       
-                      // useChat を強制的に再初期化
+                      // useChat を同期的に強制再初期化
                       if (reload) {
-                        console.log(`[Refresh] useChat を強制的に再初期化します`);
+                        if (!silentMode) {
+                          console.log(`[Refresh] useChat を同期的に再初期化します`);
+                        }
                         reload({
                           data: {
                             chatId: id,
                             model: selectedChatModel,
-                            xSearchEnabled: newValue
+                            xSearchEnabled: newValue,
+                            timestamp: timestamp, // タイムスタンプを含めて確実に再初期化
+                            forceReset: true // 強制的にリセットするフラグ
                           }
                         });
-                        console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                        if (!silentMode) {
+                          console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                        }
+                        
+                        // 確実に再初期化されたことを確認するためのチェック
+                        setTimeout(() => {
+                          if (!silentMode) {
+                            console.log(`[Verify] チャットの状態を確認: モード=${newValue ? 'X検索' : '通常チャット'}, キー=${forcedNewKey}`);
+                          }
+                        }, 100);
+                      } else {
+                        if (!silentMode) {
+                          console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
+                        }
+                        window.location.reload();
                       }
                     }}
                     onError={(error) => {
                       console.error('Error in MultimodalInput:', error);
-                      toast.error('エラーが発生しました: ' + error.message);
+                      toast.error(`エラーが発生しました: ${error.message}`);
                     }}
                   />
                   {messages.length === 0 && (
