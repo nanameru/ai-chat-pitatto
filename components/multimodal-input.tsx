@@ -589,16 +589,6 @@ const PureXSearchButton = memo(function PureXSearchButton({
     // 即座に状態を更新して視覚的なフィードバックを提供
     setClientSideEnabled(newState);
     
-    // ボタンクリック時のフィードバックを即座に表示（DOM直接操作）
-    const button = e.currentTarget as HTMLButtonElement;
-    if (newState) {
-      button.classList.add('bg-blue-100', 'text-blue-500', 'border-blue-200');
-      button.classList.remove('bg-white', 'text-gray-700', 'border-gray-200');
-    } else {
-      button.classList.add('bg-white', 'text-gray-700', 'border-gray-200');
-      button.classList.remove('bg-blue-100', 'text-blue-500', 'border-blue-200');
-    }
-    
     // LocalStorageに即座に保存
     try {
       window.localStorage.setItem('searchMode', JSON.stringify(newState));
