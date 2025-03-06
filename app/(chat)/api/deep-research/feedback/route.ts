@@ -109,7 +109,7 @@ const X_SEARCH_SYSTEM_PROMPT = `
 export const runtime = 'edge'
 
 export async function POST(request: Request): Promise<Response> {
-  console.log('Received x-search POST request');
+  console.log('Received deep-research POST request');
   const requestStartTime = Date.now();
   
   try {

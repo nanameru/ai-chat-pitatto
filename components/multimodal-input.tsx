@@ -184,13 +184,13 @@ function PureMultimodalInput({
     const oldState = isWebSearchEnabled;
     const newState = !oldState;
     
-    console.log(`----- Web検索モード切替 -----`);
-    console.log(`Web検索ボタンがクリックされました`);
-    console.log(`モード変更: ${oldState ? 'Web検索モード' : '通常チャットモード'} → ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+    console.log(`----- 検索モード切替 -----`);
+    console.log(`検索ボタンがクリックされました`);
+    console.log(`モード変更: ${oldState ? '検索モード' : '通常チャットモード'} → ${newState ? '検索モード' : '通常チャットモード'}`);
     
     setIsWebSearchEnabled(newState);
     
-    console.log(`----- Web検索モード切替完了 -----`);
+    console.log(`----- 検索モード切替完了 -----`);
   }, [isWebSearchEnabled, setIsWebSearchEnabled]);
 
   const handleXSearchSubmit = async (
@@ -216,7 +216,7 @@ function PureMultimodalInput({
     event?: { preventDefault?: () => void },
     chatRequestOptions?: ChatRequestOptions
   ) => {
-    console.log('[Web Search] Web検索処理を実行');
+    console.log('[検索] 検索処理を実行');
     
     try {
       const options: ChatRequestOptions = {
@@ -231,7 +231,7 @@ function PureMultimodalInput({
       
       return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
     } catch (error) {
-      console.error('[Web Search] Web検索処理でエラーが発生:', error);
+      console.error('[検索] 検索処理でエラーが発生:', error);
       throw error;
     }
   }, [append, input]);
@@ -270,7 +270,7 @@ function PureMultimodalInput({
 
       // 親コンポーネントから渡された値を優先的に使用
       const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
-      const currentMode = effectiveXSearchEnabled ? 'Deep Researchモード' : isWebSearchEnabled ? 'Web検索モード' : 'チャットモード';
+      const currentMode = effectiveXSearchEnabled ? 'Deep Researchモード' : isWebSearchEnabled ? '検索モード' : 'チャットモード';
       console.log('[Submit] 送信を開始します:', { currentMode, currentInput });
 
       try {
@@ -315,7 +315,7 @@ function PureMultimodalInput({
     // 親コンポーネントから渡された値を優先的に使用
     const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
     console.log('[Submit] フォーム送信を開始:', {
-      mode: effectiveXSearchEnabled ? 'Deep Research' : isWebSearchEnabled ? 'Web検索' : '通常チャット',
+      mode: effectiveXSearchEnabled ? 'Deep Research' : isWebSearchEnabled ? '検索' : '通常チャット',
       input,
       attachments
     });
@@ -330,7 +330,7 @@ function PureMultimodalInput({
       setAttachments([]);
 
       if (currentInput.trim() || currentAttachments.length > 0) {
-        // Web検索モードが有効な場合はWeb検索を実行
+        // 検索モードが有効な場合は検索を実行
         if (isWebSearchEnabled && !effectiveXSearchEnabled) {
           const options: ChatRequestOptions = {
             data: {
@@ -566,7 +566,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
     const currentState = clientSideEnabled;
     const newState = !currentState;
     
-    console.log(`[PureWebSearchButton] ボタンがクリックされました: ${currentState ? 'Web検索モード' : '通常チャットモード'} → ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+    console.log(`[PureWebSearchButton] ボタンがクリックされました: ${currentState ? '検索モード' : '通常チャットモード'} → ${newState ? '検索モード' : '通常チャットモード'}`);
     
     // 即座に状態を更新して視覚的なフィードバックを提供
     setClientSideEnabled(newState);
@@ -591,7 +591,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
     onClick();
     
     // 状態が確実に更新されたことを確認
-    console.log(`[PureWebSearchButton] モード切替完了: ${newState ? 'Web検索モード' : '通常チャットモード'}`);
+    console.log(`[PureWebSearchButton] モード切替完了: ${newState ? '検索モード' : '通常チャットモード'}`);
   }, [clientSideEnabled, onClick, setIsWebSearchEnabled]);
 
   return (
@@ -608,7 +608,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
                 ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
                 : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
             )}
-            aria-label="Webで検索"
+            aria-label="検索"
           >
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -617,10 +617,10 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
               <path d="M12 3C14.5 7.5 14.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M12 3C9.5 7.5 9.5 16.5 12 21" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-            <span>Webで検索</span>
+            <span>検索</span>
           </Button>
         </TooltipTrigger>
-        <TooltipContent>{clientSideEnabled ? "Web検索モード中 - クリックで通常モードに戻す" : "Web検索モードに切り替え"}</TooltipContent>
+        <TooltipContent>{clientSideEnabled ? "検索モード中 - クリックで通常モードに戻す" : "検索モードに切り替え"}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

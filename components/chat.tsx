@@ -205,7 +205,7 @@ export function Chat({
   } = useChat({
     ...chatOptions,
     // モードに応じたAPIエンドポイントを明示的に指定
-    api: isXSearchEnabled ? '/api/x-search/feedback' : '/api/chat', 
+    api: isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat', 
     body: {
       ...chatOptions.body,
       xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
@@ -514,7 +514,7 @@ export function Chat({
                       
                       // APIエンドポイントを即座に切り替える
                       if (!silentMode) {
-                        console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/x-search/feedback' : '/api/chat'}`);
+                        console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/deep-research/feedback' : '/api/chat'}`);
                       }
                       
                       // useChat を同期的に強制再初期化
@@ -607,7 +607,7 @@ export function Chat({
             preventDefault?: () => void;
           },
           options?: ChatRequestOptions & { xSearchEnabled?: boolean }
-        ) => {
+        ): Promise<{ success: boolean } | undefined> => {
           if (event?.preventDefault) {
             event.preventDefault();
           }
@@ -618,6 +618,7 @@ export function Chat({
             createdAt: new Date()
           };
           await append(message, options);
+          return { success: true };
         }}
         isLoading={isLoading}
         stop={stop}
