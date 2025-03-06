@@ -40,6 +40,7 @@ import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { ModelSelector } from './model-selector';
+import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
 
 function PureMultimodalInput({
   chatId,
@@ -212,30 +213,6 @@ function PureMultimodalInput({
     }
   };
 
-  const handleWebSearch = useCallback(async (
-    event?: { preventDefault?: () => void },
-    chatRequestOptions?: ChatRequestOptions
-  ) => {
-    console.log('[検索] 検索処理を実行');
-    
-    try {
-      const options: ChatRequestOptions = {
-        ...chatRequestOptions,
-        data: {
-          ...((chatRequestOptions?.data as Record<string, unknown>) || {}),
-          searchType: 'web',
-          query: input,
-          isWebSearchEnabled: true
-        }
-      };
-      
-      return await append({ id: nanoid(), content: input, role: 'user', createdAt: new Date() }, options);
-    } catch (error) {
-      console.error('[検索] 検索処理でエラーが発生:', error);
-      throw error;
-    }
-  }, [append, input]);
-
   const handleNormalChatSubmit = async (
     event?: { preventDefault?: () => void },
     chatRequestOptions?: ChatRequestOptions
@@ -332,16 +309,37 @@ function PureMultimodalInput({
       if (currentInput.trim() || currentAttachments.length > 0) {
         // 検索モードが有効な場合は検索を実行
         if (isWebSearchEnabled && !effectiveXSearchEnabled) {
-          const options: ChatRequestOptions = {
-            data: {
-              searchType: 'web',
-              query: currentInput,
-              isWebSearchEnabled: true,
-              chatId,
-              model: selectedModelId
-            }
-          };
-          await handleWebSearch(undefined, options);
+          console.log('[検索] 検索処理を実行');
+          
+          try {
+            // サブクエリを生成
+            console.log('[検索] サブクエリの生成を開始:', currentInput);
+            const subQueries = await generateSubQueries(currentInput);
+            console.log('[検索] 生成されたサブクエリ:', subQueries);
+            
+            // 結果をトーストで表示
+            toast.success(`${subQueries.length}個のサブクエリが生成されました`, {
+              description: subQueries.slice(0, 3).join(', ') + (subQueries.length > 3 ? '...' : '')
+            });
+            
+            // 検索オプションを設定
+            const options: ChatRequestOptions = {
+              data: {
+                searchType: 'web',
+                query: currentInput,
+                isWebSearchEnabled: true,
+                chatId,
+                model: selectedModelId,
+                subQueries: subQueries // サブクエリを追加
+              }
+            };
+            
+            await append({ id: nanoid(), content: currentInput, role: 'user', createdAt: new Date() }, options);
+          } catch (error) {
+            console.error('[検索] 検索処理でエラーが発生:', error);
+            toast.error('検索処理に失敗しました');
+            throw error;
+          }
           return;
         }
         
@@ -370,7 +368,6 @@ function PureMultimodalInput({
     isWebSearchEnabled,
     propIsXSearchEnabled,
     handleSubmitWithLogging,
-    handleWebSearch,
     setAttachments,
     setInput,
     setLocalStorageInput,
@@ -510,7 +507,7 @@ function PureMultimodalInput({
           >
             <PaperclipIcon size={16} />
           </Button>
-          <WebSearchButton onClick={handleWebSearchToggle} isLoading={isLoading} />
+          <WebSearchButton onClick={handleWebSearchToggle} isLoading={isLoading} input={input} />
           <XSearchButton
             initialValue={isXSearchEnabled}
             onXSearchToggle={onXSearchToggle || ((enabled, silentMode) => {
@@ -550,7 +547,7 @@ export const MultimodalInput = memo(
 
 MultimodalInput.displayName = 'MultimodalInput';
 
-const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading }: { onClick: () => void; isLoading: boolean }) {
+const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading, input }: { onClick: () => void; isLoading: boolean; input: string }) {
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
   
   // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
@@ -561,7 +558,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
     setClientSideEnabled(isWebSearchEnabled);
   }, [isWebSearchEnabled]);
   
-  const handleButtonClick = useCallback(() => {
+  const handleButtonClick = useCallback(async () => {
     // 現在の状態を取得
     const currentState = clientSideEnabled;
     const newState = !currentState;
@@ -628,7 +625,9 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
 
 PureWebSearchButton.displayName = 'PureWebSearchButton';
 
-const WebSearchButton = memo(PureWebSearchButton);
+const WebSearchButton = memo(function WebSearchButton({ onClick, isLoading, input }: { onClick: () => void; isLoading: boolean; input: string }) {
+  return <PureWebSearchButton onClick={onClick} isLoading={isLoading} input={input} />;
+});
 WebSearchButton.displayName = 'WebSearchButton';
 
 const PureXSearchButton = memo(function PureXSearchButton({
@@ -717,14 +716,14 @@ const PureXSearchButton = memo(function PureXSearchButton({
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
-            </svg>
-            <span>Deep Research</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
+          </svg>
+          <span>Deep Research</span>
+        </Button>
+      </TooltipTrigger>
+      <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
+    </Tooltip>
+  </TooltipProvider>
+);
 });
 
 PureXSearchButton.displayName = 'PureXSearchButton';
