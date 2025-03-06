@@ -596,7 +596,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            type="button"
+            variant="outline"
             onClick={handleButtonClick}
             disabled={isLoading}
             className={cx(
@@ -708,7 +708,7 @@ const PureXSearchButton = memo(function PureXSearchButton({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            type="button"
+            variant="outline"
             onClick={handleButtonClick}
             disabled={false}
             className={buttonClass}
