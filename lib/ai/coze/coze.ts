@@ -5,6 +5,36 @@ const RETRY_DELAY = 3000;    // 5秒→3秒にさらに短縮
 const MAX_RETRIES = 2;       // 2回のまま維持
 const BATCH_DELAY = 5000;    // 8秒→5秒にさらに短縮
 
+// デバッグログの設定
+const DEBUG_MODE = true; // 開発時はtrueに設定
+
+/**
+ * デバッグログを出力する関数
+ * サーバーサイドとクライアントサイドの両方で動作するように設計
+ */
+function debugLog(...args: any[]) {
+  if (!DEBUG_MODE) return;
+  
+  // サーバーサイドとクライアントサイドの両方でログを出力
+  console.log(...args);
+  
+  // クライアントサイドの場合、window.consoleにも出力
+  if (typeof window !== 'undefined') {
+    // ブラウザ環境の場合
+    const prefix = '[X-Search Debug]';
+    window.console.log(prefix, ...args);
+    
+    // 開発ツールのコンソールに目立つように表示
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('Error')) {
+      window.console.error(prefix, ...args);
+    } else if (args[0] && typeof args[0] === 'string' && args[0].includes('Warning')) {
+      window.console.warn(prefix, ...args);
+    } else if (args[0] && typeof args[0] === 'string' && (args[0].includes('Starting') || args[0].includes('Completed'))) {
+      window.console.info(prefix, ...args);
+    }
+  }
+}
+
 // レート制限とクォータ制限の管理のための定数
 const RATE_LIMIT = {
   MAX_REQUESTS_PER_MINUTE: 30,
@@ -156,6 +186,12 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function parseStreamContent(content: string): any {
   console.log('\n=== parseStreamContent ===');
   console.log('Input content length:', content.length);
+  
+  // 入力内容の表示（長すぎる場合は最初の200文字のみ）
+  const displayContent = content.length > 200 
+    ? content.substring(0, 200) + '... (truncated)' 
+    : content;
+  console.log('Raw content:', displayContent);
 
   try {
     // イベントメッセージをスキップ
@@ -179,39 +215,71 @@ function parseStreamContent(content: string): any {
     const startIndex = content.indexOf(dataPrefix) + dataPrefix.length;
     const jsonStr = content.slice(startIndex).trim();
     console.log('First parse - extracted JSON string length:', jsonStr.length);
+    
+    // JSON文字列の表示（長すぎる場合は最初の300文字のみ）
+    const displayJsonStr = jsonStr.length > 300 
+      ? jsonStr.substring(0, 300) + '... (truncated)' 
+      : jsonStr;
+    console.log('Extracted JSON string:', displayJsonStr);
 
     try {
       // 最初のJSONパース
       const firstParse = JSON.parse(jsonStr);
+      console.log('First parse result structure:', Object.keys(firstParse));
+      console.log('First parse result (sample):', JSON.stringify(firstParse).substring(0, 300) + '...');
       
       // contentプロパティが文字列として存在する場合は二重パース
       if (firstParse.content && typeof firstParse.content === 'string') {
         console.log('Found nested content, performing second parse');
-        const secondParse = JSON.parse(firstParse.content);
-        console.log('Second parse successful, data structure:', 
-          Object.keys(secondParse));
-        return secondParse;
+        console.log('Nested content (sample):', firstParse.content.substring(0, 200) + '...');
+        
+        try {
+          const secondParse = JSON.parse(firstParse.content);
+          console.log('Second parse successful, data structure:', Object.keys(secondParse));
+          console.log('Second parse result (sample):', JSON.stringify(secondParse).substring(0, 300) + '...');
+          return secondParse;
+        } catch (nestedError) {
+          console.error('Error parsing nested content:', nestedError);
+          console.error('Problematic nested content:', firstParse.content.substring(0, 200) + '...');
+          return firstParse; // ネストされたパースに失敗した場合は最初の結果を返す
+        }
       }
 
       // debug_urlのみの応答は処理をスキップ
       if (firstParse && Object.keys(firstParse).length === 1 && firstParse.debug_url) {
-        console.log('Skipping debug_url only response');
+        console.log('Skipping debug_url only response:', firstParse.debug_url);
         return null;
       }
 
       // エラーレスポンスの確認
       if (firstParse.error_code) {
-        console.log('Error response detected:', firstParse.error_message);
+        console.log('Error response detected - Code:', firstParse.error_code);
+        console.log('Error message:', firstParse.error_message);
         return null;
+      }
+
+      // freeBusyプロパティの確認
+      if (firstParse.output && Array.isArray(firstParse.output)) {
+        console.log('Output array found with', firstParse.output.length, 'items');
+        
+        // freeBusyプロパティを持つアイテムを確認
+        const hasPosts = firstParse.output.some((item: any) => item?.freeBusy?.post);
+        if (hasPosts) {
+          console.log('Found posts in output items');
+        } else {
+          console.log('No posts found in output items');
+        }
       }
 
       return firstParse;
     } catch (parseError) {
-      console.log('JSON parse error:', parseError);
+      console.error('JSON parse error:', parseError);
+      console.error('Problematic JSON string:', jsonStr.substring(0, 200) + '...');
       return null;
     }
   } catch (e) {
     console.error('Error in parseStreamContent:', e);
+    console.error('Content causing error:', content.substring(0, 200) + '...');
     return null;
   }
 }
@@ -242,6 +310,14 @@ async function processStreamResponse(
     const responseText = await response.text();
     console.log('\n=== Raw Response ===');
     console.log('Response text length:', responseText.length);
+    
+    // 生のレスポンスデータを表示（長すぎる場合は最初の1000文字のみ）
+    if (responseText.length > 0) {
+      const displayText = responseText.length > 1000 
+        ? responseText.substring(0, 1000) + '... (truncated)' 
+        : responseText;
+      console.log('Raw response data:\n', displayText);
+    }
 
     const allPosts: TwitterPost[] = [];
     let newestId: string | undefined;
@@ -251,6 +327,11 @@ async function processStreamResponse(
     const lines = responseText.split('\n').filter(line => line.trim());
     console.log('\n=== Processing', lines.length, 'lines ===');
 
+    // 各行の詳細をログに出力
+    lines.forEach((line, index) => {
+      console.log(`Line ${index + 1} (${line.length} chars): ${line.substring(0, 100)}${line.length > 100 ? '...' : ''}`);
+    });
+
     for (const line of lines) {
       try {
         const parsedContent = parseStreamContent(line);
@@ -258,11 +339,17 @@ async function processStreamResponse(
           continue;
         }
 
+        // パースされたコンテンツの詳細をログに出力
+        console.log('\n=== Parsed Content ===');
+        console.log(JSON.stringify(parsedContent, null, 2));
+
         // outputの配列を処理
         if (parsedContent.output && Array.isArray(parsedContent.output)) {
           console.log('Processing output array, length:', parsedContent.output.length);
           
           for (const item of parsedContent.output) {
+            console.log('Output item:', JSON.stringify(item, null, 2));
+            
             if (item?.freeBusy?.post) {
               const posts = Array.isArray(item.freeBusy.post) 
                 ? item.freeBusy.post 
@@ -271,8 +358,12 @@ async function processStreamResponse(
               console.log(`Found ${posts.length} posts in output item`);
               
               for (const post of posts) {
+                console.log('Raw post data:', JSON.stringify(post, null, 2));
+                
                 try {
                   const formattedPost = formatTwitterPost(post);
+                  console.log('Formatted post:', JSON.stringify(formattedPost, null, 2));
+                  
                   if (!allPosts.some(p => p.id === formattedPost.id)) {
                     allPosts.push(formattedPost);
                     console.log(`Added post ${formattedPost.id} to results (total: ${allPosts.length})`);
@@ -282,6 +373,7 @@ async function processStreamResponse(
                   }
                 } catch (postError) {
                   console.error('Error formatting post:', postError);
+                  console.error('Post data causing error:', JSON.stringify(post));
                 }
               }
             }
@@ -289,6 +381,7 @@ async function processStreamResponse(
         }
       } catch (lineError) {
         console.error('Error processing line:', lineError);
+        console.error('Problematic line:', line);
       }
     }
 
@@ -752,12 +845,12 @@ export async function executeParallelCozeQueries(
     skipStorage?: boolean; // データベースへの保存をスキップするかどうか
   }
 ): Promise<FormattedResponse[]> {
-  console.log(`[executeParallelCozeQueries] Starting parallel execution of ${subQueries.length} subqueries`);
+  debugLog(`[executeParallelCozeQueries] Starting parallel execution of ${subQueries.length} subqueries`);
   
   // 各サブクエリを並列に実行するPromiseの配列を作成
   const promises = subQueries.map(async (query, index) => {
     try {
-      console.log(`[Parallel Query ${index + 1}/${subQueries.length}] Executing: ${query}`);
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Executing: ${query}`);
       
       // クエリをクリーンアップ
       const cleanQuery = query
@@ -768,7 +861,7 @@ export async function executeParallelCozeQueries(
         .replace(/,\s*$/, '')
         .trim();
 
-      console.log(`Clean query: ${cleanQuery}`);
+      debugLog(`Clean query: ${cleanQuery}`);
       
       // 各クエリを個別に実行
       const response = await fetch(API_URL, {
@@ -795,10 +888,10 @@ export async function executeParallelCozeQueries(
         onProgress(index + 1);
       }
       
-      console.log(`[Parallel Query ${index + 1}/${subQueries.length}] Completed successfully`);
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Completed successfully`);
       return result;
     } catch (error) {
-      console.error(`[Parallel Query ${index + 1}/${subQueries.length}] Failed:`, error);
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Failed:`, error);
       // エラーが発生しても処理を続行するため、エラーオブジェクトではなく
       // エラー情報を含む空のレスポンスを返す
       return {

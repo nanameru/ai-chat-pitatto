@@ -41,7 +41,7 @@ import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
-import { executeParallelCozeQueries } from '@/lib/ai/coze/coze';
+import { executeParallelCozeQueries, FormattedResponse } from '@/lib/ai/coze/coze';
 
 function PureMultimodalInput({
   chatId,
@@ -336,7 +336,7 @@ function PureMultimodalInput({
             };
             
             // 結果を格納する変数を事前に宣言
-            let results = [];
+            let results: FormattedResponse[] = [];
             
             try {
               // 並列実行（データベース保存をスキップ）
@@ -362,7 +362,7 @@ function PureMultimodalInput({
             }
             
             // 結果の集計
-            const summary = results.map(result => ({
+            const summary = (results as FormattedResponse[]).map(result => ({
               query: result.query,
               postsCount: result.posts?.length || 0,
               hasError: false
