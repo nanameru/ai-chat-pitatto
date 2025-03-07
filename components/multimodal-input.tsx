@@ -41,6 +41,7 @@ import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
+import { executeParallelCozeQueries } from '@/lib/ai/coze/coze';
 
 function PureMultimodalInput({
   chatId,
@@ -307,7 +308,91 @@ function PureMultimodalInput({
       setAttachments([]);
 
       if (currentInput.trim() || currentAttachments.length > 0) {
-        // 検索モードが有効な場合は検索を実行
+        // X検索モードが有効な場合はX検索を実行
+        if (effectiveXSearchEnabled) {
+          console.log('[Deep Research] Deep Research処理を実行');
+          
+          try {
+            // サブクエリを生成
+            console.log('[Deep Research] サブクエリの生成を開始:', currentInput);
+            const subQueries = await generateSubQueries(currentInput);
+            console.log('[Deep Research] 生成されたサブクエリ:', subQueries);
+            
+            // 結果をトーストで表示
+            toast.success(`${subQueries.length}個のサブクエリが生成されました`, {
+              description: subQueries.slice(0, 3).join(', ') + (subQueries.length > 3 ? '...' : '')
+            });
+            
+            // サブクエリを並列実行
+            console.log('[Deep Research] サブクエリの並列実行を開始');
+            console.log('[Deep Research] サブクエリ一覧:', JSON.stringify(subQueries, null, 2));
+            
+            // APIキーとワークフローIDの確認
+            const apiKey = process.env.NEXT_PUBLIC_COZE_API_KEY;
+            console.log('[Deep Research] APIキー確認:', apiKey ? '設定されています' : '設定されていません');
+            
+            const onProgress = (processed: number) => {
+              console.log(`[Deep Research] 進捗状況: ${processed}/${subQueries.length} 完了`);
+            };
+            
+            // 結果を格納する変数を事前に宣言
+            let results = [];
+            
+            try {
+              // 並列実行（データベース保存をスキップ）
+              console.log('[Deep Research] executeParallelCozeQueriesを呼び出します');
+              results = await executeParallelCozeQueries(
+                subQueries,
+                chatId,
+                'user-query',
+                onProgress,
+                { skipStorage: true }
+              );
+              
+              // 結果をコンソールに表示
+              console.log('[Deep Research] 並列実行結果受信:', results ? '成功' : '失敗');
+              console.log('[Deep Research] 結果の型:', typeof results);
+              console.log('[Deep Research] 結果の配列長:', Array.isArray(results) ? results.length : '配列ではありません');
+              console.log('[Deep Research] 詳細結果:', JSON.stringify(results, null, 2));
+            } catch (error) {
+              console.error('[Deep Research] 並列実行中にエラーが発生しました:', error);
+              // エラーが発生しても処理を続行するため、空の結果を使用
+              results = [];
+              toast.error('サブクエリの並列実行中にエラーが発生しましたが、処理を続行します');
+            }
+            
+            // 結果の集計
+            const summary = results.map(result => ({
+              query: result.query,
+              postsCount: result.posts?.length || 0,
+              hasError: false
+            }));
+            
+            console.log('[Deep Research] 結果集計:', summary);
+            
+            // 検索オプションを設定
+            const options: ChatRequestOptions = {
+              xSearchEnabled: true,
+              data: {
+                searchType: 'x-search',
+                query: currentInput,
+                chatId,
+                model: selectedModelId,
+                subQueries: subQueries,
+                results: summary
+              }
+            };
+            
+            await append({ id: nanoid(), content: currentInput, role: 'user', createdAt: new Date() }, options);
+          } catch (error) {
+            console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
+            toast.error('Deep Research処理に失敗しました');
+            throw error;
+          }
+          return;
+        }
+        
+        // 通常の検索モードが有効な場合は検索を実行
         if (isWebSearchEnabled && !effectiveXSearchEnabled) {
           console.log('[検索] 検索処理を実行');
           
@@ -596,7 +681,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant="outline"
+            type="button"
             onClick={handleButtonClick}
             disabled={isLoading}
             className={cx(
@@ -607,7 +692,7 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
             )}
             aria-label="検索"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M3.6001 9H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M3.6001 15H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -708,13 +793,13 @@ const PureXSearchButton = memo(function PureXSearchButton({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant="outline"
+            type="button"
             onClick={handleButtonClick}
             disabled={false}
             className={buttonClass}
             aria-label="Deep Research"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
           </svg>
           <span>Deep Research</span>

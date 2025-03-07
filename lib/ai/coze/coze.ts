@@ -220,7 +220,10 @@ async function processStreamResponse(
   response: Response,
   query: string,
   userId?: string,
-  chatId?: string
+  chatId?: string,
+  options?: {
+    skipStorage?: boolean; // データベースへの保存をスキップするかどうか
+  }
 ): Promise<FormattedResponse> {
   const startTime = Date.now();
   console.log('\n=== Starting processStreamResponse ===');
@@ -303,7 +306,8 @@ async function processStreamResponse(
     console.log('Processing time:', formattedResponse.metadata.processing_time, 'ms');
 
     // 結果をDBに保存（Embedding付き）
-    if (allPosts.length > 0) {
+    if (allPosts.length > 0 && !options?.skipStorage) {
+      console.log('Storing data with embedding...');
       await storeDataWithEmbedding(
         query,
         allPosts.map(post => ({
@@ -728,6 +732,98 @@ export async function storeDataWithEmbedding(
     }
     throw new Error('不明なエラーが発生しました');
   }
+}
+
+/**
+ * サブクエリを並列実行して結果を返す
+ * @param subQueries サブクエリの配列
+ * @param userId ユーザーID（オプション）
+ * @param chatId チャットID（オプション）
+ * @param onProgress 進捗状況のコールバック関数（オプション）
+ * @param options 追加オプション
+ * @returns 検索結果の配列
+ */
+export async function executeParallelCozeQueries(
+  subQueries: string[],
+  userId?: string,
+  chatId?: string,
+  onProgress?: (processed: number) => void,
+  options?: {
+    skipStorage?: boolean; // データベースへの保存をスキップするかどうか
+  }
+): Promise<FormattedResponse[]> {
+  console.log(`[executeParallelCozeQueries] Starting parallel execution of ${subQueries.length} subqueries`);
+  
+  // 各サブクエリを並列に実行するPromiseの配列を作成
+  const promises = subQueries.map(async (query, index) => {
+    try {
+      console.log(`[Parallel Query ${index + 1}/${subQueries.length}] Executing: ${query}`);
+      
+      // クエリをクリーンアップ
+      const cleanQuery = query
+        .replace(/```json\s*\[?\s*/g, '')
+        .replace(/\s*\]?\s*```\s*$/, '')
+        .replace(/[{}"\\]/g, '')
+        .replace(/^\s*query:\s*/, '')
+        .replace(/,\s*$/, '')
+        .trim();
+
+      console.log(`Clean query: ${cleanQuery}`);
+      
+      // 各クエリを個別に実行
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_COZE_API_KEY}`
+        },
+        body: JSON.stringify({
+          parameters: { input: cleanQuery },
+          workflow_id: WORKFLOW_ID
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      
+      // レスポンスを処理
+      const result = await processStreamResponse(response, query, userId, chatId, options);
+      
+      // 進捗状況を更新
+      if (onProgress) {
+        onProgress(index + 1);
+      }
+      
+      console.log(`[Parallel Query ${index + 1}/${subQueries.length}] Completed successfully`);
+      return result;
+    } catch (error) {
+      console.error(`[Parallel Query ${index + 1}/${subQueries.length}] Failed:`, error);
+      // エラーが発生しても処理を続行するため、エラーオブジェクトではなく
+      // エラー情報を含む空のレスポンスを返す
+      return {
+        query,
+        posts: [],
+        metadata: {
+          total_count: 0,
+          processing_time: 0
+        },
+        error: error instanceof Error ? error.message : '不明なエラーが発生しました'
+      };
+    }
+  });
+  
+  // すべてのPromiseを並列実行して結果を待つ
+  const results = await Promise.all(promises);
+  
+  console.log(`[executeParallelCozeQueries] Completed parallel execution of ${subQueries.length} subqueries`);
+  console.log(`[executeParallelCozeQueries] Results summary:`, results.map(r => ({
+    query: r.query,
+    postsCount: r.posts?.length || 0,
+    hasError: !!r.error
+  })));
+  
+  return results;
 }
 
 export async function executeCozeQueries(
