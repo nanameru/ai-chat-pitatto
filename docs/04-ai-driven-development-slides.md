@@ -152,6 +152,26 @@ PitattoChat UI チーム
 ---
 
 <!-- _header: ツール比較 -->
+# Cursor - 有益トピック
+
+**Pro版の料金対策:**
+- Pro版（$20/月）で500回/月の制限あり
+- 「Enable for usage-based for premium models」をオフにすると
+- Slowモードになるが従量課金されずに使い続けられる
+
+**メリット:**
+- Claude 3.7 Sonnetが実質使い放題
+- MCPやAgentモードも利用可能
+- コスト効率が非常に高い
+
+> 「Cursorはpro版20$/月で、500回超えてもSlowモードでsonnet3.7が使い放題！MCPも使えてAgentモード使えて3.7sonnetを20$で使い放題とかやばいねマジでCursorさん太っ腹ですね〜」
+
+**参考文献:**
+- [@akira_papa_IT](https://x.com/akira_papa_IT/status/1895649641116680363)
+
+---
+
+<!-- _header: ツール比較 -->
 # Windsurf
 
 **特徴:**
