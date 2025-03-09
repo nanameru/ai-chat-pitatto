@@ -20,6 +20,7 @@ import {
 } from '@/components/ui/tooltip';
 import { useRouter } from 'next/navigation';
 import { createClient } from '@/utils/supabase/client';
+import { PencilEditIcon } from '@/components/icons';
 
 const SIDEBAR_COOKIE_NAME = 'sidebar:state';
 const SIDEBAR_COOKIE_MAX_AGE = 60 * 60 * 24 * 7;
@@ -327,7 +328,7 @@ const SidebarTrigger = React.forwardRef<
       }}
       {...props}
     >
-      <PanelLeft />
+      <PencilEditIcon />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );
