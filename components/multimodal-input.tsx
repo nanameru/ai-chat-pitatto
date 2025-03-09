@@ -380,6 +380,7 @@ function PureMultimodalInput({
     formData.append('file', file);
 
     try {
+      console.log(`ファイルをアップロード中: ${file.name} (${file.size} bytes)`);
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
@@ -387,6 +388,7 @@ function PureMultimodalInput({
 
       if (response.ok) {
         const data = await response.json();
+        console.log('ファイルアップロード成功:', data);
         const { url, pathname, contentType } = data;
 
         return {
@@ -395,10 +397,23 @@ function PureMultimodalInput({
           contentType: contentType,
         };
       }
-      const { error } = await response.json();
-      toast.error(error);
+      
+      // エラーレスポンスの詳細を取得
+      let errorMessage = 'ファイルのアップロードに失敗しました';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+      } catch (e) {
+        console.error('エラーレスポンスの解析に失敗:', e);
+      }
+      
+      console.error(`アップロードエラー (${response.status}): ${errorMessage}`);
+      toast.error(errorMessage);
+      return undefined;
     } catch (error) {
-      toast.error('Failed to upload file, please try again!');
+      console.error('ファイルアップロード例外:', error);
+      toast.error('ファイルのアップロードに失敗しました。ネットワーク接続を確認してください。');
+      return undefined;
     }
   };
 
