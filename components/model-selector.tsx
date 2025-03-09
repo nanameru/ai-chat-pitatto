@@ -98,7 +98,7 @@ export function ModelSelector({
               <span>Enable Search</span>
             </div>
             <div className="h-6 w-10 bg-gray-200 dark:bg-gray-700 rounded-full relative">
-              <div className="h-5 w-5 bg-white dark:bg-gray-900 rounded-full absolute right-0.5 top-0.5" />
+              <div className="size-5 bg-white dark:bg-gray-900 rounded-full absolute right-0.5 top-0.5" />
             </div>
           </DropdownMenuItem>
         </div>

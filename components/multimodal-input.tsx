@@ -371,7 +371,8 @@ function PureMultimodalInput({
     setAttachments,
     setInput,
     setLocalStorageInput,
-    selectedModelId
+    selectedModelId,
+    append
   ]);
 
   const uploadFile = async (file: File) => {
@@ -497,7 +498,7 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
           <Button
             type="button"
-            className="h-8 w-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+            className="size-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               fileInputRef.current?.click();
@@ -768,7 +769,7 @@ const PureStopButton = memo(function PureStopButton({
       onClick={() => {
         stop();
       }}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
       <StopIcon size={16} />
@@ -797,7 +798,7 @@ const SendButton = memo(function SendButton({
         submitForm();
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信"
     >
       <ArrowUpIcon size={16} />
