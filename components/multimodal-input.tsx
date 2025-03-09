@@ -41,6 +41,7 @@ import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
+import { executeParallelCozeQueries, FormattedResponse } from '@/lib/ai/coze/coze';
 
 function PureMultimodalInput({
   chatId,
@@ -307,7 +308,206 @@ function PureMultimodalInput({
       setAttachments([]);
 
       if (currentInput.trim() || currentAttachments.length > 0) {
-        // 検索モードが有効な場合は検索を実行
+        // WebSearch モードが有効な場合
+        console.log('[WebSearch] モード確認:', { 
+          isWebSearchEnabled, 
+          effectiveXSearchEnabled, 
+          condition: isWebSearchEnabled && !effectiveXSearchEnabled,
+          input: currentInput
+        });
+        
+        if (isWebSearchEnabled && !effectiveXSearchEnabled) {
+          console.log('[WebSearch] 検索処理を実行');
+          
+          try {
+            // サブクエリを生成
+            console.log('[WebSearch] サブクエリの生成を開始:', currentInput);
+            console.log('[WebSearch] Gemini APIキー確認:', process.env.GEMINI_API_KEY ? '設定されています' : '設定されていません');
+            toast.info('サブクエリを生成中...', { duration: 3000 });
+            
+            try {
+              const subQueries = await generateSubQueries(currentInput);
+              console.log('[WebSearch] generateSubQueries 結果:', subQueries);
+            
+            if (subQueries && subQueries.length > 0) {
+              console.log(`[WebSearch] ${subQueries.length}個のサブクエリを生成しました:`, subQueries);
+              toast.success(`${subQueries.length}個のサブクエリを生成しました`, { duration: 3000 });
+              
+              // 並列実行の進捗を表示するためのコールバック
+              const onProgress = (processed: number) => {
+                console.log(`[WebSearch] 進捗: ${processed}/${subQueries.length} クエリを処理`);
+                toast.info(`検索実行中: ${processed}/${subQueries.length}`, { duration: 1500 });
+              };
+              
+              // サブクエリを並列実行
+              console.log(`[WebSearch] サブクエリの並列実行を開始します`);
+              const results = await executeParallelCozeQueries(subQueries, chatId, 'user-query', onProgress);
+              
+              // 結果をログに出力
+              console.log(`[WebSearch] 検索結果:`, results.map(r => ({
+                query: r.query,
+                postsCount: r.posts?.length || 0,
+                hasError: !!r.error
+              })));
+              
+              // 成功メッセージを表示
+              const totalPosts = results.reduce((sum, r) => sum + (r.posts?.length || 0), 0);
+              toast.success(`${results.length}個のクエリから${totalPosts}件の結果を取得しました`, { duration: 5000 });
+              
+              // 通常のチャット処理を続行
+              // undefined値をJSONValue型と互換性のある形式に変換
+              const toJSONSafe = (obj: any): any => {
+                if (obj === null || obj === undefined) {
+                  return null; // undefinedをnullに変換
+                }
+                
+                if (Array.isArray(obj)) {
+                  return obj.map(item => toJSONSafe(item));
+                }
+                
+                if (typeof obj === 'object') {
+                  const result: Record<string, any> = {};
+                  for (const key in obj) {
+                    if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                      result[key] = toJSONSafe(obj[key]);
+                    }
+                  }
+                  return result;
+                }
+                
+                return obj;
+              };
+              
+              const serializedResults = results.map(result => {
+                const jsonSafeResult: Record<string, any> = {
+                  query: result.query,
+                  posts: toJSONSafe(result.posts),
+                  metadata: toJSONSafe(result.metadata)
+                };
+                
+                // errorプロパティが存在する場合のみ追加
+                if (result.error) {
+                  jsonSafeResult.error = String(result.error);
+                }
+                
+                return jsonSafeResult;
+              });
+              
+              await handleSubmitWithLogging(undefined, {
+                data: {
+                  webSearchResults: serializedResults,
+                  webSearchEnabled: true
+                }
+              });
+              
+              return { success: true };
+            } else {
+              console.warn(`[WebSearch] サブクエリの生成に失敗しました: 空の配列または未定義が返されました`);
+              toast.error('サブクエリの生成に失敗しました', { duration: 3000 });
+              
+              // 通常のチャット処理を続行
+              await handleSubmitWithLogging();
+            }
+            } catch (subQueryError) {
+              console.error(`[WebSearch] サブクエリ生成中にエラーが発生:`, subQueryError);
+              toast.error('サブクエリの生成中にエラーが発生しました', { duration: 3000 });
+              
+              // 通常のチャット処理を続行
+              await handleSubmitWithLogging();
+            }
+          } catch (error) {
+            console.error(`[WebSearch] 検索処理全体でエラーが発生しました:`, error);
+            toast.error('検索処理中にエラーが発生しました', { duration: 3000 });
+            
+            // エラーが発生しても通常のチャット処理を続行
+            await handleSubmitWithLogging();
+          }
+        }
+        // X検索モードが有効な場合はX検索を実行
+        else if (effectiveXSearchEnabled) {
+          console.log('[Deep Research] Deep Research処理を実行');
+          
+          try {
+            // サブクエリを生成
+            console.log('[Deep Research] サブクエリの生成を開始:', currentInput);
+            const subQueries = await generateSubQueries(currentInput);
+            console.log('[Deep Research] 生成されたサブクエリ:', subQueries);
+            
+            // 結果をトーストで表示
+            toast.success(`${subQueries.length}個のサブクエリが生成されました`, {
+              description: subQueries.slice(0, 3).join(', ') + (subQueries.length > 3 ? '...' : '')
+            });
+            
+            // サブクエリを並列実行
+            console.log('[Deep Research] サブクエリの並列実行を開始');
+            console.log('[Deep Research] サブクエリ一覧:', JSON.stringify(subQueries, null, 2));
+            
+            // APIキーとワークフローIDの確認
+            const apiKey = process.env.NEXT_PUBLIC_COZE_API_KEY;
+            console.log('[Deep Research] APIキー確認:', apiKey ? '設定されています' : '設定されていません');
+            
+            const onProgress = (processed: number) => {
+              console.log(`[Deep Research] 進捗状況: ${processed}/${subQueries.length} 完了`);
+            };
+            
+            // 結果を格納する変数を事前に宣言
+            let results: FormattedResponse[] = [];
+            
+            try {
+              // 並列実行（データベース保存をスキップ）
+              console.log('[Deep Research] executeParallelCozeQueriesを呼び出します');
+              results = await executeParallelCozeQueries(
+                subQueries,
+                chatId,
+                'user-query',
+                onProgress,
+                { skipStorage: true }
+              );
+              
+              // 結果をコンソールに表示
+              console.log('[Deep Research] 並列実行結果受信:', results ? '成功' : '失敗');
+              console.log('[Deep Research] 結果の型:', typeof results);
+              console.log('[Deep Research] 結果の配列長:', Array.isArray(results) ? results.length : '配列ではありません');
+              console.log('[Deep Research] 詳細結果:', JSON.stringify(results, null, 2));
+            } catch (error) {
+              console.error('[Deep Research] 並列実行中にエラーが発生しました:', error);
+              // エラーが発生しても処理を続行するため、空の結果を使用
+              results = [];
+              toast.error('サブクエリの並列実行中にエラーが発生しましたが、処理を続行します');
+            }
+            
+            // 結果の集計
+            const summary = (results as FormattedResponse[]).map(result => ({
+              query: result.query,
+              postsCount: result.posts?.length || 0,
+              hasError: false
+            }));
+            
+            console.log('[Deep Research] 結果集計:', summary);
+            
+            // 検索オプションを設定
+            const options: ChatRequestOptions = {
+              xSearchEnabled: true,
+              data: {
+                searchType: 'x-search',
+                query: currentInput,
+                chatId,
+                model: selectedModelId,
+                subQueries: subQueries,
+                results: summary
+              }
+            };
+            
+            await append({ id: nanoid(), content: currentInput, role: 'user', createdAt: new Date() }, options);
+          } catch (error) {
+            console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
+            toast.error('Deep Research処理に失敗しました');
+            throw error;
+          }
+          return;
+        }
+        
+        // 通常の検索モードが有効な場合は検索を実行
         if (isWebSearchEnabled && !effectiveXSearchEnabled) {
           console.log('[検索] 検索処理を実行');
           
@@ -554,8 +754,12 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
   const [clientSideEnabled, setClientSideEnabled] = useState(false);
   
   // マウント後、localStorageの値に合わせて状態を更新
+  // ハイドレーションの不一致を避けるためにタイマーを使用
   useEffect(() => {
-    setClientSideEnabled(isWebSearchEnabled);
+    const timer = setTimeout(() => {
+      setClientSideEnabled(isWebSearchEnabled);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [isWebSearchEnabled]);
   
   const handleButtonClick = useCallback(async () => {
@@ -589,25 +793,25 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
     
     // 状態が確実に更新されたことを確認
     console.log(`[PureWebSearchButton] モード切替完了: ${newState ? '検索モード' : '通常チャットモード'}`);
-  }, [clientSideEnabled, onClick, setIsWebSearchEnabled]);
+  }, [clientSideEnabled, onClick, setIsWebSearchEnabled, input]);
 
   return (
     <TooltipProvider>
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant="outline"
+            type="button"
             onClick={handleButtonClick}
             disabled={isLoading}
             className={cx(
-              "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200",
+              "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200",
               clientSideEnabled
-                ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
-                : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200 border-transparent"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
             )}
             aria-label="検索"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M12 21C16.9706 21 21 16.9706 21 12C21 7.02944 16.9706 3 12 3C7.02944 3 3 7.02944 3 12C3 16.9706 7.02944 21 12 21Z" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M3.6001 9H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
               <path d="M3.6001 15H20.4001" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
@@ -641,17 +845,19 @@ const PureXSearchButton = memo(function PureXSearchButton({
   const [clientSideEnabled, setClientSideEnabled] = useState(initialValue);
   
   // マウント後、propsの値に合わせて状態を更新
+  // クライアントサイドでのみ状態を更新
   useEffect(() => {
-    setClientSideEnabled(initialValue);
+    // ハイドレーション後に状態を更新
+    const timer = setTimeout(() => {
+      setClientSideEnabled(initialValue);
+    }, 0);
+    return () => clearTimeout(timer);
   }, [initialValue]);
   
   // ボタンの状態を視覚的に表示するためのクラス
-  const buttonClass = cx(
-    "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200",
-    clientSideEnabled 
-      ? "bg-blue-100 text-blue-500 hover:bg-blue-200 border-blue-200"
-      : "bg-white text-gray-700 hover:bg-gray-100 border-gray-200"
-  );
+  // 注意: サーバーサイドレンダリングとクライアントサイドレンダリングで一致させるため
+  // 動的な値を使わず、固定のクラス名を使用する
+  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border-gray-200";
   
   const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -708,13 +914,18 @@ const PureXSearchButton = memo(function PureXSearchButton({
       <Tooltip>
         <TooltipTrigger asChild>
           <Button
-            variant="outline"
+            type="button"
             onClick={handleButtonClick}
             disabled={false}
-            className={buttonClass}
+            className={cx(
+              "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200",
+              clientSideEnabled
+                ? "bg-blue-100 text-blue-700 hover:bg-blue-200 border-transparent"
+                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
+            )}
             aria-label="Deep Research"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
           </svg>
           <span>Deep Research</span>

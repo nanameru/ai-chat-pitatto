@@ -5,6 +5,36 @@ const RETRY_DELAY = 3000;    // 5秒→3秒にさらに短縮
 const MAX_RETRIES = 2;       // 2回のまま維持
 const BATCH_DELAY = 5000;    // 8秒→5秒にさらに短縮
 
+// デバッグログの設定
+const DEBUG_MODE = true; // 開発時はtrueに設定
+
+/**
+ * デバッグログを出力する関数
+ * サーバーサイドとクライアントサイドの両方で動作するように設計
+ */
+function debugLog(...args: any[]) {
+  if (!DEBUG_MODE) return;
+  
+  // サーバーサイドとクライアントサイドの両方でログを出力
+  console.log(...args);
+  
+  // クライアントサイドの場合、window.consoleにも出力
+  if (typeof window !== 'undefined') {
+    // ブラウザ環境の場合
+    const prefix = '[X-Search Debug]';
+    window.console.log(prefix, ...args);
+    
+    // 開発ツールのコンソールに目立つように表示
+    if (args[0] && typeof args[0] === 'string' && args[0].includes('Error')) {
+      window.console.error(prefix, ...args);
+    } else if (args[0] && typeof args[0] === 'string' && args[0].includes('Warning')) {
+      window.console.warn(prefix, ...args);
+    } else if (args[0] && typeof args[0] === 'string' && (args[0].includes('Starting') || args[0].includes('Completed'))) {
+      window.console.info(prefix, ...args);
+    }
+  }
+}
+
 // レート制限とクォータ制限の管理のための定数
 const RATE_LIMIT = {
   MAX_REQUESTS_PER_MINUTE: 30,
@@ -156,6 +186,12 @@ const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 function parseStreamContent(content: string): any {
   console.log('\n=== parseStreamContent ===');
   console.log('Input content length:', content.length);
+  
+  // 入力内容の表示（長すぎる場合は最初の200文字のみ）
+  const displayContent = content.length > 200 
+    ? content.substring(0, 200) + '... (truncated)' 
+    : content;
+  console.log('Raw content:', displayContent);
 
   try {
     // イベントメッセージをスキップ
@@ -179,39 +215,71 @@ function parseStreamContent(content: string): any {
     const startIndex = content.indexOf(dataPrefix) + dataPrefix.length;
     const jsonStr = content.slice(startIndex).trim();
     console.log('First parse - extracted JSON string length:', jsonStr.length);
+    
+    // JSON文字列の表示（長すぎる場合は最初の300文字のみ）
+    const displayJsonStr = jsonStr.length > 300 
+      ? jsonStr.substring(0, 300) + '... (truncated)' 
+      : jsonStr;
+    console.log('Extracted JSON string:', displayJsonStr);
 
     try {
       // 最初のJSONパース
       const firstParse = JSON.parse(jsonStr);
+      console.log('First parse result structure:', Object.keys(firstParse));
+      console.log('First parse result (sample):', JSON.stringify(firstParse).substring(0, 300) + '...');
       
       // contentプロパティが文字列として存在する場合は二重パース
       if (firstParse.content && typeof firstParse.content === 'string') {
         console.log('Found nested content, performing second parse');
-        const secondParse = JSON.parse(firstParse.content);
-        console.log('Second parse successful, data structure:', 
-          Object.keys(secondParse));
-        return secondParse;
+        console.log('Nested content (sample):', firstParse.content.substring(0, 200) + '...');
+        
+        try {
+          const secondParse = JSON.parse(firstParse.content);
+          console.log('Second parse successful, data structure:', Object.keys(secondParse));
+          console.log('Second parse result (sample):', JSON.stringify(secondParse).substring(0, 300) + '...');
+          return secondParse;
+        } catch (nestedError) {
+          console.error('Error parsing nested content:', nestedError);
+          console.error('Problematic nested content:', firstParse.content.substring(0, 200) + '...');
+          return firstParse; // ネストされたパースに失敗した場合は最初の結果を返す
+        }
       }
 
       // debug_urlのみの応答は処理をスキップ
       if (firstParse && Object.keys(firstParse).length === 1 && firstParse.debug_url) {
-        console.log('Skipping debug_url only response');
+        console.log('Skipping debug_url only response:', firstParse.debug_url);
         return null;
       }
 
       // エラーレスポンスの確認
       if (firstParse.error_code) {
-        console.log('Error response detected:', firstParse.error_message);
+        console.log('Error response detected - Code:', firstParse.error_code);
+        console.log('Error message:', firstParse.error_message);
         return null;
+      }
+
+      // freeBusyプロパティの確認
+      if (firstParse.output && Array.isArray(firstParse.output)) {
+        console.log('Output array found with', firstParse.output.length, 'items');
+        
+        // freeBusyプロパティを持つアイテムを確認
+        const hasPosts = firstParse.output.some((item: any) => item?.freeBusy?.post);
+        if (hasPosts) {
+          console.log('Found posts in output items');
+        } else {
+          console.log('No posts found in output items');
+        }
       }
 
       return firstParse;
     } catch (parseError) {
-      console.log('JSON parse error:', parseError);
+      console.error('JSON parse error:', parseError);
+      console.error('Problematic JSON string:', jsonStr.substring(0, 200) + '...');
       return null;
     }
   } catch (e) {
     console.error('Error in parseStreamContent:', e);
+    console.error('Content causing error:', content.substring(0, 200) + '...');
     return null;
   }
 }
@@ -220,7 +288,10 @@ async function processStreamResponse(
   response: Response,
   query: string,
   userId?: string,
-  chatId?: string
+  chatId?: string,
+  options?: {
+    skipStorage?: boolean; // データベースへの保存をスキップするかどうか
+  }
 ): Promise<FormattedResponse> {
   const startTime = Date.now();
   console.log('\n=== Starting processStreamResponse ===');
@@ -239,6 +310,14 @@ async function processStreamResponse(
     const responseText = await response.text();
     console.log('\n=== Raw Response ===');
     console.log('Response text length:', responseText.length);
+    
+    // 生のレスポンスデータを表示（長すぎる場合は最初の1000文字のみ）
+    if (responseText.length > 0) {
+      const displayText = responseText.length > 1000 
+        ? responseText.substring(0, 1000) + '... (truncated)' 
+        : responseText;
+      console.log('Raw response data:\n', displayText);
+    }
 
     const allPosts: TwitterPost[] = [];
     let newestId: string | undefined;
@@ -248,6 +327,11 @@ async function processStreamResponse(
     const lines = responseText.split('\n').filter(line => line.trim());
     console.log('\n=== Processing', lines.length, 'lines ===');
 
+    // 各行の詳細をログに出力
+    lines.forEach((line, index) => {
+      console.log(`Line ${index + 1} (${line.length} chars): ${line.substring(0, 100)}${line.length > 100 ? '...' : ''}`);
+    });
+
     for (const line of lines) {
       try {
         const parsedContent = parseStreamContent(line);
@@ -255,11 +339,17 @@ async function processStreamResponse(
           continue;
         }
 
+        // パースされたコンテンツの詳細をログに出力
+        console.log('\n=== Parsed Content ===');
+        console.log(JSON.stringify(parsedContent, null, 2));
+
         // outputの配列を処理
         if (parsedContent.output && Array.isArray(parsedContent.output)) {
           console.log('Processing output array, length:', parsedContent.output.length);
           
           for (const item of parsedContent.output) {
+            console.log('Output item:', JSON.stringify(item, null, 2));
+            
             if (item?.freeBusy?.post) {
               const posts = Array.isArray(item.freeBusy.post) 
                 ? item.freeBusy.post 
@@ -268,8 +358,12 @@ async function processStreamResponse(
               console.log(`Found ${posts.length} posts in output item`);
               
               for (const post of posts) {
+                console.log('Raw post data:', JSON.stringify(post, null, 2));
+                
                 try {
                   const formattedPost = formatTwitterPost(post);
+                  console.log('Formatted post:', JSON.stringify(formattedPost, null, 2));
+                  
                   if (!allPosts.some(p => p.id === formattedPost.id)) {
                     allPosts.push(formattedPost);
                     console.log(`Added post ${formattedPost.id} to results (total: ${allPosts.length})`);
@@ -279,6 +373,7 @@ async function processStreamResponse(
                   }
                 } catch (postError) {
                   console.error('Error formatting post:', postError);
+                  console.error('Post data causing error:', JSON.stringify(post));
                 }
               }
             }
@@ -286,6 +381,7 @@ async function processStreamResponse(
         }
       } catch (lineError) {
         console.error('Error processing line:', lineError);
+        console.error('Problematic line:', line);
       }
     }
 
@@ -303,7 +399,8 @@ async function processStreamResponse(
     console.log('Processing time:', formattedResponse.metadata.processing_time, 'ms');
 
     // 結果をDBに保存（Embedding付き）
-    if (allPosts.length > 0) {
+    if (allPosts.length > 0 && !options?.skipStorage) {
+      console.log('Storing data with embedding...');
       await storeDataWithEmbedding(
         query,
         allPosts.map(post => ({
@@ -644,15 +741,26 @@ export async function storeDataWithEmbedding(
   try {
     const supabase = getSupabaseClient();
     
-    // セッションの取得
-    const { data: session, error: sessionError } = await supabase
-      .from('XSearchSession')
-      .select('*')
-      .eq('messageId', chatId)
-      .single();
+    // セッション情報を格納する変数
+    let session: any = null;
+    
+    // chatIdが有効なUUID形式の場合のみセッションを取得する
+    if (chatId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(chatId)) {
+      // セッションの取得
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('XSearchSession')
+        .select('*')
+        .eq('messageId', chatId)
+        .single();
 
-    if (sessionError) {
-      throw new Error(`セッションの取得に失敗: ${sessionError.message}`);
+      if (sessionError) {
+        debugLog(`セッションの取得に失敗: ${sessionError.message}`);
+        // エラーをスローせず、セッションなしで続行
+      } else {
+        session = sessionData;
+      }
+    } else {
+      debugLog('有効なchatId（UUID）が提供されていないため、セッション取得をスキップします');
     }
 
     // テキストからEmbeddingを生成
@@ -669,56 +777,110 @@ export async function storeDataWithEmbedding(
 
     // XSearchResultに投稿を保存
     for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      // XSearchResultに保存
-      const { data: resultData, error: resultError } = await supabase
-        .from('XSearchResult')
-        .upsert({
+      try {
+        const item = items[i];
+        
+        // metadataが存在しない場合は作成
+        if (!item.metadata) {
+          item.metadata = {};
+        }
+        
+        // metadata.idが存在しない場合、sourceUrlからIDを抽出して設定
+        if (!item.metadata.id && item.sourceUrl) {
+          // Twitterの投稿URLからIDを抽出
+          const match = item.sourceUrl.match(/\/status\/(\d+)/);
+          if (match && match[1]) {
+            item.metadata.id = match[1];
+            debugLog(`アイテム ${i} のIDをURLから抽出しました: ${item.metadata.id}`);
+          }
+        }
+        
+        // それでもidが存在しない場合はスキップ
+        if (!item.metadata.id) {
+          debugLog(`警告: アイテム ${i} のmetadataまたはidが存在せず、URLからも抽出できませんでした。スキップします。`, item);
+          continue;
+        }
+        
+        // 有効なembeddingが存在するか確認
+        if (!embeddings[i] || !Array.isArray(embeddings[i]) || embeddings[i].length === 0) {
+          debugLog(`警告: アイテム ${i} の有効なembeddingが存在しません。スキップします。`);
+          continue;
+        }
+        
+        // 保存データの準備
+        const saveData = {
           xPostId: item.metadata.id,
-          content: item.content,
+          content: item.content || '',
           embedding: embeddings[i],
           metadata: item.metadata,
+          createdAt: now,  // createdAtを追加
           updatedAt: now
-        }, {
-          onConflict: 'xPostId'
-        })
-        .select()
-        .single();
-
-      if (resultError) {
-        console.error('XSearchResult保存エラー:', resultError);
-        continue;
-      }
-
-      // XSearchResultMessageに中間データを保存
-      const { error: messageError } = await supabase
-        .from('XSearchResultMessage')
-        .insert({
-          resultId: resultData.id,
-          sessionId: session.id,
-          messageId: chatId,
-          embeddingScore: similarities[i],
-          rerankScore: null,  // rerankは後で実行
-          finalScore: similarities[i]  // 初期値としてembeddingScoreを使用
+        };
+        
+        debugLog(`XSearchResultに保存するデータ:`, {
+          xPostId: saveData.xPostId,
+          contentLength: saveData.content.length,
+          embeddingLength: saveData.embedding.length
         });
+        
+        // XSearchResultに保存
+        const { data: resultData, error: resultError } = await supabase
+          .from('XSearchResult')
+          .upsert(saveData, {
+            onConflict: 'xPostId'
+          })
+          .select()
+          .single();
 
-      if (messageError) {
-        console.error('XSearchResultMessage保存エラー:', messageError);
+        if (resultError) {
+          debugLog(`XSearchResult保存エラー (${i}/${items.length}):`, resultError);
+          continue;
+        }
+        
+        debugLog(`XSearchResult保存成功 (${i}/${items.length}): ID=${resultData.id}`);
+        
+        // セッションが存在する場合のみXSearchResultMessageに中間データを保存
+        if (session) {
+          try {
+            const { error: messageError } = await supabase
+              .from('XSearchResultMessage')
+              .insert({
+                resultId: resultData.id,
+                sessionId: session.id,
+                messageId: chatId,
+                embeddingScore: similarities[i],
+                rerankScore: null,  // rerankは後で実行
+                finalScore: similarities[i]  // 初期値としてembeddingScoreを使用
+              });
+
+            if (messageError) {
+              debugLog(`XSearchResultMessage保存エラー (${i}/${items.length}):`, messageError);
+            } else {
+              debugLog(`XSearchResultMessage保存成功 (${i}/${items.length})`);
+            }
+          } catch (messageError) {
+            debugLog(`XSearchResultMessage保存例外 (${i}/${items.length}):`, messageError);
+          }
+        }
+      } catch (itemError) {
+        debugLog(`アイテム処理エラー (${i}/${items.length}):`, itemError);
+        continue;
       }
     }
 
-    // セッションの進捗を更新
-    const { error: updateError } = await supabase
-      .from('XSearchSession')
-      .update({
-        progress: 50,  // embeddingまで完了
-        updatedAt: now
-      })
-      .eq('id', session.id);
+    // セッションが存在する場合のみ進捗を更新
+    if (session) {
+      const { error: updateError } = await supabase
+        .from('XSearchSession')
+        .update({
+          progress: 50,  // embeddingまで完了
+          updatedAt: now
+        })
+        .eq('id', session.id);
 
-    if (updateError) {
-      console.error('セッション更新エラー:', updateError);
+      if (updateError) {
+        console.error('セッション更新エラー:', updateError);
+      }
     }
 
   } catch (error: unknown) {
@@ -728,6 +890,98 @@ export async function storeDataWithEmbedding(
     }
     throw new Error('不明なエラーが発生しました');
   }
+}
+
+/**
+ * サブクエリを並列実行して結果を返す
+ * @param subQueries サブクエリの配列
+ * @param userId ユーザーID（オプション）
+ * @param chatId チャットID（オプション）
+ * @param onProgress 進捗状況のコールバック関数（オプション）
+ * @param options 追加オプション
+ * @returns 検索結果の配列
+ */
+export async function executeParallelCozeQueries(
+  subQueries: string[],
+  userId?: string,
+  chatId?: string,
+  onProgress?: (processed: number) => void,
+  options?: {
+    skipStorage?: boolean; // データベースへの保存をスキップするかどうか
+  }
+): Promise<FormattedResponse[]> {
+  debugLog(`[executeParallelCozeQueries] Starting parallel execution of ${subQueries.length} subqueries`);
+  
+  // 各サブクエリを並列に実行するPromiseの配列を作成
+  const promises = subQueries.map(async (query, index) => {
+    try {
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Executing: ${query}`);
+      
+      // クエリをクリーンアップ
+      const cleanQuery = query
+        .replace(/```json\s*\[?\s*/g, '')
+        .replace(/\s*\]?\s*```\s*$/, '')
+        .replace(/[{}"\\]/g, '')
+        .replace(/^\s*query:\s*/, '')
+        .replace(/,\s*$/, '')
+        .trim();
+
+      debugLog(`Clean query: ${cleanQuery}`);
+      
+      // 各クエリを個別に実行
+      const response = await fetch(API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.NEXT_PUBLIC_COZE_API_KEY}`
+        },
+        body: JSON.stringify({
+          parameters: { input: cleanQuery },
+          workflow_id: WORKFLOW_ID
+        })
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API request failed with status ${response.status}`);
+      }
+      
+      // レスポンスを処理
+      const result = await processStreamResponse(response, query, userId, chatId, options);
+      
+      // 進捗状況を更新
+      if (onProgress) {
+        onProgress(index + 1);
+      }
+      
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Completed successfully`);
+      return result;
+    } catch (error) {
+      debugLog(`[Parallel Query ${index + 1}/${subQueries.length}] Failed:`, error);
+      // エラーが発生しても処理を続行するため、エラーオブジェクトではなく
+      // エラー情報を含む空のレスポンスを返す
+      return {
+        query,
+        posts: [],
+        metadata: {
+          total_count: 0,
+          processing_time: 0
+        },
+        error: error instanceof Error ? error.message : '不明なエラーが発生しました'
+      };
+    }
+  });
+  
+  // すべてのPromiseを並列実行して結果を待つ
+  const results = await Promise.all(promises);
+  
+  console.log(`[executeParallelCozeQueries] Completed parallel execution of ${subQueries.length} subqueries`);
+  console.log(`[executeParallelCozeQueries] Results summary:`, results.map(r => ({
+    query: r.query,
+    postsCount: r.posts?.length || 0,
+    hasError: !!r.error
+  })));
+  
+  return results;
 }
 
 export async function executeCozeQueries(
