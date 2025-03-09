@@ -307,7 +307,7 @@ export function SidebarHistory() {
               className="rounded-md" 
             />
             <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
-              Pitatto
+              Pitatto Chat
             </span>
           </div>
         </div>
