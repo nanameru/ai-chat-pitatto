@@ -13,7 +13,7 @@ import {
 import { chatModels } from '@/lib/ai/models';
 import { cn } from '@/lib/utils';
 
-import { CheckCircleFillIcon, ChevronDownIcon } from './icons';
+import { CheckCircleFillIcon, ArrowUpIcon } from './icons';
 
 export function ModelSelector({
   selectedModelId,
@@ -51,7 +51,7 @@ export function ModelSelector({
               </span>
             )}
           </span>
-          <ChevronDownIcon size={16} />
+          <ArrowUpIcon size={16} />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="min-w-[220px] p-1">
