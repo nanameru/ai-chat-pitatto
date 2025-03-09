@@ -2,6 +2,7 @@
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { memo, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -167,6 +168,7 @@ export function SidebarHistory() {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
   const pathname = usePathname();
+  const router = useRouter();
   const {
     data: history,
     isLoading,
@@ -181,7 +183,7 @@ export function SidebarHistory() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const router = useRouter();
+  
   const handleDelete = async () => {
     const deletePromise = fetch(`/api/chat?id=${deleteId}`, {
       method: 'DELETE',
@@ -205,6 +207,13 @@ export function SidebarHistory() {
     if (deleteId === id) {
       router.push('/');
     }
+  };
+
+  // 新しいチャットを開く関数
+  const handleNewChat = () => {
+    setOpenMobile(false);
+    router.push('/');
+    router.refresh();
   };
 
   if (isLoading) {
@@ -283,6 +292,27 @@ export function SidebarHistory() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Pitatto AIのロゴと文字を追加 */}
+      <div className="px-2 mb-2">
+        <div 
+          className="flex items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          onClick={handleNewChat}
+        >
+          <div className="flex items-center">
+            <Image 
+              src="/images/pitattologo.png" 
+              alt="Pitatto Logo" 
+              width={22} 
+              height={22}
+              className="rounded-md" 
+            />
+            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+              Pitatto
+            </span>
+          </div>
+        </div>
+      </div>
+
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
