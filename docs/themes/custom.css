@@ -1,0 +1,246 @@
+/* @theme custom */
+@import "default";
+@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@100..900&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Fira+Code:wght@300..700&display=swap");
+
+:root {
+  --primary-color: #3a6ea5;
+  --primary-light: #5e80ad;
+  --primary-dark: #224466;
+  --primary-bg-light: rgba(68, 136, 204, 0.15);
+  --text-color: #3c4043;
+  --text-light: #656d76;
+  --text-white: #ffffff;
+  --accent-color: #ff6b6b;
+  --border-color: #e1e4e8;
+  --shadow-color: rgba(0, 0, 0, 0.1);
+  --code-bg: #f6f8fa;
+  --gradient-bg: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
+}
+
+section {
+  color: var(--text-light);
+  font-family: "Noto Sans JP", sans-serif;
+  font-size: 20px;
+  line-height: 1.7;
+  padding-bottom: 1em;
+  background-color: white;
+  background-image: 
+    radial-gradient(circle at 0% 100%, var(--primary-bg-light) 0%, transparent 20%),
+    radial-gradient(circle at 100% 0%, var(--primary-bg-light) 0%, transparent 20%);
+}
+
+section.title {
+  background: var(--gradient-bg);
+  color: var(--text-white);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 2em;
+}
+
+section.title h1,
+section.title h2,
+section.title h3,
+section.title h6 {
+  color: var(--text-white);
+  margin: 0.3em 0;
+}
+
+section.title h1 {
+  font-size: 2.5em;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+section.title footer {
+  color: var(--text-white);
+  opacity: 0.8;
+  font-size: 0.8em;
+  margin-top: 2em;
+}
+
+section.title strong {
+  color: var(--text-white);
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+strong {
+  color: var(--primary-color);
+  font-weight: 700;
+}
+
+em {
+  font-style: normal;
+  font-weight: bold;
+  background-color: var(--primary-bg-light);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+h1, h2 {
+  color: var(--primary-dark);
+  margin-top: 0.5em;
+  margin-bottom: 0.7em;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 1.8em;
+  border-bottom: 2px solid var(--primary-light);
+  padding-bottom: 0.2em;
+}
+
+h2 {
+  font-size: 1.5em;
+}
+
+code {
+  font-family: "Fira Code", monospace;
+  background-color: var(--code-bg);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+  font-size: 0.9em;
+  color: var(--primary-dark);
+}
+
+section mjx-container {
+  color: var(--primary-light);
+}
+
+section table {
+  margin: 1.5em auto;
+  border-collapse: collapse;
+  box-shadow: 0 2px 8px var(--shadow-color);
+  border-radius: 5px;
+  overflow: hidden;
+}
+
+section table td {
+  text-align: center;
+  padding: 0.8em 1.2em;
+  border: 1px solid var(--border-color);
+}
+
+section table td img {
+  display: block;
+  margin: 0 auto;
+  max-width: 100%;
+  border-radius: 3px;
+}
+
+section table th {
+  background-color: var(--primary-light);
+  color: var(--text-white);
+  padding: 1em;
+  font-weight: 600;
+}
+
+header {
+  width: 100%;
+  padding: 0.8em 1.5em;
+  font-size: 1.2em;
+  font-weight: 600;
+  color: var(--primary-color);
+  border-bottom: 2px solid var(--primary-light);
+  background-color: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 1px 3px var(--shadow-color);
+  display: flex;
+  align-items: center;
+}
+
+header::before {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background-color: var(--primary-color);
+  margin-right: 0.5em;
+  border-radius: 2px;
+}
+
+a {
+  color: var(--primary-color);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--primary-light);
+  transition: all 0.2s ease;
+}
+
+a:hover {
+  color: var(--accent-color);
+  border-bottom: 1px solid var(--accent-color);
+}
+
+ul, ol {
+  padding-left: 1.5em;
+}
+
+li {
+  margin-bottom: 0.5em;
+}
+
+blockquote {
+  border-left: 4px solid var(--primary-light);
+  padding-left: 1em;
+  margin-left: 0;
+  color: var(--text-light);
+  font-style: italic;
+  background-color: var(--primary-bg-light);
+  padding: 1em;
+  border-radius: 0 5px 5px 0;
+}
+
+/* 図表のキャプション */
+figcaption {
+  font-size: 0.8em;
+  color: var(--text-light);
+  text-align: center;
+  margin-top: 0.5em;
+  font-style: italic;
+}
+
+/* 引用のスタイル */
+cite {
+  display: block;
+  text-align: right;
+  font-style: italic;
+  font-size: 0.9em;
+  color: var(--text-light);
+  margin-top: 0.5em;
+}
+
+/* コードブロックのスタイル */
+pre {
+  background-color: var(--code-bg);
+  border-radius: 5px;
+  padding: 1em;
+  overflow: auto;
+  box-shadow: inset 0 1px 3px var(--shadow-color);
+}
+
+/* 注釈のスタイル */
+.footnote {
+  font-size: 0.8em;
+  color: var(--text-light);
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.5em;
+  margin-top: 2em;
+}
+
+/* ハイライト */
+mark {
+  background-color: rgba(255, 214, 0, 0.3);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+/* ページ番号 */
+section::after {
+  color: var(--primary-light);
+  font-weight: 600;
+  text-shadow: 0 1px 1px var(--shadow-color);
+}
