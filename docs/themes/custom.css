@@ -14,51 +14,61 @@
   --accent-color: #ff6b6b;
   --border-color: #e1e4e8;
   --shadow-color: rgba(0, 0, 0, 0.1);
+  --code-bg: #f6f8fa;
+  --gradient-bg: linear-gradient(135deg, var(--primary-color), var(--primary-dark));
 }
 
 section {
-  color: var(--text-color);
+  color: var(--text-light);
   font-family: "Noto Sans JP", sans-serif;
   font-size: 20px;
   line-height: 1.7;
-  padding: 40px;
-  transition: background-color 0.3s ease;
+  padding-bottom: 1em;
+  background-color: white;
+  background-image: 
+    radial-gradient(circle at 0% 100%, var(--primary-bg-light) 0%, transparent 20%),
+    radial-gradient(circle at 100% 0%, var(--primary-bg-light) 0%, transparent 20%);
 }
 
 section.title {
-  background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-light) 100%);
+  background: var(--gradient-bg);
   color: var(--text-white);
+  text-align: center;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  text-align: center;
-  padding: 60px 40px;
+  align-items: center;
+  padding: 2em;
 }
 
 section.title h1,
+section.title h2,
 section.title h3,
 section.title h6 {
   color: var(--text-white);
   margin: 0.3em 0;
-  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 section.title h1 {
   font-size: 2.5em;
-  letter-spacing: -0.02em;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
 section.title footer {
-  color: rgba(255, 255, 255, 0.8);
+  color: var(--text-white);
+  opacity: 0.8;
   font-size: 0.8em;
   margin-top: 2em;
 }
 
 section.title strong {
   color: var(--text-white);
-  font-weight: 700;
+  background-color: rgba(255, 255, 255, 0.2);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
 }
-  
+
 strong {
   color: var(--primary-color);
   font-weight: 700;
@@ -66,7 +76,7 @@ strong {
 
 em {
   font-style: normal;
-  font-weight: 600;
+  font-weight: bold;
   background-color: var(--primary-bg-light);
   padding: 0.1em 0.3em;
   border-radius: 3px;
@@ -74,15 +84,15 @@ em {
 
 h1, h2 {
   color: var(--primary-dark);
-  margin-top: 0.8em;
-  margin-bottom: 0.5em;
-  line-height: 1.3;
+  margin-top: 0.5em;
+  margin-bottom: 0.7em;
+  font-weight: 700;
 }
 
 h1 {
   font-size: 1.8em;
-  border-bottom: 2px solid var(--primary-bg-light);
-  padding-bottom: 0.3em;
+  border-bottom: 2px solid var(--primary-light);
+  padding-bottom: 0.2em;
 }
 
 h2 {
@@ -91,24 +101,23 @@ h2 {
 
 code {
   font-family: "Fira Code", monospace;
-  background-color: var(--primary-bg-light);
+  background-color: var(--code-bg);
   padding: 0.2em 0.4em;
   border-radius: 3px;
   font-size: 0.9em;
+  color: var(--primary-dark);
 }
 
 section mjx-container {
-  color: var(--primary-color);
+  color: var(--primary-light);
 }
 
 section table {
   margin: 1.5em auto;
-  border-collapse: separate;
-  border-spacing: 0;
+  border-collapse: collapse;
+  box-shadow: 0 2px 8px var(--shadow-color);
   border-radius: 5px;
   overflow: hidden;
-  box-shadow: 0 2px 8px var(--shadow-color);
-  width: auto;
 }
 
 section table td {
@@ -127,30 +136,38 @@ section table td img {
 section table th {
   background-color: var(--primary-light);
   color: var(--text-white);
-  padding: 0.8em 1.2em;
+  padding: 1em;
   font-weight: 600;
-  border: 1px solid var(--primary-light);
 }
 
 header {
   width: 100%;
-  padding: 15px 40px;
+  padding: 0.8em 1.5em;
   font-size: 1.2em;
   font-weight: 600;
   color: var(--primary-color);
   border-bottom: 2px solid var(--primary-light);
-  background-color: rgba(255, 255, 255, 0.95);
+  background-color: rgba(255, 255, 255, 0.9);
   box-shadow: 0 1px 3px var(--shadow-color);
-  position: sticky;
-  top: 0;
-  z-index: 100;
+  display: flex;
+  align-items: center;
+}
+
+header::before {
+  content: "";
+  display: inline-block;
+  width: 0.5em;
+  height: 1em;
+  background-color: var(--primary-color);
+  margin-right: 0.5em;
+  border-radius: 2px;
 }
 
 a {
   color: var(--primary-color);
   text-decoration: none;
-  border-bottom: 1px dotted var(--primary-light);
-  transition: color 0.2s ease, border-bottom 0.2s ease;
+  border-bottom: 1px dashed var(--primary-light);
+  transition: all 0.2s ease;
 }
 
 a:hover {
@@ -172,4 +189,58 @@ blockquote {
   margin-left: 0;
   color: var(--text-light);
   font-style: italic;
-} 
+  background-color: var(--primary-bg-light);
+  padding: 1em;
+  border-radius: 0 5px 5px 0;
+}
+
+/* 図表のキャプション */
+figcaption {
+  font-size: 0.8em;
+  color: var(--text-light);
+  text-align: center;
+  margin-top: 0.5em;
+  font-style: italic;
+}
+
+/* 引用のスタイル */
+cite {
+  display: block;
+  text-align: right;
+  font-style: italic;
+  font-size: 0.9em;
+  color: var(--text-light);
+  margin-top: 0.5em;
+}
+
+/* コードブロックのスタイル */
+pre {
+  background-color: var(--code-bg);
+  border-radius: 5px;
+  padding: 1em;
+  overflow: auto;
+  box-shadow: inset 0 1px 3px var(--shadow-color);
+}
+
+/* 注釈のスタイル */
+.footnote {
+  font-size: 0.8em;
+  color: var(--text-light);
+  border-top: 1px solid var(--border-color);
+  padding-top: 0.5em;
+  margin-top: 2em;
+}
+
+/* ハイライト */
+mark {
+  background-color: rgba(255, 214, 0, 0.3);
+  padding: 0.1em 0.3em;
+  border-radius: 3px;
+}
+
+/* ページ番号 */
+section::after {
+  color: var(--primary-light);
+  font-weight: 600;
+  text-shadow: 0 1px 1px var(--shadow-color);
+}
