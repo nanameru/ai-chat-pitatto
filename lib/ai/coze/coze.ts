@@ -741,15 +741,26 @@ export async function storeDataWithEmbedding(
   try {
     const supabase = getSupabaseClient();
     
-    // セッションの取得
-    const { data: session, error: sessionError } = await supabase
-      .from('XSearchSession')
-      .select('*')
-      .eq('messageId', chatId)
-      .single();
+    // セッション情報を格納する変数
+    let session: any = null;
+    
+    // chatIdが有効なUUID形式の場合のみセッションを取得する
+    if (chatId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(chatId)) {
+      // セッションの取得
+      const { data: sessionData, error: sessionError } = await supabase
+        .from('XSearchSession')
+        .select('*')
+        .eq('messageId', chatId)
+        .single();
 
-    if (sessionError) {
-      throw new Error(`セッションの取得に失敗: ${sessionError.message}`);
+      if (sessionError) {
+        debugLog(`セッションの取得に失敗: ${sessionError.message}`);
+        // エラーをスローせず、セッションなしで続行
+      } else {
+        session = sessionData;
+      }
+    } else {
+      debugLog('有効なchatId（UUID）が提供されていないため、セッション取得をスキップします');
     }
 
     // テキストからEmbeddingを生成
@@ -766,56 +777,110 @@ export async function storeDataWithEmbedding(
 
     // XSearchResultに投稿を保存
     for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      
-      // XSearchResultに保存
-      const { data: resultData, error: resultError } = await supabase
-        .from('XSearchResult')
-        .upsert({
+      try {
+        const item = items[i];
+        
+        // metadataが存在しない場合は作成
+        if (!item.metadata) {
+          item.metadata = {};
+        }
+        
+        // metadata.idが存在しない場合、sourceUrlからIDを抽出して設定
+        if (!item.metadata.id && item.sourceUrl) {
+          // Twitterの投稿URLからIDを抽出
+          const match = item.sourceUrl.match(/\/status\/(\d+)/);
+          if (match && match[1]) {
+            item.metadata.id = match[1];
+            debugLog(`アイテム ${i} のIDをURLから抽出しました: ${item.metadata.id}`);
+          }
+        }
+        
+        // それでもidが存在しない場合はスキップ
+        if (!item.metadata.id) {
+          debugLog(`警告: アイテム ${i} のmetadataまたはidが存在せず、URLからも抽出できませんでした。スキップします。`, item);
+          continue;
+        }
+        
+        // 有効なembeddingが存在するか確認
+        if (!embeddings[i] || !Array.isArray(embeddings[i]) || embeddings[i].length === 0) {
+          debugLog(`警告: アイテム ${i} の有効なembeddingが存在しません。スキップします。`);
+          continue;
+        }
+        
+        // 保存データの準備
+        const saveData = {
           xPostId: item.metadata.id,
-          content: item.content,
+          content: item.content || '',
           embedding: embeddings[i],
           metadata: item.metadata,
+          createdAt: now,  // createdAtを追加
           updatedAt: now
-        }, {
-          onConflict: 'xPostId'
-        })
-        .select()
-        .single();
-
-      if (resultError) {
-        console.error('XSearchResult保存エラー:', resultError);
-        continue;
-      }
-
-      // XSearchResultMessageに中間データを保存
-      const { error: messageError } = await supabase
-        .from('XSearchResultMessage')
-        .insert({
-          resultId: resultData.id,
-          sessionId: session.id,
-          messageId: chatId,
-          embeddingScore: similarities[i],
-          rerankScore: null,  // rerankは後で実行
-          finalScore: similarities[i]  // 初期値としてembeddingScoreを使用
+        };
+        
+        debugLog(`XSearchResultに保存するデータ:`, {
+          xPostId: saveData.xPostId,
+          contentLength: saveData.content.length,
+          embeddingLength: saveData.embedding.length
         });
+        
+        // XSearchResultに保存
+        const { data: resultData, error: resultError } = await supabase
+          .from('XSearchResult')
+          .upsert(saveData, {
+            onConflict: 'xPostId'
+          })
+          .select()
+          .single();
 
-      if (messageError) {
-        console.error('XSearchResultMessage保存エラー:', messageError);
+        if (resultError) {
+          debugLog(`XSearchResult保存エラー (${i}/${items.length}):`, resultError);
+          continue;
+        }
+        
+        debugLog(`XSearchResult保存成功 (${i}/${items.length}): ID=${resultData.id}`);
+        
+        // セッションが存在する場合のみXSearchResultMessageに中間データを保存
+        if (session) {
+          try {
+            const { error: messageError } = await supabase
+              .from('XSearchResultMessage')
+              .insert({
+                resultId: resultData.id,
+                sessionId: session.id,
+                messageId: chatId,
+                embeddingScore: similarities[i],
+                rerankScore: null,  // rerankは後で実行
+                finalScore: similarities[i]  // 初期値としてembeddingScoreを使用
+              });
+
+            if (messageError) {
+              debugLog(`XSearchResultMessage保存エラー (${i}/${items.length}):`, messageError);
+            } else {
+              debugLog(`XSearchResultMessage保存成功 (${i}/${items.length})`);
+            }
+          } catch (messageError) {
+            debugLog(`XSearchResultMessage保存例外 (${i}/${items.length}):`, messageError);
+          }
+        }
+      } catch (itemError) {
+        debugLog(`アイテム処理エラー (${i}/${items.length}):`, itemError);
+        continue;
       }
     }
 
-    // セッションの進捗を更新
-    const { error: updateError } = await supabase
-      .from('XSearchSession')
-      .update({
-        progress: 50,  // embeddingまで完了
-        updatedAt: now
-      })
-      .eq('id', session.id);
+    // セッションが存在する場合のみ進捗を更新
+    if (session) {
+      const { error: updateError } = await supabase
+        .from('XSearchSession')
+        .update({
+          progress: 50,  // embeddingまで完了
+          updatedAt: now
+        })
+        .eq('id', session.id);
 
-    if (updateError) {
-      console.error('セッション更新エラー:', updateError);
+      if (updateError) {
+        console.error('セッション更新エラー:', updateError);
+      }
     }
 
   } catch (error: unknown) {
