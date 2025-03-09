@@ -17,7 +17,14 @@ import {
   XSearchResultMessage,
   ProcessedPosts
 } from './types';
-import { executeCozeQueries, executeParallelCozeQueries, generateCozeResponse, rerankSimilarDocuments, storeDataWithEmbedding } from '@/lib/ai/coze/coze';
+import { 
+  executeCozeQueries, 
+  executeParallelCozeQueries, 
+  generateCozeResponse, 
+  rerankSimilarDocuments, 
+  storeDataWithEmbedding,
+  TwitterPost
+} from '@/lib/ai/coze/coze';
 
 // デバッグモードの設定
 const DEBUG_MODE = true;
@@ -48,7 +55,6 @@ function debugLog(...args: any[]) {
     }
   }
 }
-import { TwitterPost } from '@/lib/ai/coze/coze';
 
 /**
  * X検索サービスクラス

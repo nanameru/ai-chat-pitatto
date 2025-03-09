@@ -129,6 +129,49 @@ function PureMultimodalInput({
   const isXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : localIsXSearchEnabled;
 
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+  
+  // WebSearch機能の状態変更をより確実に行うためのハンドラ関数
+  const handleWebSearchToggleInternal = useCallback((newState: boolean) => {
+    console.log(`[PureMultimodalInput] WebSearch状態を変更: ${isWebSearchEnabled} → ${newState}`);
+    
+    // LocalStorageに即座に保存して状態の一貫性を確保
+    try {
+      window.localStorage.setItem('isWebSearchEnabled', JSON.stringify(newState));
+      console.log(`[PureMultimodalInput] LocalStorageに保存: isWebSearchEnabled = ${newState}`);
+    } catch (error) {
+      console.error('[PureMultimodalInput] LocalStorage保存エラー:', error);
+    }
+    
+    // 状態を更新
+    setIsWebSearchEnabled(newState);
+    
+    // カスタムイベントを発火して他のコンポーネントにも通知
+    try {
+      const event = new CustomEvent('websearch-mode-changed', { 
+        detail: { 
+          enabled: newState,
+          previous: isWebSearchEnabled,
+          timestamp: new Date().toISOString(),
+          source: 'internal-toggle',
+          immediate: true // 即時更新フラグ
+        } 
+      });
+      window.dispatchEvent(event);
+      console.log(`[PureMultimodalInput] カスタムイベント発火: websearch-mode-changed`);
+    } catch (error) {
+      console.error('[PureMultimodalInput] カスタムイベント発火エラー:', error);
+    }
+    
+    // 状態が確実に更新されたことを確認
+    setTimeout(() => {
+      try {
+        const storedValue = JSON.parse(window.localStorage.getItem('isWebSearchEnabled') || 'false');
+        console.log(`[PureMultimodalInput] 状態確認: メモリ上=${newState}, LocalStorage=${storedValue}`);
+      } catch (e) {
+        console.error('[PureMultimodalInput] 状態確認エラー:', e);
+      }
+    }, 0);
+  }, [isWebSearchEnabled, setIsWebSearchEnabled]);
 
   const handleXSearchToggle = useCallback(() => {
     const oldState = isXSearchEnabled;
@@ -190,10 +233,26 @@ function PureMultimodalInput({
     console.log(`検索ボタンがクリックされました`);
     console.log(`モード変更: ${oldState ? '検索モード' : '通常チャットモード'} → ${newState ? '検索モード' : '通常チャットモード'}`);
     
-    setIsWebSearchEnabled(newState);
+    // 状態を更新（内部ハンドラを使用）
+    handleWebSearchToggleInternal(newState);
+    
+    // トースト通知
+    toast.success(`${newState ? '検索モード' : '通常チャットモード'}に切り替えました`, {
+      duration: 3000,
+    });
+    
+    // LocalStorageの値が確実に更新されたことを確認するためのログ
+    setTimeout(() => {
+      try {
+        const storedValue = JSON.parse(window.localStorage.getItem('isWebSearchEnabled') || 'false');
+        console.log(`[WebSearch] LocalStorage確認: isWebSearchEnabled = ${storedValue}`);
+      } catch (e) {
+        console.error('[WebSearch] LocalStorage確認エラー:', e);
+      }
+    }, 0);
     
     console.log(`----- 検索モード切替完了 -----`);
-  }, [isWebSearchEnabled, setIsWebSearchEnabled]);
+  }, [isWebSearchEnabled, handleWebSearchToggleInternal]);
 
   const handleXSearchSubmit = async (
     event?: { preventDefault?: () => void },
@@ -316,7 +375,27 @@ function PureMultimodalInput({
           input: currentInput
         });
         
-        if (isWebSearchEnabled && !effectiveXSearchEnabled) {
+        // WebSearchモードの状態を再確認（LocalStorageから直接取得して最新の状態を確保）
+        let currentWebSearchEnabled = isWebSearchEnabled;
+        try {
+          const storedValue = JSON.parse(window.localStorage.getItem('isWebSearchEnabled') || 'false');
+          if (storedValue !== currentWebSearchEnabled) {
+            console.log(`[WebSearch] 状態の不一致を検出: メモリ上=${currentWebSearchEnabled}, LocalStorage=${storedValue}`);
+            currentWebSearchEnabled = storedValue;
+          }
+        } catch (e) {
+          console.error('[WebSearch] LocalStorage確認エラー:', e);
+        }
+        
+        console.log('[WebSearch] 最終状態確認:', { 
+          isWebSearchEnabled, 
+          currentWebSearchEnabled,
+          effectiveXSearchEnabled, 
+          condition: currentWebSearchEnabled && !effectiveXSearchEnabled,
+          input: currentInput
+        });
+        
+        if (currentWebSearchEnabled && !effectiveXSearchEnabled) {
           console.log('[WebSearch] 検索処理を実行');
           
           try {
@@ -325,7 +404,20 @@ function PureMultimodalInput({
             console.log('[WebSearch] Gemini APIキー確認:', process.env.GEMINI_API_KEY ? '設定されています' : '設定されていません');
             toast.info('サブクエリを生成中...', { duration: 3000 });
             
+            // サブクエリ生成前に状態を再確認
+            console.log('[WebSearch] サブクエリ生成前の状態確認:', { 
+              currentWebSearchEnabled,
+              localStorageValue: (() => {
+                try {
+                  return JSON.parse(window.localStorage.getItem('isWebSearchEnabled') || 'false');
+                } catch (e) {
+                  return 'エラー';
+                }
+              })()
+            });
+            
             try {
+              // サブクエリ生成を確実に実行
               const subQueries = await generateSubQueries(currentInput);
               console.log('[WebSearch] generateSubQueries 結果:', subQueries);
             
@@ -707,7 +799,13 @@ function PureMultimodalInput({
           >
             <PaperclipIcon size={16} />
           </Button>
-          <WebSearchButton onClick={handleWebSearchToggle} isLoading={isLoading} input={input} />
+          <WebSearchButton 
+            onClick={handleWebSearchToggle} 
+            isLoading={isLoading} 
+            input={input} 
+            isEnabled={isWebSearchEnabled} 
+            onToggle={handleWebSearchToggleInternal} 
+          />
           <XSearchButton
             initialValue={isXSearchEnabled}
             onXSearchToggle={onXSearchToggle || ((enabled, silentMode) => {
@@ -747,53 +845,86 @@ export const MultimodalInput = memo(
 
 MultimodalInput.displayName = 'MultimodalInput';
 
-const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoading, input }: { onClick: () => void; isLoading: boolean; input: string }) {
-  const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
-  
+const PureWebSearchButton = memo(function PureWebSearchButton({ 
+  onClick, 
+  isLoading, 
+  input, 
+  isEnabled, 
+  onToggle 
+}: { 
+  onClick: () => void; 
+  isLoading: boolean; 
+  input: string;
+  isEnabled: boolean;
+  onToggle: (newState: boolean) => void;
+}) {
   // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
+  // 親コンポーネントから渡されたisEnabledを初期値として使用
   const [clientSideEnabled, setClientSideEnabled] = useState(false);
   
-  // マウント後、localStorageの値に合わせて状態を更新
+  // マウント後、親から渡された値に合わせて状態を更新
   // ハイドレーションの不一致を避けるためにタイマーを使用
   useEffect(() => {
     const timer = setTimeout(() => {
-      setClientSideEnabled(isWebSearchEnabled);
+      setClientSideEnabled(isEnabled);
     }, 0);
     return () => clearTimeout(timer);
-  }, [isWebSearchEnabled]);
+  }, [isEnabled]);
   
   const handleButtonClick = useCallback(async () => {
-    // 現在の状態を取得
-    const currentState = clientSideEnabled;
+    // 親コンポーネントから渡された現在の状態を使用
+    const currentState = isEnabled;
     const newState = !currentState;
     
     console.log(`[PureWebSearchButton] ボタンがクリックされました: ${currentState ? '検索モード' : '通常チャットモード'} → ${newState ? '検索モード' : '通常チャットモード'}`);
     
     // 即座に状態を更新して視覚的なフィードバックを提供
     setClientSideEnabled(newState);
-    setIsWebSearchEnabled(newState);
     
-    // カスタムイベントを即座に発火
+    // LocalStorageに直接保存して状態の一貫性を確保
+    try {
+      window.localStorage.setItem('isWebSearchEnabled', JSON.stringify(newState));
+      console.log(`[PureWebSearchButton] LocalStorageに直接保存: isWebSearchEnabled = ${newState}`);
+    } catch (error) {
+      console.error('[PureWebSearchButton] LocalStorage保存エラー:', error);
+    }
+    
+    // カスタムイベントを発火して他のコンポーネントにも即座に通知
     try {
       const event = new CustomEvent('websearch-mode-changed', { 
         detail: { 
           enabled: newState,
           previous: currentState,
           timestamp: new Date().toISOString(),
-          source: 'button-click'
+          source: 'button-click',
+          immediate: true // 即時更新フラグ
         } 
       });
       window.dispatchEvent(event);
+      console.log(`[PureWebSearchButton] カスタムイベント発火: websearch-mode-changed`);
     } catch (error) {
-      // エラーログは表示しない
+      console.error('[PureWebSearchButton] カスタムイベント発火エラー:', error);
     }
+    
+    // 親コンポーネントの状態を更新するコールバックを呼び出し
+    onToggle(newState);
     
     // 親コンポーネントのハンドラを呼び出し
     onClick();
     
     // 状態が確実に更新されたことを確認
     console.log(`[PureWebSearchButton] モード切替完了: ${newState ? '検索モード' : '通常チャットモード'}`);
-  }, [clientSideEnabled, onClick, setIsWebSearchEnabled, input]);
+    
+    // LocalStorageの値を確認（デバッグ用）
+    setTimeout(() => {
+      try {
+        const storedValue = JSON.parse(window.localStorage.getItem('isWebSearchEnabled') || 'false');
+        console.log(`[PureWebSearchButton] LocalStorage確認: isWebSearchEnabled = ${storedValue}`);
+      } catch (e) {
+        console.error('[PureWebSearchButton] LocalStorage確認エラー:', e);
+      }
+    }, 10);
+  }, [isEnabled, onClick, onToggle]);
 
   return (
     <TooltipProvider>
@@ -829,8 +960,26 @@ const PureWebSearchButton = memo(function PureWebSearchButton({ onClick, isLoadi
 
 PureWebSearchButton.displayName = 'PureWebSearchButton';
 
-const WebSearchButton = memo(function WebSearchButton({ onClick, isLoading, input }: { onClick: () => void; isLoading: boolean; input: string }) {
-  return <PureWebSearchButton onClick={onClick} isLoading={isLoading} input={input} />;
+const WebSearchButton = memo(function WebSearchButton({ 
+  onClick, 
+  isLoading, 
+  input, 
+  isEnabled, 
+  onToggle 
+}: { 
+  onClick: () => void; 
+  isLoading: boolean; 
+  input: string;
+  isEnabled: boolean;
+  onToggle: (newState: boolean) => void;
+}) {
+  return <PureWebSearchButton 
+    onClick={onClick} 
+    isLoading={isLoading} 
+    input={input} 
+    isEnabled={isEnabled} 
+    onToggle={onToggle} 
+  />;
 });
 WebSearchButton.displayName = 'WebSearchButton';
 
