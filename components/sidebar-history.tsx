@@ -293,7 +293,7 @@ export function SidebarHistory() {
   return (
     <div className="flex flex-col h-full">
       {/* Pitatto AIのロゴと文字を追加 */}
-      <div className="px-2 mb-2">
+      <div className="px-3 mb-2">
         <div 
           className="flex items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
           onClick={handleNewChat}
@@ -324,7 +324,7 @@ export function SidebarHistory() {
                   <>
                     {groupedChats.today.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50">
                           今日
                         </div>
                         {groupedChats.today.map((chat) => (
@@ -344,7 +344,7 @@ export function SidebarHistory() {
 
                     {groupedChats.yesterday.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           昨日
                         </div>
                         {groupedChats.yesterday.map((chat) => (
@@ -364,7 +364,7 @@ export function SidebarHistory() {
 
                     {groupedChats.lastWeek.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           過去7日間
                         </div>
                         {groupedChats.lastWeek.map((chat) => (
@@ -384,7 +384,7 @@ export function SidebarHistory() {
 
                     {groupedChats.lastMonth.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           過去30日間
                         </div>
                         {groupedChats.lastMonth.map((chat) => (
@@ -404,7 +404,7 @@ export function SidebarHistory() {
 
                     {groupedChats.older.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           それ以前
                         </div>
                         {groupedChats.older.map((chat) => (
