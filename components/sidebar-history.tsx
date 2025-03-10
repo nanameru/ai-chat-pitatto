@@ -15,6 +15,7 @@ import {
   MoreHorizontalIcon,
   ShareIcon,
   TrashIcon,
+  PlusIcon,
 } from '@/components/icons';
 import {
   AlertDialog,
@@ -294,8 +295,9 @@ export function SidebarHistory() {
     <div className="flex flex-col h-full">
       {/* Pitatto AIのロゴと文字を追加 */}
       <div className="px-3 mb-2">
-        <div 
-          className="flex items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+        <button 
+          type="button"
+          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
           onClick={handleNewChat}
         >
           <div className="flex items-center">
@@ -310,7 +312,8 @@ export function SidebarHistory() {
               Pitatto Chat
             </span>
           </div>
-        </div>
+          <PlusIcon className="h-5 w-5 text-sidebar-foreground" />
+        </button>
       </div>
 
       <SidebarGroup>

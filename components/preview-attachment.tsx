@@ -50,6 +50,7 @@ export const PreviewAttachment = ({
 
         {onDelete && !isUploading && (
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               onDelete();
