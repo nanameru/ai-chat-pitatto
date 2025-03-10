@@ -1,62 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { nanoid } from 'nanoid';
-import { SupabaseClient } from '@supabase/supabase-js';
-
-// CORSヘッダーの設定
-const corsHeaders = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-};
-
-// OPTIONSリクエスト（プリフライト）のハンドラー
-export async function OPTIONS() {
-  return NextResponse.json({}, { headers: corsHeaders });
-}
-
-// バケットの存在確認と作成を行うヘルパー関数
-async function ensureBucketExists(supabase: SupabaseClient, bucketName: string) {
-  try {
-    // バケットの一覧を取得
-    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
-    
-    if (listError) {
-      console.error('バケット一覧取得エラー:', listError);
-      return { success: false, error: listError };
-    }
-    
-    // バケットが存在するか確認
-    const bucketExists = buckets.some((bucket: { name: string }) => bucket.name === bucketName);
-    
-    if (!bucketExists) {
-      console.log(`バケット「${bucketName}」が存在しないため作成します`);
-      
-      // バケットを作成
-      const { error: createError } = await supabase.storage.createBucket(bucketName, {
-        public: true, // 公開バケットとして作成
-      });
-      
-      if (createError) {
-        console.error('バケット作成エラー:', createError);
-        return { success: false, error: createError };
-      }
-      
-      console.log(`バケット「${bucketName}」を作成しました`);
-      
-      // RLSポリシーを設定（必要に応じて）
-      // 注: RLSポリシーの設定はダッシュボードから行う必要があります
-      
-      return { success: true, created: true };
-    }
-    
-    console.log(`バケット「${bucketName}」は既に存在します`);
-    return { success: true, created: false };
-  } catch (error) {
-    console.error('バケット確認/作成エラー:', error);
-    return { success: false, error };
-  }
-}
+// eslint-disable-next-line import/no-unresolved
+import type { StorageError } from '@supabase/storage-js';
 
 export async function POST(request: NextRequest) {
   try {
@@ -86,7 +32,7 @@ export async function POST(request: NextRequest) {
       console.log('ファイルが見つかりません');
       return NextResponse.json(
         { error: 'ファイルが見つかりません' },
-        { status: 400, headers: corsHeaders }
+        { status: 400 }
       );
     }
 
@@ -109,15 +55,6 @@ export async function POST(request: NextRequest) {
       // バケット名を直接指定
       const bucketName = 'PitattoChat';
       console.log(`バケット「${bucketName}」を使用します`);
-      
-      // バケットの存在確認と作成
-      const bucketResult = await ensureBucketExists(supabase, bucketName);
-      if (!bucketResult.success) {
-        return NextResponse.json(
-          { error: `バケットの確認/作成に失敗しました: ${bucketResult.error?.message || '不明なエラー'}` },
-          { status: 500, headers: corsHeaders }
-        );
-      }
       
       // Supabaseのストレージにファイルをアップロード
       console.log('ファイルをアップロード中...');
@@ -147,13 +84,13 @@ export async function POST(request: NextRequest) {
               error: `ファイルのアップロードに失敗しました: RLSポリシー違反。Supabaseダッシュボードで適切なRLSポリシーを設定してください。`,
               details: error.message
             },
-            { status: 500, headers: corsHeaders }
+            { status: 500 }
           );
         }
         
         return NextResponse.json(
           { error: `ファイルのアップロードに失敗しました: ${error.message}` },
-          { status: 500, headers: corsHeaders }
+          { status: 500 }
         );
       }
 
@@ -178,19 +115,19 @@ export async function POST(request: NextRequest) {
         url: publicUrlData.publicUrl,
         pathname: file.name,
         contentType: file.type,
-      }, { headers: corsHeaders });
+      });
     } catch (uploadError) {
       console.error('ファイルアップロード例外:', uploadError);
       return NextResponse.json(
         { error: `ファイルのアップロード中にエラーが発生しました: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}` },
-        { status: 500, headers: corsHeaders }
+        { status: 500 }
       );
     }
   } catch (error) {
     console.error('ファイルアップロードエラー:', error);
     return NextResponse.json(
       { error: `ファイルのアップロード中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}` },
-      { status: 500, headers: corsHeaders }
+      { status: 500 }
     );
   }
 } 

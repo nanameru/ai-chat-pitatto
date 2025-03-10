@@ -57,7 +57,7 @@ export const PreviewAttachment = ({
             className="absolute top-1 right-1 bg-zinc-700/70 hover:bg-zinc-800/90 rounded-sm p-0.5 text-white transition-opacity opacity-0 group-hover:opacity-100 z-10"
             aria-label="削除"
           >
-            <X className="h-3.5 w-3.5" />
+            <X className="size-3.5" />
           </button>
         )}
       </div>
