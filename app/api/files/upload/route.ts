@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { nanoid } from 'nanoid';
-// eslint-disable-next-line import/no-unresolved
-import type { StorageError } from '@supabase/storage-js';
+
+// 必要な型を直接定義
+interface StorageError {
+  name: string;
+  message: string;
+  status?: number;
+  statusCode?: number;
+}
 
 export async function POST(request: NextRequest) {
   try {
