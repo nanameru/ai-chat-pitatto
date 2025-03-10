@@ -17,9 +17,9 @@
 6. 「Public Bucket」オプションをオンにします（ファイルを公開アクセス可能にする場合）。
 7. 「Create Bucket」ボタンをクリックしてバケットを作成します。
 
-## RLSポリシーの設定
+## RLSポリシーの設定（重要）
 
-バケットを作成したら、適切なRLS（Row Level Security）ポリシーを設定する必要があります：
+バケットを作成したら、**必ず**適切なRLS（Row Level Security）ポリシーを設定する必要があります。これがないとファイルのアップロードや取得ができません：
 
 1. 作成したバケット「PitattoChat」をクリックします。
 2. 「Policies」タブを選択します。
@@ -34,7 +34,20 @@
    ```sql
    (bucket_id = 'PitattoChat'::text)
    ```
-5. 「Save Policy」ボタンをクリックします。
+5. 「For roles」で「anon」と「authenticated」の両方を選択します。
+6. 「Save Policy」ボタンをクリックします。
+
+### 匿名ユーザー向けの書き込みポリシー
+
+1. 「New Policy」ボタンをクリックします。
+2. 「For templates」から「Upload, update, and delete objects (insert, update, delete)」を選択します。
+3. 「Policy name」に「anon-write」と入力します。
+4. 「Definition」は以下のようにします：
+   ```sql
+   (bucket_id = 'PitattoChat'::text)
+   ```
+5. 「For roles」で「anon」を選択します。
+6. 「Save Policy」ボタンをクリックします。
 
 ### 認証済みユーザー向けの書き込みポリシー
 
@@ -45,7 +58,8 @@
    ```sql
    (bucket_id = 'PitattoChat'::text)
    ```
-5. 「Save Policy」ボタンをクリックします。
+5. 「For roles」で「authenticated」を選択します。
+6. 「Save Policy」ボタンをクリックします。
 
 ## バケット設定の確認
 
@@ -59,11 +73,11 @@
 
 ### エラー: new row violates row-level security policy
 
-このエラーは、通常、バケットの作成や更新に必要な権限がない場合に発生します。解決策：
+このエラーは、通常、適切なRLSポリシーが設定されていない場合に発生します。解決策：
 
-1. Supabaseダッシュボードから管理者としてバケットを手動で作成してください。
-2. RLSポリシーが正しく設定されていることを確認してください。
-3. アプリケーションの環境変数（`.env.local`）に正しいSupabase URLとAnon Keyが設定されていることを確認してください。
+1. 上記の「RLSポリシーの設定」セクションに従って、必要なポリシーをすべて設定してください。
+2. 特に「匿名ユーザー向けの書き込みポリシー」が設定されていることを確認してください。
+3. ポリシーを設定した後、アプリケーションを再起動してください。
 
 ### ファイルのアップロードに失敗する場合
 
@@ -79,21 +93,6 @@
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-url.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
-SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-これらの値はSupabaseダッシュボードの「Project Settings」→「API」から取得できます。
-「SUPABASE_SERVICE_ROLE_KEY」は「service_role key」として表示されているものを使用してください。
-このキーは非常に強力な権限を持つため、公開しないように注意してください。
-
-## サービスロールについて
-
-サービスロールキー（`SUPABASE_SERVICE_ROLE_KEY`）は、RLSポリシーをバイパスする強力な権限を持っています。
-このキーを使用すると、認証状態に関わらずファイルのアップロードや管理が可能になります。
-
-セキュリティ上の理由から、サービスロールキーは以下の点に注意して使用してください：
-
-1. クライアント側のコードでは絶対に使用しないでください（環境変数名に `NEXT_PUBLIC_` プレフィックスを付けないでください）
-2. サーバーサイドのAPIエンドポイントでのみ使用してください
-3. 必要最小限の操作にのみ使用してください
-4. 本番環境では適切なRLSポリシーを設定することをお勧めします 
+これらの値はSupabaseダッシュボードの「Project Settings」→「API」から取得できます。 

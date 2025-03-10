@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
-import { createAdminClient } from '@/utils/supabase/server-admin';
 import { nanoid } from 'nanoid';
 
 export async function POST(request: NextRequest) {
@@ -42,22 +41,10 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = new Uint8Array(arrayBuffer);
     console.log(`ファイルバッファサイズ: ${fileBuffer.length}`);
-
-    // 管理者権限（サービスロール）を持つクライアントを作成
-    console.log('管理者権限のSupabaseクライアントを作成中...');
-    let adminSupabase;
-    try {
-      adminSupabase = createAdminClient();
-      console.log('管理者権限のSupabaseクライアント作成完了');
-    } catch (error) {
-      console.error('管理者権限のSupabaseクライアント作成エラー:', error);
-      console.log('通常のクライアントを使用します');
-      adminSupabase = supabase;
-    }
   
     // バケットの存在確認
     console.log('バケットの存在を確認中...');
-    const { data: buckets, error: bucketsError } = await adminSupabase.storage.listBuckets();
+    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
     
     if (bucketsError) {
       console.error('バケット一覧取得エラー:', bucketsError);
@@ -84,14 +71,14 @@ export async function POST(request: NextRequest) {
     // 既存バケットの設定を確認
     try {
       console.log('既存バケットの設定を確認中...');
-      const { data: bucketData, error: getBucketError } = await adminSupabase.storage.getBucket('PitattoChat');
+      const { data: bucketData, error: getBucketError } = await supabase.storage.getBucket('PitattoChat');
       
       if (getBucketError) {
         console.error('バケット設定取得エラー:', getBucketError);
       } else if (bucketData) {
         console.log('バケット設定:', bucketData);
         
-        // バケットが非公開の場合は警告をログに出す（変更はしない）
+        // バケットが非公開の場合は警告をログに出す
         if (!bucketData.public) {
           console.warn('警告: バケットが非公開設定になっています。ファイルのURLにアクセスできない可能性があります。');
         }
@@ -106,7 +93,7 @@ export async function POST(request: NextRequest) {
     console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
     
     try {
-      const { data, error } = await adminSupabase.storage
+      const { data, error } = await supabase.storage
         .from('PitattoChat')
         .upload(filePath, fileBuffer, {
           contentType: file.type,
@@ -128,7 +115,7 @@ export async function POST(request: NextRequest) {
 
       // アップロードされたファイルの公開URLを取得
       console.log('公開URLを取得中...');
-      const { data: publicUrlData } = adminSupabase.storage
+      const { data: publicUrlData } = supabase.storage
         .from('PitattoChat')
         .getPublicUrl(filePath);
 
