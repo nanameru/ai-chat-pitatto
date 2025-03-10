@@ -6,6 +6,11 @@ export async function POST(request: NextRequest) {
   try {
     console.log('ファイルアップロードAPIが呼び出されました');
     
+    // 環境変数の確認
+    console.log('環境変数の確認:');
+    console.log('NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '設定済み' : '未設定');
+    console.log('NEXT_PUBLIC_SUPABASE_ANON_KEY:', process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ? '設定済み' : '未設定');
+    
     // ユーザー認証状態を確認
     const supabase = await createClient();
     const { data: sessionData } = await supabase.auth.getSession();
