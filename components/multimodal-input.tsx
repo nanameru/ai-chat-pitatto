@@ -384,7 +384,7 @@ function PureMultimodalInput({
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
-        credentials: 'include',
+        credentials: 'include', // 認証情報（Cookie）を送信
       });
 
       // レスポンスの詳細をログに出力
@@ -394,6 +394,12 @@ function PureMultimodalInput({
       if (response.ok) {
         const data = await response.json();
         console.log('ファイルアップロード成功:', data);
+        console.log('=== クライアント側: アップロード成功 ===');
+        console.log('ファイル名:', data.pathname);
+        console.log('コンテンツタイプ:', data.contentType);
+        console.log('公開URL:', data.url);
+        console.log('公開URLをクリックして確認できます:', data.url);
+        console.log('====================================');
         const { url, pathname, contentType } = data;
 
         return {
@@ -464,6 +470,15 @@ function PureMultimodalInput({
     [isLoading, submitForm],
   );
 
+  // 添付ファイルを削除する関数を追加
+  const handleDeleteAttachment = (index: number) => {
+    setAttachments((prev) => {
+      const newAttachments = [...prev];
+      newAttachments.splice(index, 1);
+      return newAttachments;
+    });
+  };
+
   return (
     <div className="relative w-full flex flex-col gap-4">
       {messages.length === 0 &&
@@ -483,8 +498,12 @@ function PureMultimodalInput({
 
       {(attachments.length > 0 || uploadQueue.length > 0) && (
         <div className="flex flex-row gap-2 overflow-x-scroll items-end">
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
+          {attachments.map((attachment, index) => (
+            <PreviewAttachment 
+              key={attachment.url} 
+              attachment={attachment} 
+              onDelete={() => handleDeleteAttachment(index)}
+            />
           ))}
 
           {uploadQueue.map((filename) => (

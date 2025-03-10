@@ -1,13 +1,16 @@
 import type { Attachment } from 'ai';
 import Image from 'next/image';
 import { LoaderIcon } from './icons';
+import { XCircleIcon } from 'lucide-react';
 
 export const PreviewAttachment = ({
   attachment,
   isUploading = false,
+  onDelete,
 }: {
   attachment: Attachment;
   isUploading?: boolean;
+  onDelete?: () => void;
 }) => {
   const { name, url, contentType } = attachment;
   
@@ -43,6 +46,19 @@ export const PreviewAttachment = ({
           <div className="animate-spin absolute text-zinc-500">
             <LoaderIcon />
           </div>
+        )}
+
+        {onDelete && !isUploading && (
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onDelete();
+            }}
+            className="absolute -top-2 -right-2 bg-white rounded-full text-red-500 hover:text-red-700 transition-colors z-10"
+            aria-label="削除"
+          >
+            <XCircleIcon className="h-5 w-5" />
+          </button>
         )}
       </div>
       <div className="text-xs text-zinc-500 max-w-16 truncate">{name}</div>
