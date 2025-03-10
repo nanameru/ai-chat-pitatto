@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { nanoid } from 'nanoid';
+import { SupabaseClient } from '@supabase/supabase-js';
 
 // CORSヘッダーの設定
 const corsHeaders = {
@@ -15,7 +16,7 @@ export async function OPTIONS() {
 }
 
 // バケットの存在確認と作成を行うヘルパー関数
-async function ensureBucketExists(supabase, bucketName) {
+async function ensureBucketExists(supabase: SupabaseClient, bucketName: string) {
   try {
     // バケットの一覧を取得
     const { data: buckets, error: listError } = await supabase.storage.listBuckets();
@@ -26,7 +27,7 @@ async function ensureBucketExists(supabase, bucketName) {
     }
     
     // バケットが存在するか確認
-    const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    const bucketExists = buckets.some((bucket: { name: string }) => bucket.name === bucketName);
     
     if (!bucketExists) {
       console.log(`バケット「${bucketName}」が存在しないため作成します`);
