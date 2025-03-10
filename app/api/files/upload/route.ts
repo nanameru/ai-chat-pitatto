@@ -2,6 +2,61 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 import { nanoid } from 'nanoid';
 
+// CORSヘッダーの設定
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+};
+
+// OPTIONSリクエスト（プリフライト）のハンドラー
+export async function OPTIONS() {
+  return NextResponse.json({}, { headers: corsHeaders });
+}
+
+// バケットの存在確認と作成を行うヘルパー関数
+async function ensureBucketExists(supabase, bucketName) {
+  try {
+    // バケットの一覧を取得
+    const { data: buckets, error: listError } = await supabase.storage.listBuckets();
+    
+    if (listError) {
+      console.error('バケット一覧取得エラー:', listError);
+      return { success: false, error: listError };
+    }
+    
+    // バケットが存在するか確認
+    const bucketExists = buckets.some(bucket => bucket.name === bucketName);
+    
+    if (!bucketExists) {
+      console.log(`バケット「${bucketName}」が存在しないため作成します`);
+      
+      // バケットを作成
+      const { error: createError } = await supabase.storage.createBucket(bucketName, {
+        public: true, // 公開バケットとして作成
+      });
+      
+      if (createError) {
+        console.error('バケット作成エラー:', createError);
+        return { success: false, error: createError };
+      }
+      
+      console.log(`バケット「${bucketName}」を作成しました`);
+      
+      // RLSポリシーを設定（必要に応じて）
+      // 注: RLSポリシーの設定はダッシュボードから行う必要があります
+      
+      return { success: true, created: true };
+    }
+    
+    console.log(`バケット「${bucketName}」は既に存在します`);
+    return { success: true, created: false };
+  } catch (error) {
+    console.error('バケット確認/作成エラー:', error);
+    return { success: false, error };
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     console.log('ファイルアップロードAPIが呼び出されました');
@@ -30,7 +85,7 @@ export async function POST(request: NextRequest) {
       console.log('ファイルが見つかりません');
       return NextResponse.json(
         { error: 'ファイルが見つかりません' },
-        { status: 400 }
+        { status: 400, headers: corsHeaders }
       );
     }
 
@@ -47,45 +102,22 @@ export async function POST(request: NextRequest) {
     const fileBuffer = new Uint8Array(arrayBuffer);
     console.log(`ファイルバッファサイズ: ${fileBuffer.length}`);
   
-    // バケット名を直接指定
-    const bucketName = 'PitattoChat';
-    console.log(`バケット「${bucketName}」を使用します`);
-    
     // バケットの存在確認
     console.log('バケットの存在を確認中...');
-    const { data: buckets } = await supabase.storage.listBuckets();
-    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
-    
-    if (!bucketExists) {
-      console.log(`バケット「${bucketName}」が存在しません。作成します...`);
-      const { error: createBucketError } = await supabase.storage.createBucket(bucketName, {
-        public: true, // パブリックアクセスを許可
-      });
+    try {
+      // バケット名を直接指定
+      const bucketName = 'PitattoChat';
+      console.log(`バケット「${bucketName}」を使用します`);
       
-      if (createBucketError) {
-        console.error('バケット作成エラー:', createBucketError);
+      // バケットの存在確認と作成
+      const bucketResult = await ensureBucketExists(supabase, bucketName);
+      if (!bucketResult.success) {
         return NextResponse.json(
-          { error: `バケットの作成に失敗しました: ${createBucketError.message}` },
-          { status: 500 }
+          { error: `バケットの確認/作成に失敗しました: ${bucketResult.error?.message || '不明なエラー'}` },
+          { status: 500, headers: corsHeaders }
         );
       }
       
-      console.log(`バケット「${bucketName}」を作成しました`);
-      
-      // バケットのRLSポリシーを設定
-      console.log('RLSポリシーを設定中...');
-      try {
-        // 注意: RLSポリシーはSQL文で設定する必要があるため、
-        // ここではSupabaseダッシュボードでの手動設定を推奨するメッセージを表示
-        console.log('RLSポリシーはSupabaseダッシュボードで設定してください');
-      } catch (policyError) {
-        console.error('RLSポリシー設定エラー:', policyError);
-      }
-    } else {
-      console.log(`バケット「${bucketName}」は既に存在します`);
-    }
-    
-    try {
       // Supabaseのストレージにファイルをアップロード
       console.log('ファイルをアップロード中...');
       console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
@@ -114,13 +146,13 @@ export async function POST(request: NextRequest) {
               error: `ファイルのアップロードに失敗しました: RLSポリシー違反。Supabaseダッシュボードで適切なRLSポリシーを設定してください。`,
               details: error.message
             },
-            { status: 500 }
+            { status: 500, headers: corsHeaders }
           );
         }
         
         return NextResponse.json(
           { error: `ファイルのアップロードに失敗しました: ${error.message}` },
-          { status: 500 }
+          { status: 500, headers: corsHeaders }
         );
       }
 
@@ -145,19 +177,19 @@ export async function POST(request: NextRequest) {
         url: publicUrlData.publicUrl,
         pathname: file.name,
         contentType: file.type,
-      });
+      }, { headers: corsHeaders });
     } catch (uploadError) {
       console.error('ファイルアップロード例外:', uploadError);
       return NextResponse.json(
         { error: `ファイルのアップロード中にエラーが発生しました: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}` },
-        { status: 500 }
+        { status: 500, headers: corsHeaders }
       );
     }
   } catch (error) {
     console.error('ファイルアップロードエラー:', error);
     return NextResponse.json(
       { error: `ファイルのアップロード中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}` },
-      { status: 500 }
+      { status: 500, headers: corsHeaders }
     );
   }
 } 
