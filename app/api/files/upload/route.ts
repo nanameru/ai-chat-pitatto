@@ -67,9 +67,7 @@ export async function POST(request: NextRequest) {
 
       if (error) {
         console.error('Supabaseアップロードエラー:', error);
-        console.error('エラーコード:', error.code);
         console.error('エラーメッセージ:', error.message);
-        console.error('エラー詳細:', error.details);
         
         // RLSポリシー違反エラーの場合
         if (error.message.includes('row-level security policy')) {
