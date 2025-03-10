@@ -450,9 +450,13 @@ function PureMultimodalInput({
         console.error('Error uploading files!', error);
       } finally {
         setUploadQueue([]);
+        // ファイル選択をリセットして同じファイルを再度選択できるようにする
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     },
-    [setAttachments],
+    [setAttachments, fileInputRef],
   );
 
   const handleKeyDown = useCallback(
@@ -477,6 +481,11 @@ function PureMultimodalInput({
       newAttachments.splice(index, 1);
       return newAttachments;
     });
+    
+    // ファイル選択をリセットして同じファイルを再度選択できるようにする
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
   };
 
   return (
