@@ -44,35 +44,15 @@ export async function POST(request: NextRequest) {
   
     // バケットの存在確認
     console.log('バケットの存在を確認中...');
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
-    
-    if (bucketsError) {
-      console.error('バケット一覧取得エラー:', bucketsError);
-      return NextResponse.json(
-        { error: `ストレージバケットの一覧取得に失敗しました: ${bucketsError.message}` },
-        { status: 500 }
-      );
-    }
-    
-    if (!buckets || buckets.length === 0) {
-      console.error('利用可能なバケットがありません');
-      return NextResponse.json(
-        { error: 'ストレージバケットが存在しません。管理者にバケットの作成を依頼してください。' },
-        { status: 500 }
-      );
-    }
-    
-    console.log('利用可能なバケット:', JSON.stringify(buckets, null, 2));
-    
-    // 最初のバケットを使用
-    const bucketName = buckets[0].name;
-    console.log(`最初のバケット「${bucketName}」を使用します`);
-    
-    // Supabaseのストレージにファイルをアップロード
-    console.log('ファイルをアップロード中...');
-    console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
-    
     try {
+      // バケット名を直接指定
+      const bucketName = 'PitattoChat';
+      console.log(`バケット「${bucketName}」を使用します`);
+      
+      // Supabaseのストレージにファイルをアップロード
+      console.log('ファイルをアップロード中...');
+      console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
+      
       const { data, error } = await supabase.storage
         .from(bucketName)
         .upload(filePath, fileBuffer, {

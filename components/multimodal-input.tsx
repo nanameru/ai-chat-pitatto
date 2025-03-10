@@ -387,6 +387,10 @@ function PureMultimodalInput({
         credentials: 'include',
       });
 
+      // レスポンスの詳細をログに出力
+      console.log('レスポンスステータス:', response.status);
+      console.log('レスポンスヘッダー:', Object.fromEntries(response.headers.entries()));
+
       if (response.ok) {
         const data = await response.json();
         console.log('ファイルアップロード成功:', data);
@@ -404,6 +408,7 @@ function PureMultimodalInput({
       try {
         const errorData = await response.json();
         errorMessage = errorData.error || errorMessage;
+        console.error('エラーレスポンスの詳細:', errorData);
       } catch (e) {
         console.error('エラーレスポンスの解析に失敗:', e);
       }
