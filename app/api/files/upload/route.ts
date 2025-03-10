@@ -47,13 +47,45 @@ export async function POST(request: NextRequest) {
     const fileBuffer = new Uint8Array(arrayBuffer);
     console.log(`ファイルバッファサイズ: ${fileBuffer.length}`);
   
+    // バケット名を直接指定
+    const bucketName = 'PitattoChat';
+    console.log(`バケット「${bucketName}」を使用します`);
+    
     // バケットの存在確認
     console.log('バケットの存在を確認中...');
-    try {
-      // バケット名を直接指定
-      const bucketName = 'PitattoChat';
-      console.log(`バケット「${bucketName}」を使用します`);
+    const { data: buckets } = await supabase.storage.listBuckets();
+    const bucketExists = buckets?.some(bucket => bucket.name === bucketName);
+    
+    if (!bucketExists) {
+      console.log(`バケット「${bucketName}」が存在しません。作成します...`);
+      const { error: createBucketError } = await supabase.storage.createBucket(bucketName, {
+        public: true, // パブリックアクセスを許可
+      });
       
+      if (createBucketError) {
+        console.error('バケット作成エラー:', createBucketError);
+        return NextResponse.json(
+          { error: `バケットの作成に失敗しました: ${createBucketError.message}` },
+          { status: 500 }
+        );
+      }
+      
+      console.log(`バケット「${bucketName}」を作成しました`);
+      
+      // バケットのRLSポリシーを設定
+      console.log('RLSポリシーを設定中...');
+      try {
+        // 注意: RLSポリシーはSQL文で設定する必要があるため、
+        // ここではSupabaseダッシュボードでの手動設定を推奨するメッセージを表示
+        console.log('RLSポリシーはSupabaseダッシュボードで設定してください');
+      } catch (policyError) {
+        console.error('RLSポリシー設定エラー:', policyError);
+      }
+    } else {
+      console.log(`バケット「${bucketName}」は既に存在します`);
+    }
+    
+    try {
       // Supabaseのストレージにファイルをアップロード
       console.log('ファイルをアップロード中...');
       console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
