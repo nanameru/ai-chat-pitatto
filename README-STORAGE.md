@@ -79,6 +79,21 @@
 ```
 NEXT_PUBLIC_SUPABASE_URL=https://your-project-url.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 ```
 
-これらの値はSupabaseダッシュボードの「Project Settings」→「API」から取得できます。 
+これらの値はSupabaseダッシュボードの「Project Settings」→「API」から取得できます。
+「SUPABASE_SERVICE_ROLE_KEY」は「service_role key」として表示されているものを使用してください。
+このキーは非常に強力な権限を持つため、公開しないように注意してください。
+
+## サービスロールについて
+
+サービスロールキー（`SUPABASE_SERVICE_ROLE_KEY`）は、RLSポリシーをバイパスする強力な権限を持っています。
+このキーを使用すると、認証状態に関わらずファイルのアップロードや管理が可能になります。
+
+セキュリティ上の理由から、サービスロールキーは以下の点に注意して使用してください：
+
+1. クライアント側のコードでは絶対に使用しないでください（環境変数名に `NEXT_PUBLIC_` プレフィックスを付けないでください）
+2. サーバーサイドのAPIエンドポイントでのみ使用してください
+3. 必要最小限の操作にのみ使用してください
+4. 本番環境では適切なRLSポリシーを設定することをお勧めします 

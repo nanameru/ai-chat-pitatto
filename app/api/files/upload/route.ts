@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
+import { createAdminClient } from '@/utils/supabase/server-admin';
 import { nanoid } from 'nanoid';
 
 export async function POST(request: NextRequest) {
@@ -42,9 +43,21 @@ export async function POST(request: NextRequest) {
     const fileBuffer = new Uint8Array(arrayBuffer);
     console.log(`ファイルバッファサイズ: ${fileBuffer.length}`);
 
+    // 管理者権限（サービスロール）を持つクライアントを作成
+    console.log('管理者権限のSupabaseクライアントを作成中...');
+    let adminSupabase;
+    try {
+      adminSupabase = createAdminClient();
+      console.log('管理者権限のSupabaseクライアント作成完了');
+    } catch (error) {
+      console.error('管理者権限のSupabaseクライアント作成エラー:', error);
+      console.log('通常のクライアントを使用します');
+      adminSupabase = supabase;
+    }
+  
     // バケットの存在確認
     console.log('バケットの存在を確認中...');
-    const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets();
+    const { data: buckets, error: bucketsError } = await adminSupabase.storage.listBuckets();
     
     if (bucketsError) {
       console.error('バケット一覧取得エラー:', bucketsError);
@@ -71,7 +84,7 @@ export async function POST(request: NextRequest) {
     // 既存バケットの設定を確認
     try {
       console.log('既存バケットの設定を確認中...');
-      const { data: bucketData, error: getBucketError } = await supabase.storage.getBucket('PitattoChat');
+      const { data: bucketData, error: getBucketError } = await adminSupabase.storage.getBucket('PitattoChat');
       
       if (getBucketError) {
         console.error('バケット設定取得エラー:', getBucketError);
@@ -91,36 +104,48 @@ export async function POST(request: NextRequest) {
     // Supabaseのストレージにファイルをアップロード
     console.log('ファイルをアップロード中...');
     console.log(`ファイルパス: ${filePath}, コンテンツタイプ: ${file.type}, ファイルサイズ: ${fileBuffer.length}`);
-    const { data, error } = await supabase.storage
-      .from('PitattoChat')
-      .upload(filePath, fileBuffer, {
-        contentType: file.type,
-        upsert: true, // 同名ファイルが存在する場合は上書き
-      });
+    
+    try {
+      const { data, error } = await adminSupabase.storage
+        .from('PitattoChat')
+        .upload(filePath, fileBuffer, {
+          contentType: file.type,
+          upsert: true, // 同名ファイルが存在する場合は上書き
+        });
 
-    if (error) {
-      console.error('Supabaseアップロードエラー:', error);
+      if (error) {
+        console.error('Supabaseアップロードエラー:', error);
+        console.error('エラーコード:', error.code);
+        console.error('エラーメッセージ:', error.message);
+        console.error('エラー詳細:', error.details);
+        return NextResponse.json(
+          { error: `ファイルのアップロードに失敗しました: ${error.message}` },
+          { status: 500 }
+        );
+      }
+
+      console.log('ファイルアップロード成功:', data);
+
+      // アップロードされたファイルの公開URLを取得
+      console.log('公開URLを取得中...');
+      const { data: publicUrlData } = adminSupabase.storage
+        .from('PitattoChat')
+        .getPublicUrl(filePath);
+
+      console.log('公開URL:', publicUrlData.publicUrl);
+
+      return NextResponse.json({
+        url: publicUrlData.publicUrl,
+        pathname: file.name,
+        contentType: file.type,
+      });
+    } catch (uploadError) {
+      console.error('ファイルアップロード例外:', uploadError);
       return NextResponse.json(
-        { error: `ファイルのアップロードに失敗しました: ${error.message}` },
+        { error: `ファイルのアップロード中にエラーが発生しました: ${uploadError instanceof Error ? uploadError.message : String(uploadError)}` },
         { status: 500 }
       );
     }
-
-    console.log('ファイルアップロード成功:', data);
-
-    // アップロードされたファイルの公開URLを取得
-    console.log('公開URLを取得中...');
-    const { data: publicUrlData } = supabase.storage
-      .from('PitattoChat')
-      .getPublicUrl(filePath);
-
-    console.log('公開URL:', publicUrlData.publicUrl);
-
-    return NextResponse.json({
-      url: publicUrlData.publicUrl,
-      pathname: file.name,
-      contentType: file.type,
-    });
   } catch (error) {
     console.error('ファイルアップロードエラー:', error);
     return NextResponse.json(

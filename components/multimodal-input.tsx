@@ -384,6 +384,7 @@ function PureMultimodalInput({
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include',
       });
 
       if (response.ok) {
