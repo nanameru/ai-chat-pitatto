@@ -101,6 +101,13 @@ export async function POST(request: NextRequest) {
         .getPublicUrl(filePath);
 
       console.log('公開URL:', publicUrlData.publicUrl);
+      console.log('=== ファイルアップロード情報 ===');
+      console.log('ファイル名:', file.name);
+      console.log('ファイルタイプ:', file.type);
+      console.log('ファイルサイズ:', file.size, 'bytes');
+      console.log('保存パス:', filePath);
+      console.log('公開URL:', publicUrlData.publicUrl);
+      console.log('=============================');
 
       return NextResponse.json({
         url: publicUrlData.publicUrl,
