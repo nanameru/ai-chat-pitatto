@@ -70,6 +70,24 @@ export async function POST(request: NextRequest) {
         console.error('エラーコード:', error.code);
         console.error('エラーメッセージ:', error.message);
         console.error('エラー詳細:', error.details);
+        
+        // RLSポリシー違反エラーの場合
+        if (error.message.includes('row-level security policy')) {
+          console.error('RLSポリシー違反エラー: バケットに対する適切なRLSポリシーが設定されていません');
+          console.error('以下のRLSポリシーを設定してください:');
+          console.error('1. 匿名ユーザー向けの読み取りポリシー（SELECT）');
+          console.error('2. 匿名ユーザー向けの書き込みポリシー（INSERT）');
+          console.error('3. 認証済みユーザー向けのポリシー（ALL）');
+          
+          return NextResponse.json(
+            { 
+              error: `ファイルのアップロードに失敗しました: RLSポリシー違反。Supabaseダッシュボードで適切なRLSポリシーを設定してください。`,
+              details: error.message
+            },
+            { status: 500 }
+          );
+        }
+        
         return NextResponse.json(
           { error: `ファイルのアップロードに失敗しました: ${error.message}` },
           { status: 500 }
