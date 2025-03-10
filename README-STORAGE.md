@@ -25,39 +25,41 @@
 2. 「Policies」タブを選択します。
 3. 以下のポリシーを追加します：
 
-### 匿名ユーザー向けの読み取りポリシー
+### 匿名ユーザー向けの読み取りポリシー（SELECT）
 
 1. 「New Policy」ボタンをクリックします。
-2. 「For templates」から「Get public URL of objects (select)」を選択します。
-3. 「Policy name」に「public-read」と入力します。
-4. 「Definition」は以下のようにします：
+2. 「Policy name」に「anon-read」と入力します。
+3. 「Definition」に以下を入力します：
    ```sql
-   (bucket_id = 'PitattoChat'::text)
+   true
    ```
-5. 「For roles」で「anon」と「authenticated」の両方を選択します。
-6. 「Save Policy」ボタンをクリックします。
-
-### 匿名ユーザー向けの書き込みポリシー
-
-1. 「New Policy」ボタンをクリックします。
-2. 「For templates」から「Upload, update, and delete objects (insert, update, delete)」を選択します。
-3. 「Policy name」に「anon-write」と入力します。
-4. 「Definition」は以下のようにします：
-   ```sql
-   (bucket_id = 'PitattoChat'::text)
-   ```
+   （すべてのファイルにアクセス可能）
+4. 「For operations」で「SELECT」を選択します。
 5. 「For roles」で「anon」を選択します。
 6. 「Save Policy」ボタンをクリックします。
 
-### 認証済みユーザー向けの書き込みポリシー
+### 匿名ユーザー向けの書き込みポリシー（INSERT）
 
 1. 「New Policy」ボタンをクリックします。
-2. 「For templates」から「Upload, update, and delete objects (insert, update, delete)」を選択します。
-3. 「Policy name」に「auth-write」と入力します。
-4. 「Definition」は以下のようにします：
+2. 「Policy name」に「anon-insert」と入力します。
+3. 「Definition」に以下を入力します：
    ```sql
-   (bucket_id = 'PitattoChat'::text)
+   true
    ```
+   （すべてのファイルをアップロード可能）
+4. 「For operations」で「INSERT」を選択します。
+5. 「For roles」で「anon」を選択します。
+6. 「Save Policy」ボタンをクリックします。
+
+### 認証済みユーザー向けのポリシー（すべての操作）
+
+1. 「New Policy」ボタンをクリックします。
+2. 「Policy name」に「auth-all」と入力します。
+3. 「Definition」に以下を入力します：
+   ```sql
+   true
+   ```
+4. 「For operations」で「ALL」を選択します。
 5. 「For roles」で「authenticated」を選択します。
 6. 「Save Policy」ボタンをクリックします。
 
@@ -73,11 +75,18 @@
 
 ### エラー: new row violates row-level security policy
 
-このエラーは、通常、適切なRLSポリシーが設定されていない場合に発生します。解決策：
+このエラーは、適切なRLSポリシーが設定されていない場合に発生します。解決策：
 
 1. 上記の「RLSポリシーの設定」セクションに従って、必要なポリシーをすべて設定してください。
-2. 特に「匿名ユーザー向けの書き込みポリシー」が設定されていることを確認してください。
+2. 特に「匿名ユーザー向けの書き込みポリシー（INSERT）」が設定されていることを確認してください。
 3. ポリシーを設定した後、アプリケーションを再起動してください。
+
+### ポリシー設定時の注意点
+
+1. **ポリシー名は自由に設定可能**ですが、わかりやすい名前を付けることをお勧めします。
+2. **Definition（条件）**は、特定の条件を設定したい場合は変更できますが、すべてのファイルにアクセスを許可する場合は `true` を使用します。
+3. **For operations**は、許可する操作を選択します（SELECT, INSERT, UPDATE, DELETE, ALL）。
+4. **For roles**は、ポリシーを適用するロールを選択します（anon, authenticated）。
 
 ### ファイルのアップロードに失敗する場合
 
