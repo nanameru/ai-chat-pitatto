@@ -10,6 +10,9 @@ export const PreviewAttachment = ({
   isUploading?: boolean;
 }) => {
   const { name, url, contentType } = attachment;
+  
+  // URLとコンテンツタイプをコンソールに出力
+  console.log(`PreviewAttachment: name=${name}, url=${url}, contentType=${contentType}`);
 
   return (
     <div className="flex flex-col gap-2">
