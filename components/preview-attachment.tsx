@@ -1,7 +1,7 @@
 import type { Attachment } from 'ai';
 import Image from 'next/image';
 import { LoaderIcon } from './icons';
-import { XCircleIcon } from 'lucide-react';
+import { X } from 'lucide-react';
 
 export const PreviewAttachment = ({
   attachment,
@@ -18,7 +18,7 @@ export const PreviewAttachment = ({
   console.log(`PreviewAttachment: name=${name}, url=${url}, contentType=${contentType}`);
 
   return (
-    <div className="flex flex-col gap-2">
+    <div className="flex flex-col gap-2 relative group">
       <div className="w-20 h-16 aspect-video bg-muted rounded-md relative flex flex-col items-center justify-center">
         {contentType ? (
           contentType.startsWith('image') ? (
@@ -54,10 +54,10 @@ export const PreviewAttachment = ({
               e.stopPropagation();
               onDelete();
             }}
-            className="absolute -top-2 -right-2 bg-white rounded-full text-red-500 hover:text-red-700 transition-colors z-10"
+            className="absolute top-1 right-1 bg-zinc-700/70 hover:bg-zinc-800/90 rounded-sm p-0.5 text-white transition-opacity opacity-0 group-hover:opacity-100 z-10"
             aria-label="削除"
           >
-            <XCircleIcon className="h-5 w-5" />
+            <X className="h-3.5 w-3.5" />
           </button>
         )}
       </div>
