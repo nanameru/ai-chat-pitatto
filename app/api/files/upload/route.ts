@@ -5,6 +5,19 @@ import { nanoid } from 'nanoid';
 export async function POST(request: NextRequest) {
   try {
     console.log('ファイルアップロードAPIが呼び出されました');
+    
+    // ユーザー認証状態を確認
+    const supabase = await createClient();
+    const { data: sessionData } = await supabase.auth.getSession();
+    
+    if (sessionData.session) {
+      console.log('認証状態: ログイン済み');
+      console.log('ユーザーID:', sessionData.session.user.id);
+      console.log('ユーザーロール:', sessionData.session.user.role);
+    } else {
+      console.log('認証状態: 未ログイン (匿名ユーザー)');
+    }
+    
     const formData = await request.formData();
     const file = formData.get('file') as File;
 
@@ -28,11 +41,6 @@ export async function POST(request: NextRequest) {
     const arrayBuffer = await file.arrayBuffer();
     const fileBuffer = new Uint8Array(arrayBuffer);
     console.log(`ファイルバッファサイズ: ${fileBuffer.length}`);
-
-    // Supabaseクライアントを作成
-    console.log('Supabaseクライアントを作成中...');
-    const supabase = await createClient();
-    console.log('Supabaseクライアント作成完了');
 
     // バケットの存在確認
     console.log('バケットの存在を確認中...');

@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Toaster } from 'sonner';
 
 import { ThemeProvider } from '@/components/theme-provider';
+import { UserAuthStatus } from '@/components/user-auth-status';
 
 import './globals.css';
 
@@ -59,6 +60,7 @@ export default function RootLayout({
           forcedTheme={undefined}
         >
           <Toaster position="top-center" />
+          <UserAuthStatus />
           {children}
         </ThemeProvider>
       </body>
