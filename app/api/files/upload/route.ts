@@ -48,79 +48,36 @@ export async function POST(request: NextRequest) {
     
     console.log('利用可能なバケット:', buckets.map(b => b.name));
     
-    // バケットが存在しない場合は作成を試みる
+    // バケットが存在するか確認
     const bucketExists = buckets.some(b => b.name === 'PitattoChat');
     if (!bucketExists) {
-      console.log('バケット「PitattoChat」が存在しないため作成を試みます');
-      const { error: createBucketError } = await supabase.storage.createBucket('PitattoChat', {
-        public: true,
-        fileSizeLimit: 1024 * 1024 * 50, // 50MB制限
-      });
+      console.error('バケット「PitattoChat」が存在しません');
+      return NextResponse.json(
+        { error: 'ストレージバケット「PitattoChat」が存在しません。管理者にバケットの作成を依頼してください。' },
+        { status: 500 }
+      );
+    }
+    
+    console.log('バケット「PitattoChat」は存在します');
+    
+    // 既存バケットの設定を確認
+    try {
+      console.log('既存バケットの設定を確認中...');
+      const { data: bucketData, error: getBucketError } = await supabase.storage.getBucket('PitattoChat');
       
-      if (createBucketError) {
-        console.error('バケット作成エラー:', createBucketError);
-        return NextResponse.json(
-          { error: `ストレージバケットの作成に失敗しました: ${createBucketError.message}` },
-          { status: 500 }
-        );
-      }
-      console.log('バケット「PitattoChat」を作成しました');
-      
-      // バケットのRLSポリシーを設定
-      try {
-        console.log('バケットのRLSポリシーを設定中...');
-        const { error: policyError } = await supabase.storage.from('PitattoChat').createPolicy(
-          'public-read',
-          {
-            name: 'public-read',
-            definition: {
-              role: 'anon',
-              operation: 'SELECT',
-            },
-          }
-        );
+      if (getBucketError) {
+        console.error('バケット設定取得エラー:', getBucketError);
+      } else if (bucketData) {
+        console.log('バケット設定:', bucketData);
         
-        if (policyError) {
-          console.error('RLSポリシー設定エラー:', policyError);
-          // ポリシー設定エラーはクリティカルではないので続行
-        } else {
-          console.log('RLSポリシーを正常に設定しました');
+        // バケットが非公開の場合は警告をログに出す（変更はしない）
+        if (!bucketData.public) {
+          console.warn('警告: バケットが非公開設定になっています。ファイルのURLにアクセスできない可能性があります。');
         }
-      } catch (policyError) {
-        console.error('RLSポリシー設定中に例外が発生:', policyError);
-        // ポリシー設定エラーはクリティカルではないので続行
       }
-    } else {
-      console.log('バケット「PitattoChat」は既に存在します');
-      
-      // 既存バケットの設定を確認
-      try {
-        console.log('既存バケットの設定を確認中...');
-        const { data: bucketData, error: getBucketError } = await supabase.storage.getBucket('PitattoChat');
-        
-        if (getBucketError) {
-          console.error('バケット設定取得エラー:', getBucketError);
-        } else if (bucketData) {
-          console.log('バケット設定:', bucketData);
-          
-          // バケットが非公開の場合は公開に設定
-          if (!bucketData.public) {
-            console.log('バケットが非公開のため、公開設定に更新します');
-            const { error: updateError } = await supabase.storage.updateBucket('PitattoChat', {
-              public: true,
-              fileSizeLimit: 1024 * 1024 * 50, // 50MB制限
-            });
-            
-            if (updateError) {
-              console.error('バケット更新エラー:', updateError);
-            } else {
-              console.log('バケットを公開設定に更新しました');
-            }
-          }
-        }
-      } catch (bucketError) {
-        console.error('バケット設定確認中に例外が発生:', bucketError);
-      }
+    } catch (bucketError) {
+      console.error('バケット設定確認中に例外が発生:', bucketError);
+      // エラーは無視して続行
     }
 
     // Supabaseのストレージにファイルをアップロード
