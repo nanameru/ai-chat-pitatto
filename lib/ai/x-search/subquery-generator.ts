@@ -135,6 +135,7 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
           .replace(/```json\s*|\s*```/g, '')  // コードブロックの削除
           .trim();
         
+
         // クエリオブジェクトの型を定義
         interface QueryObject {
           query: string;
@@ -142,6 +143,7 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
         }
         
         let queries: QueryObject[] | QueryObject;
+
         try {
           queries = JSON.parse(cleanContent);
           
@@ -170,7 +172,7 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
             if (!q || typeof q !== 'object') return null;
             return q.query || null;
           })
-          .filter((q): q is string => q !== null);
+          .filter((q: string | null): q is string => q !== null);
 
         console.log(`[Gemini API] Successfully parsed ${results.length} queries`);
         return results;

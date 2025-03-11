@@ -17,6 +17,7 @@ import {
   XSearchResultMessage,
   ProcessedPosts
 } from './types';
+
 import { 
   executeCozeQueries, 
   generateCozeResponse, 
@@ -47,70 +48,170 @@ export class XSearchService {
    * @param onStateChange 状態変更時のコールバック関数（オプション）
    * @returns X検索レスポンス
    */
+  /**
+   * X検索を実行する
+   * @param query ユーザーの検索クエリ
+   * @param chatId チャットセッションのID
+   * @param onStateChange 状態変更時のコールバック関数（オプション）
+   * @returns X検索レスポンス
+   */
   async executeSearch(
     query: string, 
     chatId: string,
     onStateChange?: (state: XSearchState, data?: any) => void
   ): Promise<XSearchResponse> {
     try {
-      // 状態更新: 初期状態
+      let messageId: string;
+      
+      // ===== ステップ1: ユーザークエリの処理 =====
+      console.log('\n===== ステップ1: ユーザークエリの処理 =====');
+      console.log(`[XSearchService] ユーザークエリ: ${query}`);
+      
+      // 状態更新: 開始
       this.updateState(onStateChange, XSearchState.IDLE);
       
-      // ユーザークエリを保存
-      console.log(`[XSearchService] Executing search for query: ${query}`);
-      const messageId = await this.dbAdapter.saveUserQuery(query, chatId);
+      try {
+        // ユーザークエリを保存
+        console.log(`[XSearchService] クエリをデータベースに保存します...`);
+        messageId = await this.dbAdapter.saveUserQuery(query, chatId);
+        console.log(`[XSearchService] クエリを保存しました。メッセージID: ${messageId}`);
+        
+        // ユーザークエリをエンベディングで保存
+        console.log(`[XSearchService] ユーザークエリのエンベディングを保存しています...`);
+        await this.storeUserQueryWithEmbedding(query, chatId);
+        console.log(`[XSearchService] ステップ1完了: ユーザークエリの処理が完了しました`);
+      } catch (error) {
+        console.error(`[XSearchService] ステップ1でエラーが発生しました:`, error);
+        throw new XSearchError('query_processing_error', 'ユーザークエリの処理中にエラーが発生しました', error);
+      }
       
+      // ===== ステップ2: サブクエリの生成 =====
+      console.log('\n===== ステップ2: サブクエリの生成 =====');
       // 状態更新: サブクエリ生成中
       this.updateState(onStateChange, XSearchState.GENERATING_SUBQUERIES);
       
-      // サブクエリを生成
-      const subQueryTexts = await generateSubQueries(query);
-      console.log(`[XSearchService] Generated ${subQueryTexts.length} subqueries: ${subQueryTexts.join(', ')}`);
+      let subQueries: SubQuery[];
+      try {
+        // サブクエリを生成
+        console.log(`[XSearchService] サブクエリを生成しています...`);
+        const subQueryTexts = await generateSubQueries(query);
+        console.log(`[XSearchService] ${subQueryTexts.length}個のサブクエリを生成しました:`);
+        subQueryTexts.forEach((sq, i) => console.log(`  ${i+1}. ${sq}`));
+        
+        // サブクエリが生成されたか確認
+        if (!subQueryTexts || subQueryTexts.length === 0) {
+          throw new XSearchError('no_subqueries', 'サブクエリを生成できませんでした');
+        }
+        
+        // サブクエリを保存
+        console.log(`[XSearchService] サブクエリをデータベースに保存しています...`);
+        const subQueryIds = await this.dbAdapter.saveSubQueries(subQueryTexts, messageId, chatId);
+        console.log(`[XSearchService] サブクエリを保存しました。`);
+        
+        // サブクエリオブジェクトを作成
+        subQueries = subQueryTexts.map((query_text, index) => ({
+          id: subQueryIds[index],
+          query_text,
+          fetched_data: []
+        }));
+        
+        console.log(`[XSearchService] ステップ2完了: ${subQueries.length}個のサブクエリの生成と保存が完了しました`);
+      } catch (error) {
+        console.error(`[XSearchService] ステップ2でエラーが発生しました:`, error);
+        throw new XSearchError('subquery_generation_error', 'サブクエリの生成中にエラーが発生しました', error);
+      }
       
-      // サブクエリを保存
-      const subQueryIds = await this.dbAdapter.saveSubQueries(subQueryTexts, messageId, chatId);
-      
-      // サブクエリオブジェクトを作成
-      const subQueries: SubQuery[] = subQueryTexts.map((query_text, index) => ({
-        id: subQueryIds[index],
-        query_text,
-        fetched_data: []
-      }));
-      
-      // ユーザークエリをエンベディングで保存
-      await this.storeUserQueryWithEmbedding(query, chatId);
-      
+      // ===== ステップ3: 並列検索の実行 =====
+      console.log('\n===== ステップ3: 並列検索の実行 =====');
       // 状態更新: 検索実行中
       this.updateState(onStateChange, XSearchState.SEARCHING);
       
-      // 検索を実行
-      const searchResults = await this.executeSearchWithSubQueries(
-        subQueries, 
-        chatId, 
-        messageId,
-        (processed, total) => {
-          // 進捗状況をコールバックで通知
-          this.updateState(onStateChange, XSearchState.SEARCHING, { 
-            processedQueries: processed, 
-            totalQueries: total 
-          });
-        }
-      );
+      let searchResults: TwitterPost[];
+      try {
+        // 並列検索を実行
+        console.log(`[XSearchService] ${subQueries.length}個のサブクエリで並列検索を実行しています...`);
+        searchResults = await this.executeSearchWithSubQueries(
+          subQueries, 
+          chatId, 
+          messageId,
+          (processed, total) => {
+            // 進捗状況をコールバックで通知
+            console.log(`[XSearchService] 進捗状況: ${processed}/${total} クエリを処理しました`);
+            this.updateState(onStateChange, XSearchState.SEARCHING, { 
+              processedQueries: processed, 
+              totalQueries: total 
+            });
+          }
+        );
+        
+        // 検索結果が取得できたか確認
+        console.log(`[XSearchService] ${searchResults.length}件の検索結果を取得しました`);
+        
+        // 検索結果を保存
+        console.log(`[XSearchService] 検索結果をデータベースに保存しています...`);
+        await this.dbAdapter.saveSearchResults(searchResults, messageId, chatId);
+        console.log(`[XSearchService] 検索結果を保存しました`);
+        
+        // 検索結果の再ランク付け
+        console.log(`[XSearchService] 検索結果の再ランク付けを行っています...`);
+        await this.rerankSearchResults(messageId);
+        
+        console.log(`[XSearchService] ステップ3完了: 並列検索の実行と結果の保存が完了しました`);
+      } catch (error) {
+        console.error(`[XSearchService] ステップ3でエラーが発生しました:`, error);
+        throw new XSearchError('search_execution_error', '検索の実行中にエラーが発生しました', error);
+      }
       
-      // 検索結果を保存
-      await this.dbAdapter.saveSearchResults(searchResults, messageId, chatId);
+      // 検索結果の詳細をログに出力
+      console.log('\n===== 検索結果の詳細 =====');
+      if (searchResults.length === 0) {
+        console.log(`[XSearchService] 検索結果は0件です`);
+      } else {
+        searchResults.forEach((result, i) => {
+          console.log(`\n結果 ${i+1}:`);
+          console.log(`  投稿者: ${result.author.name} (@${result.author.username})`);
+          console.log(`  投稿日時: ${result.created_at}`);
+          console.log(`  本文: ${result.text.substring(0, 100)}${result.text.length > 100 ? '...' : ''}`);
+          console.log(`  いいね数: ${result.metrics.likes}, リツイート数: ${result.metrics.retweets}, 返信数: ${result.metrics.replies}`);
+          console.log(`  URL: https://x.com/${result.author.username}/status/${result.id}`);
+        });
+      }
       
+      // 検索結果が0件の場合は特別なメッセージを返す
+      if (searchResults.length === 0) {
+        const defaultAnswer = `「${query}」に関する情報はX（旧Twitter）上で見つかりませんでした。別のキーワードで検索してみてください。`;
+        console.log(`[XSearchService] 検索結果が0件のため、デフォルトメッセージを返します: ${defaultAnswer}`);
+        
+        // 状態更新: 完了
+        this.updateState(onStateChange, XSearchState.COMPLETED);
+        
+        return {
+          messageId,
+          answer: defaultAnswer,
+          sources: []
+        };
+      }
+      
+      // ===== ステップ4: AI回答の生成 =====
+      console.log('\n===== ステップ4: AI回答の生成 =====');
       // 状態更新: 回答生成中
       this.updateState(onStateChange, XSearchState.GENERATING_ANSWER);
       
-      // 検索結果の再ランク付け
-      await this.rerankSearchResults(messageId);
-      
-      // AI回答を生成
-      const answer = await this.generateAnswerFromResults(query, searchResults);
+      let answer: string;
+      try {
+        // AI回答を生成
+        console.log(`[XSearchService] ${searchResults.length}件の検索結果からAI回答を生成しています...`);
+        answer = await this.generateAnswerFromResults(query, searchResults);
+        console.log(`[XSearchService] AI回答の生成が完了しました (${answer.length}文字)`);
+        console.log(`[XSearchService] ステップ4完了: AI回答の生成が完了しました`);
+      } catch (error) {
+        console.error(`[XSearchService] ステップ4でエラーが発生しました:`, error);
+        throw new XSearchError('answer_generation_error', 'AI回答の生成中にエラーが発生しました', error);
+      }
       
       // 状態更新: 完了
       this.updateState(onStateChange, XSearchState.COMPLETED);
+      console.log('\n===== X検索プロセスが完了しました =====');
       
       // レスポンスを返す
       return {
@@ -119,16 +220,19 @@ export class XSearchService {
         sources: this.formatSearchResults(searchResults)
       };
     } catch (error: unknown) {
-      console.error('[XSearchService] Error executing search:', error);
-      const errorMessage = error instanceof Error ? error.message : '不明なエラー';
-      this.updateState(onStateChange, XSearchState.ERROR, { 
-        error: new XSearchError(
-          'search_execution_error',
-          errorMessage || 'X検索の実行中にエラーが発生しました',
-          error
-        )
-      });
-      throw error;
+      console.error('[XSearchService] X検索の実行中にエラーが発生しました:', error);
+      
+      // エラー状態を通知
+      const xError = error instanceof XSearchError 
+        ? error 
+        : new XSearchError(
+            'unknown_error', 
+            '不明なエラーが発生しました', 
+            error
+          );
+      
+      this.updateState(onStateChange, XSearchState.ERROR, { error: xError });
+      throw xError;
     }
   }
   
@@ -167,6 +271,14 @@ export class XSearchService {
    * @param onProgress 進捗状況のコールバック関数
    * @returns 検索結果の配列
    */
+  /**
+   * サブクエリを使用して並列検索を実行する
+   * @param subQueries サブクエリの配列
+   * @param userId ユーザーID
+   * @param parentId 親ID（チャットIDやメッセージID）
+   * @param onProgress 進捗状況のコールバック関数
+   * @returns 検索結果の配列
+   */
   private async executeSearchWithSubQueries(
     subQueries: SubQuery[], 
     userId: string, 
@@ -174,22 +286,51 @@ export class XSearchService {
     onProgress?: (processed: number, total: number) => void
   ): Promise<TwitterPost[]> {
     try {
-      // Cozeクエリを実行
-      const results = await executeCozeQueries(
+      console.log(`[XSearchService] ${subQueries.length}個のサブクエリを並列実行します...`);
+      console.log('[XSearchService] サブクエリ一覧:');
+      subQueries.forEach((sq, i) => console.log(`  ${i+1}. ${sq.query_text}`));
+      
+      // 並列実行オプション
+      const options = {
+        skipStorage: false // データベースへの保存を行う
+      };
+      
+      // Cozeクエリを並列実行
+      console.log('[XSearchService] executeParallelCozeQueriesを呼び出します...');
+      const results = await executeParallelCozeQueries(
         subQueries.map(sq => sq.query_text),
         userId,
         parentId,
         (processed) => {
+          console.log(`[XSearchService] 並列実行進捗: ${processed}/${subQueries.length} 完了`);
           if (onProgress) {
             onProgress(processed, subQueries.length);
           }
-        }
+        },
+        options
       );
       
+      // 並列実行が完了したことを確認
+      if (!results || results.length === 0) {
+        console.log('[XSearchService] 警告: 並列実行の結果が空です');
+        return [];
+      }
+      
+      console.log(`[XSearchService] 並列実行が完了しました。${results.length}件の結果を取得しました。`);
+      
+      // 結果の概要をログ出力
+      results.forEach((result, i) => {
+        console.log(`[XSearchService] 結果 ${i+1}: クエリ「${result.query}」- ${result.posts?.length || 0}件の投稿${result.error ? ` (エラー: ${result.error})` : ''}`);
+      });
+      
       // 結果を集約
+      console.log('[XSearchService] 検索結果を集約しています...');
       const aggregatedPosts = new Map<string, TwitterPost>();
+      let totalPostsCount = 0;
+      
       results.forEach(result => {
         if (result.posts) {
+          totalPostsCount += result.posts.length;
           result.posts.forEach((post: TwitterPost) => {
             // 重複を排除するためにMapを使用
             if (!aggregatedPosts.has(post.id)) {
@@ -205,7 +346,10 @@ export class XSearchService {
         }
       });
       
-      return Array.from(aggregatedPosts.values());
+      const uniquePosts = Array.from(aggregatedPosts.values());
+      console.log(`[XSearchService] 集約完了: 合計${totalPostsCount}件の投稿から${uniquePosts.length}件の一意な投稿を抽出しました`);
+      
+      return uniquePosts;
     } catch (error: unknown) {
       console.error('[XSearchService] Error executing search with subqueries:', error);
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
@@ -241,27 +385,34 @@ export class XSearchService {
     try {
       // 検索結果が少ない場合
       if (searchResults.length === 0) {
+        debugLog(`[XSearchService] 検索結果が0件のため、デフォルトメッセージを返します`);
         return `「${query}」に関する情報はX（旧Twitter）上で見つかりませんでした。別のキーワードで検索してみてください。`;
       }
 
       // 検索結果からプロンプトを作成
+      debugLog(`[XSearchService] 回答生成用のプロンプトを作成しています...`);
       const prompt = this.createAnswerPrompt(query, searchResults);
+      debugLog(`[XSearchService] プロンプトを作成しました（${prompt.length}文字）`);
+      debugLog(`[XSearchService] プロンプトの一部: ${prompt.substring(0, 200)}...`);
       
       // Coze APIを使用して回答を生成
       try {
+        debugLog(`[XSearchService] Coze APIを使用して回答を生成しています...`);
         const answer = await generateCozeResponse(prompt, {
           temperature: 0.7,
           max_tokens: 1000
         });
+        debugLog(`[XSearchService] Coze APIから回答を受け取りました（${answer.length}文字）`);
         return answer;
       } catch (error: unknown) {
         const errorMessage = error instanceof Error ? error.message : '不明なエラー';
-        console.error('[XSearchService] Error generating answer with Coze API:', errorMessage);
+        debugLog('[XSearchService] Coze APIでの回答生成中にエラーが発生しました:', errorMessage);
+        debugLog(`[XSearchService] フォールバックとしてモック回答を生成します`);
         // APIエラー時はモック回答を返す
         return this.getMockAnswer(query, searchResults);
       }
     } catch (error: unknown) {
-      console.error('[XSearchService] Error generating answer from results:', error);
+      console.error('[XSearchService] 回答生成中にエラーが発生しました:', error);
       const errorMessage = error instanceof Error ? error.message : '不明なエラー';
       throw new XSearchError(
         'answer_generation_error',
