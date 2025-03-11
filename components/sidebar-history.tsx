@@ -12,7 +12,7 @@ import {
   CheckCircleFillIcon,
   GlobeIcon,
   LockIcon,
-  MoreHorizontalIcon,
+  MenuIcon,
   ShareIcon,
   TrashIcon,
   PlusIcon,
@@ -103,7 +103,7 @@ const PureChatItem = ({
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mr-0.5"
             showOnHover={!isActive}
           >
-            <MoreHorizontalIcon />
+            <MenuIcon />
             <span className="sr-only">More</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
@@ -310,6 +310,30 @@ export function SidebarHistory() {
             />
             <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
               Pitatto Chat
+            </span>
+          </div>
+        </button>
+        
+        {/* ピタッとニュースボタンを追加 */}
+        <button 
+          type="button"
+          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          onClick={() => {
+            setOpenMobile(false);
+            // ニュースページへのリンク（実装時に適切なURLに変更してください）
+            router.push('/news');
+          }}
+        >
+          <div className="flex items-center">
+            <Image 
+              src="/images/pitattologo.png" 
+              alt="Pitatto Logo" 
+              width={22} 
+              height={22}
+              className="rounded-md" 
+            />
+            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+              Pitatto Me
             </span>
           </div>
         </button>
