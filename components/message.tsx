@@ -90,7 +90,7 @@ const PurePreviewMessage = ({
                     <TooltipTrigger asChild>
                       <Button
                         variant="ghost"
-                        className="px-2 h-fit rounded-full text-muted-foreground opacity-0 group-hover/message:opacity-100"
+                        className="px-2 h-fit rounded-full text-sidebar-foreground bg-sidebar-accent opacity-0 group-hover/message:opacity-100 hover:bg-sidebar-accent/80"
                         onClick={() => {
                           setMode('edit');
                         }}
