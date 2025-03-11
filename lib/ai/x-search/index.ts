@@ -17,38 +17,14 @@ import {
   XSearchResultMessage,
   ProcessedPosts
 } from './types';
-import { executeCozeQueries, executeParallelCozeQueries, generateCozeResponse, rerankSimilarDocuments, storeDataWithEmbedding } from '@/lib/ai/coze/coze';
 
-// デバッグモードの設定
-const DEBUG_MODE = true;
-
-/**
- * デバッグログを出力する関数
- * サーバーサイドとクライアントサイドの両方で動作するように設計
- */
-function debugLog(...args: any[]) {
-  if (!DEBUG_MODE) return;
-  
-  // サーバーサイドとクライアントサイドの両方でログを出力
-  console.log(...args);
-  
-  // クライアントサイドの場合、window.consoleにも出力
-  if (typeof window !== 'undefined') {
-    // ブラウザ環境の場合
-    const prefix = '[X-Search Debug]';
-    window.console.log(prefix, ...args);
-    
-    // 開発ツールのコンソールに目立つように表示
-    if (args[0] && typeof args[0] === 'string' && args[0].includes('Error')) {
-      window.console.error(prefix, ...args);
-    } else if (args[0] && typeof args[0] === 'string' && args[0].includes('Warning')) {
-      window.console.warn(prefix, ...args);
-    } else if (args[0] && typeof args[0] === 'string' && (args[0].includes('Starting') || args[0].includes('Completed'))) {
-      window.console.info(prefix, ...args);
-    }
-  }
-}
-import { TwitterPost } from '@/lib/ai/coze/coze';
+import { 
+  executeCozeQueries, 
+  generateCozeResponse, 
+  rerankSimilarDocuments, 
+  storeDataWithEmbedding,
+  TwitterPost 
+} from '@/lib/ai/coze/coze';
 
 /**
  * X検索サービスクラス

@@ -135,13 +135,15 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
           .replace(/```json\s*|\s*```/g, '')  // コードブロックの削除
           .trim();
         
-        // クエリの型を明示的に定義
-        interface SubQuery {
+
+        // クエリオブジェクトの型を定義
+        interface QueryObject {
           query: string;
-          [key: string]: any;
+          [key: string]: any; // その他のプロパティも許容
         }
         
-        let queries: SubQuery[] | any;
+        let queries: QueryObject[] | QueryObject;
+
         try {
           queries = JSON.parse(cleanContent);
           
@@ -166,7 +168,7 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
 
         // クエリオブジェクトから文字列を抽出
         const results = queries
-          .map((q: any) => {
+          .map((q: QueryObject) => {
             if (!q || typeof q !== 'object') return null;
             return q.query || null;
           })

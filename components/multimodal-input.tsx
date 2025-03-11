@@ -571,7 +571,8 @@ function PureMultimodalInput({
     setAttachments,
     setInput,
     setLocalStorageInput,
-    selectedModelId
+    selectedModelId,
+    append
   ]);
 
   const uploadFile = async (file: File) => {
@@ -579,13 +580,26 @@ function PureMultimodalInput({
     formData.append('file', file);
 
     try {
+      console.log(`ファイルをアップロード中: ${file.name} (${file.size} bytes)`);
       const response = await fetch('/api/files/upload', {
         method: 'POST',
         body: formData,
+        credentials: 'include', // 認証情報（Cookie）を送信
       });
+
+      // レスポンスの詳細をログに出力
+      console.log('レスポンスステータス:', response.status);
+      console.log('レスポンスヘッダー:', Object.fromEntries(response.headers.entries()));
 
       if (response.ok) {
         const data = await response.json();
+        console.log('ファイルアップロード成功:', data);
+        console.log('=== クライアント側: アップロード成功 ===');
+        console.log('ファイル名:', data.pathname);
+        console.log('コンテンツタイプ:', data.contentType);
+        console.log('公開URL:', data.url);
+        console.log('公開URLをクリックして確認できます:', data.url);
+        console.log('====================================');
         const { url, pathname, contentType } = data;
 
         return {
@@ -594,10 +608,24 @@ function PureMultimodalInput({
           contentType: contentType,
         };
       }
-      const { error } = await response.json();
-      toast.error(error);
+      
+      // エラーレスポンスの詳細を取得
+      let errorMessage = 'ファイルのアップロードに失敗しました';
+      try {
+        const errorData = await response.json();
+        errorMessage = errorData.error || errorMessage;
+        console.error('エラーレスポンスの詳細:', errorData);
+      } catch (e) {
+        console.error('エラーレスポンスの解析に失敗:', e);
+      }
+      
+      console.error(`アップロードエラー (${response.status}): ${errorMessage}`);
+      toast.error(errorMessage);
+      return undefined;
     } catch (error) {
-      toast.error('Failed to upload file, please try again!');
+      console.error('ファイルアップロード例外:', error);
+      toast.error('ファイルのアップロードに失敗しました。ネットワーク接続を確認してください。');
+      return undefined;
     }
   };
 
@@ -622,9 +650,13 @@ function PureMultimodalInput({
         console.error('Error uploading files!', error);
       } finally {
         setUploadQueue([]);
+        // ファイル選択をリセットして同じファイルを再度選択できるようにする
+        if (fileInputRef.current) {
+          fileInputRef.current.value = '';
+        }
       }
     },
-    [setAttachments],
+    [setAttachments, fileInputRef],
   );
 
   const handleKeyDown = useCallback(
@@ -641,6 +673,20 @@ function PureMultimodalInput({
     },
     [isLoading, submitForm],
   );
+
+  // 添付ファイルを削除する関数を追加
+  const handleDeleteAttachment = (index: number) => {
+    setAttachments((prev) => {
+      const newAttachments = [...prev];
+      newAttachments.splice(index, 1);
+      return newAttachments;
+    });
+    
+    // ファイル選択をリセットして同じファイルを再度選択できるようにする
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="relative w-full flex flex-col gap-4">
@@ -661,8 +707,12 @@ function PureMultimodalInput({
 
       {(attachments.length > 0 || uploadQueue.length > 0) && (
         <div className="flex flex-row gap-2 overflow-x-scroll items-end">
-          {attachments.map((attachment) => (
-            <PreviewAttachment key={attachment.url} attachment={attachment} />
+          {attachments.map((attachment, index) => (
+            <PreviewAttachment 
+              key={attachment.url} 
+              attachment={attachment} 
+              onDelete={() => handleDeleteAttachment(index)}
+            />
           ))}
 
           {uploadQueue.map((filename) => (
@@ -697,7 +747,7 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
           <Button
             type="button"
-            className="h-8 w-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+            className="size-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               fileInputRef.current?.click();
@@ -979,7 +1029,7 @@ const PureStopButton = memo(function PureStopButton({
       onClick={() => {
         stop();
       }}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
       <StopIcon size={16} />
@@ -1008,7 +1058,7 @@ const SendButton = memo(function SendButton({
         submitForm();
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
-      className="h-8 w-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
+      className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信"
     >
       <ArrowUpIcon size={16} />
