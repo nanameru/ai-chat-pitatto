@@ -4,7 +4,7 @@ import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
 import Image from 'next/image';
 
-import { PencilEditIcon } from '@/components/icons';
+import { PlusIcon, SidebarToggleIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
 import { SidebarUserNav } from '@/components/sidebar-user-nav';
 import { Button } from '@/components/ui/button';
@@ -21,46 +21,44 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 export function AppSidebar({ user }: { user: User | undefined }) {
   const router = useRouter();
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, toggleSidebar } = useSidebar();
+
+  // 新しいチャットを開く関数
+  const handleNewChat = () => {
+    setOpenMobile(false);
+    router.push('/');
+    router.refresh();
+  };
 
   return (
     <Sidebar className="group-data-[side=left]:border-r-0">
       <SidebarHeader>
         <SidebarMenu>
-          <div className="flex flex-row justify-between items-center">
-            <Link
-              href="/"
-              onClick={() => {
-                setOpenMobile(false);
-              }}
-              className="flex flex-row gap-2 items-center"
-            >
-              <div className="flex items-center bg-sidebar rounded-lg shadow-sm p-1.5 transition-colors">
-                <Image 
-                  src="/images/pitattologo.png" 
-                  alt="Pitatto Logo" 
-                  width={28} 
-                  height={28}
-                  className="rounded-md" 
-                />
-                <span className="text-lg font-semibold ml-1.5 text-sidebar-foreground">
-                  Pitatto
-                </span>
-              </div>
-            </Link>
+          {/* ヘッダーに左右のボタンを配置 */}
+          <div className="flex justify-between items-center p-2">
+            {/* サイドバーの開閉ボタン（左側） */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
+                  onClick={toggleSidebar}
                   variant="ghost"
-                  type="button"
                   className="p-2 h-fit"
-                  onClick={() => {
-                    setOpenMobile(false);
-                    router.push('/');
-                    router.refresh();
-                  }}
                 >
-                  <PencilEditIcon />
+                  <SidebarToggleIcon size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent align="start">Toggle Sidebar</TooltipContent>
+            </Tooltip>
+
+            {/* New Chatボタン（右側） */}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  onClick={handleNewChat}
+                  variant="ghost"
+                  className="p-2 h-fit"
+                >
+                  <PlusIcon size={16} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent align="end">New Chat</TooltipContent>

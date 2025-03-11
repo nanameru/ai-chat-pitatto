@@ -2,6 +2,7 @@
 
 import { isToday, isYesterday, subMonths, subWeeks } from 'date-fns';
 import Link from 'next/link';
+import Image from 'next/image';
 import { useRouter, usePathname, useParams } from 'next/navigation';
 import { memo, useEffect, useState } from 'react';
 import { toast } from 'sonner';
@@ -14,6 +15,7 @@ import {
   MoreHorizontalIcon,
   ShareIcon,
   TrashIcon,
+  PlusIcon,
 } from '@/components/icons';
 import {
   AlertDialog,
@@ -167,6 +169,7 @@ export function SidebarHistory() {
   const { setOpenMobile } = useSidebar();
   const { id } = useParams();
   const pathname = usePathname();
+  const router = useRouter();
   const {
     data: history,
     isLoading,
@@ -181,7 +184,7 @@ export function SidebarHistory() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
-  const router = useRouter();
+  
   const handleDelete = async () => {
     const deletePromise = fetch(`/api/chat?id=${deleteId}`, {
       method: 'DELETE',
@@ -205,6 +208,13 @@ export function SidebarHistory() {
     if (deleteId === id) {
       router.push('/');
     }
+  };
+
+  // 新しいチャットを開く関数
+  const handleNewChat = () => {
+    setOpenMobile(false);
+    router.push('/');
+    router.refresh();
   };
 
   if (isLoading) {
@@ -283,6 +293,29 @@ export function SidebarHistory() {
 
   return (
     <div className="flex flex-col h-full">
+      {/* Pitatto AIのロゴと文字を追加 */}
+      <div className="px-3 mb-2">
+        <button 
+          type="button"
+          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          onClick={handleNewChat}
+        >
+          <div className="flex items-center">
+            <Image 
+              src="/images/pitattologo.png" 
+              alt="Pitatto Logo" 
+              width={22} 
+              height={22}
+              className="rounded-md" 
+            />
+            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+              Pitatto Chat
+            </span>
+          </div>
+          <PlusIcon className="h-5 w-5 text-sidebar-foreground" />
+        </button>
+      </div>
+
       <SidebarGroup>
         <SidebarGroupContent>
           <SidebarMenu>
@@ -294,7 +327,7 @@ export function SidebarHistory() {
                   <>
                     {groupedChats.today.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50">
                           今日
                         </div>
                         {groupedChats.today.map((chat) => (
@@ -314,7 +347,7 @@ export function SidebarHistory() {
 
                     {groupedChats.yesterday.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           昨日
                         </div>
                         {groupedChats.yesterday.map((chat) => (
@@ -334,7 +367,7 @@ export function SidebarHistory() {
 
                     {groupedChats.lastWeek.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           過去7日間
                         </div>
                         {groupedChats.lastWeek.map((chat) => (
@@ -354,7 +387,7 @@ export function SidebarHistory() {
 
                     {groupedChats.lastMonth.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           過去30日間
                         </div>
                         {groupedChats.lastMonth.map((chat) => (
@@ -374,7 +407,7 @@ export function SidebarHistory() {
 
                     {groupedChats.older.length > 0 && (
                       <>
-                        <div className="px-2 py-1 text-xs text-sidebar-foreground/50 mt-6">
+                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
                           それ以前
                         </div>
                         {groupedChats.older.map((chat) => (
