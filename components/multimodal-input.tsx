@@ -39,6 +39,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/t
 import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
+import { Search as SearchIcon } from 'lucide-react';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
 import { executeParallelCozeQueries, FormattedResponse } from '@/lib/ai/coze/coze';
@@ -58,6 +59,7 @@ function PureMultimodalInput({
   isXSearchEnabled: propIsXSearchEnabled,
   onXSearchToggle,
   onError,
+  onShowSearchResults,
 }: {
   chatId: string;
   input: string;
@@ -76,6 +78,7 @@ function PureMultimodalInput({
   isXSearchEnabled?: boolean;
   onXSearchToggle?: (newValue: boolean, silentMode?: boolean) => void;
   onError?: (error: Error) => void;
+  onShowSearchResults?: () => void;
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
@@ -663,7 +666,8 @@ function PureMultimodalInput({
     setAttachments,
     setInput,
     setLocalStorageInput,
-    selectedModelId
+    selectedModelId,
+    append
   ]);
 
   const uploadFile = async (file: File) => {
@@ -789,7 +793,7 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 p-4 w-fit flex flex-row justify-start items-center gap-2">
           <Button
             type="button"
-            className="h-8 w-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+            className="size-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
             onClick={(event) => {
               event.preventDefault();
               fileInputRef.current?.click();
@@ -812,6 +816,21 @@ function PureMultimodalInput({
               console.log('[MultimodalInput] onXSearchToggle が未定義のため、デフォルト処理を実行します');
             })}
           />
+          {messages.length > 0 && onShowSearchResults && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  className="size-8 rounded-full text-sm border border-gray-200 bg-white text-gray-700 hover:bg-gray-100 flex items-center justify-center"
+                  onClick={() => onShowSearchResults()}
+                  aria-label="検索結果を表示"
+                >
+                  <SearchIcon size={16} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>検索結果を表示</TooltipContent>
+            </Tooltip>
+          )}
         </div>
 
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
@@ -1051,6 +1070,12 @@ const PureXSearchButton = memo(function PureXSearchButton({
     
     // 状態が確実に更新されたことを確認
     console.log(`[PureXSearchButton] モード切替完了: ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
+    
+    // LocalStorageの値を確認（デバッグ用）
+    setTimeout(() => {
+      const currentStorageValue = window.localStorage.getItem('searchMode');
+      console.log(`[PureXSearchButton] 状態確認: LocalStorage=${currentStorageValue}, ローカル状態=${newState}`);
+    }, 0);
   }, [clientSideEnabled, onXSearchToggle]);
   
   const onClick = useCallback(() => {
@@ -1074,7 +1099,7 @@ const PureXSearchButton = memo(function PureXSearchButton({
             )}
             aria-label="Deep Research"
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="flex-shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
           </svg>
           <span>Deep Research</span>

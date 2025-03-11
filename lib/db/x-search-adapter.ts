@@ -171,7 +171,13 @@ export class XSearchAdapter implements DatabaseAdapter {
         
         if (existingMap.has(xPostId)) {
           // 既存レコードの更新
-          resultId = existingMap.get(xPostId)!;
+          const existingId = existingMap.get(xPostId);
+          // existingMap.has(xPostId)で確認しているので存在するはずだが安全のために再確認
+          if (!existingId) {
+            console.warn(`\x1b[33m[XSearchAdapter] 予期せず存在しないレコード: xPostId=${xPostId}\x1b[0m`);
+            continue;
+          }
+          resultId = existingId;
           updateData.push({
             id: resultId,
             data: commonData
