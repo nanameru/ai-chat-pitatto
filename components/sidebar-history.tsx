@@ -12,7 +12,7 @@ import {
   CheckCircleFillIcon,
   GlobeIcon,
   LockIcon,
-  MenuIcon,
+  MoreHorizontalIcon,
   ShareIcon,
   TrashIcon,
   PlusIcon,
@@ -103,7 +103,7 @@ const PureChatItem = ({
             className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mr-0.5"
             showOnHover={!isActive}
           >
-            <MenuIcon />
+            <MoreHorizontalIcon />
             <span className="sr-only">More</span>
           </SidebarMenuAction>
         </DropdownMenuTrigger>
