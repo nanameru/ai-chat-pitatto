@@ -1,6 +1,9 @@
 ---
 marp: true
 theme: custom
+
+themeSet: ./themes
+
 class: lead
 paginate: true
 ---
@@ -44,6 +47,7 @@ PitattoChat UI チーム
 
 ---
 
+
 <!-- _header: 普及状況 -->
 # AIツールの普及状況（2025年最新）
 
@@ -60,7 +64,6 @@ PitattoChat UI チーム
 ![bg right:33% 80%](https://storage.googleapis.com/zenn-user-upload/statistics-chart-placeholder.png)
 
 ---
-
 <!-- _header: 基本原則 -->
 # AI駆動開発の基本原則
 
@@ -88,7 +91,6 @@ PitattoChat UI チーム
 - **タスク自動化**: 仕様書からのタスク分解や工数見積もり支援
 
 ---
-
 <!-- _header: AIコードレビューツール -->
 # BitoのAIコードレビューエージェント
 
@@ -246,6 +248,27 @@ PitattoChat UI チーム
 ---
 
 <!-- _header: ツール比較 -->
+# GitHub Copilot
+
+**特徴:**
+- IDE内でリアルタイムにコード補完・生成
+- コメントや既存コードから文脈を理解し提案
+- Visual Studio、VS Code、JetBrains IDEなどと統合
+
+**強み:**
+- 開発環境との密接な統合
+- コーディング速度の向上（平均55%向上の報告あり）
+- ボイラープレートコードの自動生成
+
+**ユースケース:**
+- 日常的なコーディング作業の効率化
+- 定型的なコードパターンの生成
+- 関数やクラスの雛形作成
+
+---
+
+<!-- _header: ツール比較 -->
+
 # ChatGPT
 
 **特徴:**
@@ -441,7 +464,6 @@ $$
    - 最新のベストプラクティスへの更新
 
 ---
-
 <!-- _header: AIエージェントの設計パターン -->
 # AIエージェントとは
 

@@ -19,11 +19,12 @@
 }
 
 section {
-  color: var(--text-light);
+
   font-family: "Noto Sans JP", sans-serif;
   font-size: 20px;
   line-height: 1.7;
   padding-bottom: 1em;
+
   background-color: white;
   background-image: 
     radial-gradient(circle at 0% 100%, var(--primary-bg-light) 0%, transparent 20%),
