@@ -56,9 +56,9 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                 <Button
                   onClick={handleNewChat}
                   variant="ghost"
-                  className="p-2 h-fit"
+                  className="p-2 h-fit bg-sidebar-accent hover:bg-sidebar-accent/80 text-sidebar-foreground"
                 >
-                  <PlusIcon size={16} />
+                  <PlusIcon size={18} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent align="end">New Chat</TooltipContent>

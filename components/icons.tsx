@@ -800,16 +800,16 @@ export const BotIcon = () => {
   export const PlusIcon = ({ size = 16 }: { size?: number }) => {
     return (
       <svg
-        height={16}
+        height={size}
         strokeLinejoin="round"
         viewBox="0 0 16 16"
-        width={16}
+        width={size}
         style={{ color: 'currentcolor' }}
       >
         <path
           fillRule="evenodd"
           clipRule="evenodd"
-          d="M8.75 1V1.75V8.68934L10.7197 6.71967L11.25 6.18934L12.3107 7.25L11.7803 7.78033L8.70711 10.8536C8.31658 11.2441 7.68342 11.2441 7.29289 10.8536L4.21967 7.78033L3.68934 7.25L4.75 6.18934L5.28033 6.71967L7.25 8.68934V1.75V1H8.75ZM13.5 9.25V13.5H2.5V9.25V8.5H1V9.25V14C1 14.5523 1.44771 15 2 15H14C14.5523 15 15 14.5523 15 13.75V9.25V8.5H13.5V9.25Z"
+          d="M8 1C8.55228 1 9 1.44772 9 2V7H14C14.5523 7 15 7.44772 15 8C15 8.55228 14.5523 9 14 9H9V14C9 14.5523 8.55228 15 8 15C7.44772 15 7 14.5523 7 14V9H2C1.44772 9 1 8.55228 1 8C1 7.44772 1.44772 7 2 7H7V2C7 1.44772 7.44772 1 8 1Z"
           fill="currentColor"
         />
       </svg>
