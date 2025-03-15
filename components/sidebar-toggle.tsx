@@ -26,7 +26,7 @@ export function SidebarToggle({
           <SidebarToggleIcon size={16} />
         </Button>
       </TooltipTrigger>
-      <TooltipContent align="start">Toggle Sidebar</TooltipContent>
+      <TooltipContent align="start">サイドバーの切り替え</TooltipContent>
     </Tooltip>
   );
 }

@@ -47,7 +47,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   <SidebarToggleIcon size={16} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent align="start">Toggle Sidebar</TooltipContent>
+              <TooltipContent align="start">サイドバーの切り替え</TooltipContent>
             </Tooltip>
 
             {/* New Chatボタン（右側） */}
@@ -61,7 +61,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
                   <PlusIcon size={16} />
                 </Button>
               </TooltipTrigger>
-              <TooltipContent align="end">New Chat</TooltipContent>
+              <TooltipContent align="end">新規チャット</TooltipContent>
             </Tooltip>
           </div>
         </SidebarMenu>

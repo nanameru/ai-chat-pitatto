@@ -66,7 +66,7 @@ export const customArtifact = new Artifact<"custom", CustomArtifactMetadata>({
   actions: [
     {
       icon: <span>⟳</span>,
-      description: "Refresh artifact info",
+      description: "アーティファクト情報を更新",
       onClick: (context: ArtifactActionContext<CustomArtifactMetadata>) => {
         context.setMetadata({
           ...context.metadata,
@@ -78,7 +78,7 @@ export const customArtifact = new Artifact<"custom", CustomArtifactMetadata>({
   toolbar: [
     {
       icon: <span>✎</span>,
-      description: "Edit custom artifact",
+      description: "カスタムアーティファクトを編集",
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: "user",

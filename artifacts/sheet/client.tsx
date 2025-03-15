@@ -46,7 +46,7 @@ export const sheetArtifact = new Artifact<'sheet', Metadata>({
   actions: [
     {
       icon: <UndoIcon size={18} />,
-      description: 'View Previous version',
+      description: '前のバージョンを表示',
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('prev');
       },
@@ -60,7 +60,7 @@ export const sheetArtifact = new Artifact<'sheet', Metadata>({
     },
     {
       icon: <RedoIcon size={18} />,
-      description: 'View Next version',
+      description: '次のバージョンを表示',
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('next');
       },
@@ -74,7 +74,7 @@ export const sheetArtifact = new Artifact<'sheet', Metadata>({
     },
     {
       icon: <CopyIcon />,
-      description: 'Copy as .csv',
+      description: 'CSVとしてコピー',
       onClick: ({ content }) => {
         const parsed = parse<string[]>(content, { skipEmptyLines: true });
 
@@ -91,7 +91,7 @@ export const sheetArtifact = new Artifact<'sheet', Metadata>({
   ],
   toolbar: [
     {
-      description: 'Format and clean data',
+      description: 'データを整形・クリーニング',
       icon: <SparklesIcon />,
       onClick: ({ appendMessage }) => {
         appendMessage({
@@ -101,7 +101,7 @@ export const sheetArtifact = new Artifact<'sheet', Metadata>({
       },
     },
     {
-      description: 'Analyze and visualize data',
+      description: 'データを分析・可視化',
       icon: <LineChartIcon />,
       onClick: ({ appendMessage }) => {
         appendMessage({
