@@ -115,7 +115,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     {
       icon: <PlayIcon size={18} />,
       label: 'Run',
-      description: 'Execute code',
+      description: 'コードを実行',
       onClick: async ({ content, setMetadata }) => {
         const runId = generateUUID();
         const outputContent: Array<ConsoleOutputContent> = [];
@@ -210,7 +210,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     },
     {
       icon: <UndoIcon size={18} />,
-      description: 'View Previous version',
+      description: '前のバージョンを表示',
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('prev');
       },
@@ -224,7 +224,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     },
     {
       icon: <RedoIcon size={18} />,
-      description: 'View Next version',
+      description: '次のバージョンを表示',
       onClick: ({ handleVersionChange }) => {
         handleVersionChange('next');
       },
@@ -238,7 +238,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     },
     {
       icon: <CopyIcon size={18} />,
-      description: 'Copy code to clipboard',
+      description: 'クリップボードにコピー',
       onClick: ({ content }) => {
         navigator.clipboard.writeText(content);
         toast.success('Copied to clipboard!');
@@ -248,7 +248,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
   toolbar: [
     {
       icon: <MessageIcon />,
-      description: 'Add comments',
+      description: 'コメントを追加',
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: 'user',
@@ -258,7 +258,7 @@ export const codeArtifact = new Artifact<'code', Metadata>({
     },
     {
       icon: <LogsIcon />,
-      description: 'Add logs',
+      description: 'ログを追加',
       onClick: ({ appendMessage }) => {
         appendMessage({
           role: 'user',

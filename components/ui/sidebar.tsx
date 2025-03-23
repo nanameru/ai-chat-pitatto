@@ -296,14 +296,14 @@ const SidebarUserMenu = () => {
           document.documentElement.classList.toggle('dark');
         }}
       >
-        Toggle dark mode
+        ダークモード切替
       </Button>
       <Button
         variant="ghost"
         className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
         onClick={handleSignOut}
       >
-        Sign out
+        サインアウト
       </Button>
     </div>
   );

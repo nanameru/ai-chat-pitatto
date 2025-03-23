@@ -109,7 +109,7 @@ export function PureMessageActions({
               <CopyIcon />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Copy</TooltipContent>
+          <TooltipContent>コピー</TooltipContent>
         </Tooltip>
 
         <Tooltip>
@@ -128,7 +128,7 @@ export function PureMessageActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {vote?.isUpvoted ? 'Already upvoted' : 'Upvote'}
+            {vote?.isUpvoted ? '評価済み' : '高評価'}
           </TooltipContent>
         </Tooltip>
 
@@ -148,7 +148,7 @@ export function PureMessageActions({
             </Button>
           </TooltipTrigger>
           <TooltipContent>
-            {vote && !vote.isUpvoted ? 'Already downvoted' : 'Downvote'}
+            {vote && !vote.isUpvoted ? '評価済み' : '低評価'}
           </TooltipContent>
         </Tooltip>
       </div>
