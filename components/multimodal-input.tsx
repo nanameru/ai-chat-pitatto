@@ -42,7 +42,7 @@ import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
 import { Search as SearchIcon } from 'lucide-react';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
-import { executeParallelCozeQueries, FormattedResponse } from '@/lib/ai/coze/coze';
+import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
 
 function PureMultimodalInput({
   chatId,
@@ -636,6 +636,85 @@ function PureMultimodalInput({
             throw error;
           }
           return;
+        }
+        
+        // 画像生成コマンドの検出
+        // 日本語と英語の様々なコマンド形式に対応
+        console.log('[デバッグ] 入力テキスト:', currentInput);
+        console.log('[デバッグ] 選択されたモデル:', selectedModelId);
+        
+        const imageCommandPatterns = [
+          /^\/image\s+(.+)$/i,                    // /image [prompt]
+          /^generate\s+image[:\s]+(.+)$/i,        // generate image: [prompt]
+          /^create\s+image[:\s]+(.+)$/i,          // create image: [prompt]
+          /^draw[:\s]+(.+)$/i,                    // draw: [prompt]
+          /^画像を生成して[:\s]+(.+)$/i,      // 画像を生成して: [prompt]
+          /^画像生成[:\s]+(.+)$/i,              // 画像生成: [prompt]
+        ];
+        
+        // 各パターンでマッチングを試みる
+        let imagePrompt: string | null = null;
+        let matchedPattern: string | null = null;
+        
+        for (const pattern of imageCommandPatterns) {
+          console.log('[デバッグ] パターンチェック:', pattern);
+          const match = currentInput.match(pattern);
+          if (match) {
+            imagePrompt = match[1].trim();
+            matchedPattern = pattern.toString();
+            console.log('[デバッグ] マッチしました! パターン:', matchedPattern, 'プロンプト:', imagePrompt);
+            break;
+          }
+        }
+        
+        console.log('[デバッグ] 画像プロンプトの検出結果:', imagePrompt ? '検出されました' : '検出されませんでした');
+        
+        // 選択されたモデルがGrokモデルであるか確認
+        const isGrokModel = selectedModelId === 'grok-vision-model' || selectedModelId === 'grok-model';
+        console.log('[デバッグ] Grokモデルかどうか:', isGrokModel ? 'はい' : 'いいえ');
+        
+        // 画像生成コマンドが検出された場合の処理
+        // どのモデルが選択されていても画像生成コマンドを処理
+        if (imagePrompt) {
+          console.log('[デバッグ] 画像生成コマンドが検出されました');
+          
+          // 強制的に画像生成モードを有効化
+          toast.info('画像生成コマンドを検出しました: ' + imagePrompt);
+          
+          try {
+            console.log('[画像生成] 画像生成コマンドを検出:', imagePrompt);
+            toast.info('画像を生成中...', { duration: 5000 });
+            
+            // 画像生成リクエストのオプション
+            const options: ChatRequestOptions = {
+              data: {
+                command: 'generate-image',
+                prompt: imagePrompt,
+                // 選択されたモデルがGrokモデルならそれを使用、そうでなければDALL-Eを使用
+                model: isGrokModel ? 'grok-image-model' : 'large-model',
+                chatId,
+                selectedModelId, // 選択されたモデルIDも送信
+                forceImageGeneration: true, // 強制的に画像生成モードを有効化
+                useDirectImageGeneration: true, // 直接画像生成を使用
+              }
+            };
+            
+            console.log('[デバッグ] 画像生成リクエストオプション:', options);
+            
+            // ユーザーメッセージを追加
+            await append({ 
+              id: nanoid(), 
+              content: currentInput, 
+              role: 'user', 
+              createdAt: new Date() 
+            }, options);
+            
+            return;
+          } catch (error) {
+            console.error('[画像生成] エラー:', error);
+            toast.error('画像生成に失敗しました');
+            onError?.(error instanceof Error ? error : new Error(String(error)));
+          }
         }
         
         // 共通のオプション

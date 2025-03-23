@@ -312,7 +312,7 @@ export function SidebarHistory() {
               Pitatto Chat
             </span>
           </div>
-          <PlusIcon className="h-5 w-5 text-sidebar-foreground" />
+          <PlusIcon className="size-5 text-sidebar-foreground" />
         </button>
       </div>
 
