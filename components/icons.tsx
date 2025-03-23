@@ -797,13 +797,14 @@ export const BotIcon = () => {
     </svg>
   );
   
-  export const PlusIcon = ({ size = 16 }: { size?: number }) => {
+  export const PlusIcon = ({ size = 16, className }: { size?: number; className?: string }) => {
     return (
       <svg
-        height={16}
+        height={size}
         strokeLinejoin="round"
         viewBox="0 0 16 16"
-        width={16}
+        width={size}
+        className={className}
         style={{ color: 'currentcolor' }}
       >
         <path

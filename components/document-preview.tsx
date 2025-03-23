@@ -84,12 +84,15 @@ export function DocumentPreview({
     return <LoadingSkeleton artifactKind={result.kind ?? args.kind} />;
   }
 
+  // artifact.kindが'custom'を含む可能性があるため、データベースのDocument型と互換性を持たせるための処理
+  const documentKind = (artifact.kind === 'custom' ? 'text' : artifact.kind) as 'text' | 'code' | 'image' | 'sheet';
+  
   const document: Document | null = previewDocument
     ? previewDocument
     : artifact.status === 'streaming'
       ? {
           title: artifact.title,
-          kind: artifact.kind,
+          kind: documentKind, // 修正した型を使用
           content: artifact.content,
           id: artifact.documentId,
           createdAt: new Date(),
