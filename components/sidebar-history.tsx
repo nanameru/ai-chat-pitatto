@@ -337,6 +337,30 @@ export function SidebarHistory() {
             </span>
           </div>
         </button>
+        
+        {/* AIで遊ぼうOSSアプリケーションボタンを追加 */}
+        <button 
+          type="button"
+          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          onClick={() => {
+            setOpenMobile(false);
+            // OSSアプリケーションページへのリンク（必要に応じてURLを変更してください）
+            router.push('/oss-applications');
+          }}
+        >
+          <div className="flex items-center">
+            <Image 
+              src="/images/pitattologo.png" 
+              alt="Pitatto Logo" 
+              width={22} 
+              height={22}
+              className="rounded-md" 
+            />
+            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+              AIで遊ぼうOSS
+            </span>
+          </div>
+        </button>
       </div>
 
       <SidebarGroup>
