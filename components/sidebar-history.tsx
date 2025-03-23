@@ -312,6 +312,7 @@ export function SidebarHistory() {
               Pitatto Chat
             </span>
           </div>
+
         </button>
         
         {/* ピタッとニュースボタンを追加 */}

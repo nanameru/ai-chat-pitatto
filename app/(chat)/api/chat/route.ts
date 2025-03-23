@@ -1,4 +1,4 @@
-import { streamText, createDataStreamResponse, smoothStream } from 'ai';
+import { streamText, createDataStreamResponse, smoothStream, experimental_generateImage as generateImage } from 'ai';
 import { createClient } from '@/utils/supabase/server';
 import { myProvider } from '@/lib/ai/models';
 import { regularPrompt, artifactsPrompt } from '@/lib/ai/prompts';
@@ -75,7 +75,9 @@ export async function POST(request: Request): Promise<Response> {
         messagesCount: messages?.length,
         chatId,
         model,
-        chatRequestOptions
+        chatRequestOptions,
+        command: chatRequestOptions?.data?.command,
+        isImageGeneration: chatRequestOptions?.data?.command === 'generate-image'
       });
 
       // chatRequestOptionsが存在することを確認
@@ -202,6 +204,268 @@ export async function POST(request: Request): Promise<Response> {
           }
         }
 
+        // 画像生成コマンドの処理
+        console.log('[Chat] リクエストタイプ確認:', chatRequestOptions?.data);
+        
+        if (chatRequestOptions?.data?.command === 'generate-image') {
+          console.log('[Chat] Starting image generation processing');
+          console.log('[Chat] リクエストデータ:', chatRequestOptions.data);
+          
+          const imagePrompt = chatRequestOptions.data.prompt;
+          const selectedModelId = chatRequestOptions.data.selectedModelId || '';
+          const imageModel = chatRequestOptions.data.model || 'grok-image-model';
+          const forceImageGeneration = chatRequestOptions.data.forceImageGeneration === true;
+          const useDirectImageGeneration = chatRequestOptions.data.useDirectImageGeneration === true;
+          
+          console.log('[Chat] 画像プロンプト:', imagePrompt);
+          console.log('[Chat] 選択されたモデル:', selectedModelId);
+          console.log('[Chat] 画像モデル:', imageModel);
+          console.log('[Chat] 強制画像生成モード:', forceImageGeneration);
+          console.log('[Chat] 直接画像生成モード:', useDirectImageGeneration);
+          
+          // 選択されたモデルがGrokモデルであるか確認
+          const isGrokModel = selectedModelId === 'grok-vision-model' || selectedModelId === 'grok-model';
+          
+          if (!imagePrompt) {
+            return new Response(
+              JSON.stringify({
+                error: 'Invalid input',
+                details: 'Image prompt is required'
+              }),
+              {
+                status: 400,
+                headers: {
+                  'X-Error': 'true',
+                  'X-Error-Type': 'InvalidInput'
+                }
+              }
+            );
+          }
+          
+          // 強制画像生成モードが有効でない場合は、Grokモデルであるか確認
+          if (!forceImageGeneration && !isGrokModel) {
+            console.error('[画像] 選択されたモデルは画像生成をサポートしていません:', selectedModelId);
+            return new Response(
+              JSON.stringify({
+                error: '画像生成に失敗しました',
+                details: '選択されたモデルは画像生成をサポートしていません'
+              }),
+              {
+                status: 400,
+                headers: {
+                  'X-Error': 'true',
+                  'X-Error-Type': 'UnsupportedModel'
+                }
+              }
+            );
+          }
+          
+          // 強制画像生成モードが有効な場合は、モデルに関わらず画像生成を実行
+          console.log('[画像] 画像生成を実行します');
+          
+          try {
+            console.log('[Image] Generating image with prompt:', imagePrompt);
+            
+            // 画像生成を試みる
+            console.log('[画像] 画像生成を開始');
+            
+            let imageResponse;
+            let usedModel = '';
+            
+            try {
+              console.log('[画像] 画像生成リクエストを実行します:', imageModel);
+              
+              // 選択されたモデルに基づいて使用するモデルを決定
+              let modelToUse;
+              
+              if (imageModel === 'grok-image-model' && isGrokModel) {
+                // Grokモデルを使用する場合
+                modelToUse = myProvider.imageModel('grok-image-model');
+                usedModel = 'grok';
+              } else {
+                // それ以外の場合はDALL-E 3を使用
+                modelToUse = myProvider.imageModel('large-model');
+                usedModel = 'dall-e-3';
+              }
+              
+              console.log('[画像] 使用するモデル:', usedModel);
+              
+              // モデルの詳細情報をログに出力
+              console.log('[画像] 使用するモデルの詳細情報:', {
+                modelName: modelToUse,
+                modelType: typeof modelToUse,
+                isGrokModel: usedModel === 'grok'
+              });
+              
+              // generateImage関数を使用して画像を生成
+              const generateImageParams = {
+                model: modelToUse as any,
+                prompt: imagePrompt,
+                size: usedModel === 'grok' ? undefined : "1024x1024" as `${number}x${number}`,
+                providerOptions: {}
+              };
+              
+              console.log('[画像] generateImageのパラメータ:', generateImageParams);
+              
+              const result = await generateImage(generateImageParams);
+              
+              // 画像データを取得
+              console.log('[画像] 画像生成成功:', result);
+              
+              // 画像データをレスポンス形式に変換
+              // 画像データが正しく取得できたか確認
+              if (result && result.image && result.image.base64) {
+                console.log('[画像] 画像データが正常に取得できました');
+                imageResponse = { images: [result.image.base64] };
+              } else {
+                console.error('[画像] 画像データの形式が不正です:', result);
+                throw new Error('画像データの形式が不正です');
+              }
+              
+            } catch (error) {
+              console.error('[画像] 画像生成に失敗しました:', error);
+              
+              // DALL-E 3で再試行
+              try {
+                console.log('[画像] DALL-E 3で画像生成を再試行します');
+                
+                console.log('[画像] DALL-E 3での再試行パラメータを設定します');
+                
+                const dallEParams = {
+                  model: myProvider.imageModel('large-model') as any,
+                  prompt: imagePrompt,
+                  size: "1024x1024" as `${number}x${number}`,
+                  providerOptions: {}
+                };
+                
+                console.log('[画像] DALL-E 3パラメータ:', dallEParams);
+                
+                const result = await generateImage(dallEParams);
+                
+                usedModel = 'dall-e-3';
+                console.log('[画像] DALL-E 3で画像生成成功:', result);
+                
+                // 画像データをレスポンス形式に変換
+                // 画像データが正しく取得できたか確認
+                if (result && result.image && result.image.base64) {
+                  console.log('[画像] DALL-E 3の画像データが正常に取得できました');
+                  imageResponse = { images: [result.image.base64] };
+                } else {
+                  console.error('[画像] DALL-E 3の画像データの形式が不正です:', result);
+                  throw new Error('DALL-E 3の画像データの形式が不正です');
+                }
+                
+              } catch (fallbackError) {
+                console.error('[画像] DALL-E 3での再試行にも失敗しました:', fallbackError);
+                throw fallbackError;
+              }
+            }
+            
+            console.log('[画像] 画像生成レスポンス:', imageResponse, '使用モデル:', usedModel);
+            
+            // base64画像データを取得
+            const imageBase64 = imageResponse.images[0];
+            console.log('[Image] Generated image data available (base64)');
+            
+            // ドキュメントIDを生成
+            const documentId = crypto.randomUUID();
+            const currentTime = new Date();
+            
+            // ドキュメントオブジェクトを作成
+            // データベーススキーマに合わせて型を指定
+            const document = {
+              id: documentId,
+              title: `Generated Image: ${imagePrompt.substring(0, 30)}${imagePrompt.length > 30 ? '...' : ''}`,
+              kind: 'image' as 'text' | 'code' | 'image' | 'sheet', // データベーススキーマに合わせた型
+              content: imageBase64,
+              createdAt: currentTime,
+              userId: userId
+            };
+            
+            // ユーザーメッセージとアシスタントメッセージを作成
+            const userMessage = {
+              id: crypto.randomUUID(),
+              chatId,
+              role: 'user',
+              content: `/image ${imagePrompt}`,
+              createdAt: new Date().toISOString()
+            };
+            
+            const assistantMessage = {
+              id: crypto.randomUUID(),
+              chatId,
+              role: 'assistant',
+              content: `I've generated an image based on your prompt: "${imagePrompt}"
+
+Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
+              createdAt: new Date().toISOString(),
+              toolInvocations: [
+                {
+                  toolName: 'createDocument',
+                  toolCallId: crypto.randomUUID(),
+                  state: 'result',
+                  args: {
+                    title: document.title,
+                    kind: 'image'
+                  },
+                  result: document
+                }
+              ]
+            };
+            
+            await saveMessages({ messages: [userMessage, assistantMessage] });
+            
+            // レスポンスを返す
+            return new Response(
+              JSON.stringify({
+                id: assistantMessage.id,
+                role: 'assistant',
+                content: assistantMessage.content,
+                createdAt: assistantMessage.createdAt,
+                toolInvocations: assistantMessage.toolInvocations
+              }),
+              {
+                status: 200,
+                headers: {
+                  'Content-Type': 'application/json'
+                }
+              }
+            );
+          } catch (error) {
+            console.error('[Image] Error generating image:', error);
+            return new Response(
+              JSON.stringify({
+                error: 'Image generation failed',
+                details: error instanceof Error ? error.message : String(error)
+              }),
+              {
+                status: 500,
+                headers: {
+                  'X-Error': 'true',
+                  'X-Error-Type': 'ImageGenerationFailed'
+                }
+              }
+            );
+          }
+          // 画像生成コマンドの場合はここで処理終了
+          // エラーが発生した場合のフォールバックレスポンス
+          return new Response(
+            JSON.stringify({
+              error: 'Unexpected error in image generation process',
+              details: 'The image generation process completed but did not return a proper response'
+            }),
+            {
+              status: 500,
+              headers: {
+                'Content-Type': 'application/json',
+                'X-Error': 'true',
+                'X-Error-Type': 'ImageGenerationError'
+              }
+            }
+          );
+        }
+        
+        // 画像生成コマンドでない場合は通常のチャット処理を実行
         console.log('[Chat] Starting normal chat processing');
         const selectedModel = model ?? 'chat-model-small';
         const useArtifacts = selectedModel !== 'chat-model-reasoning';
@@ -209,8 +473,7 @@ export async function POST(request: Request): Promise<Response> {
         // プロンプトの使用状況をログ出力
         console.log('[Chat] Using prompt:', {
           type: 'REGULAR_CHAT_PROMPT',
-          prompt: useArtifacts ? 'regularPrompt + artifactsPrompt' : 'regularPrompt',
-          promptContent: useArtifacts 
+          systemPrompt: useArtifacts 
             ? `${regularPrompt}\n\n${artifactsPrompt}`
             : regularPrompt
         });
