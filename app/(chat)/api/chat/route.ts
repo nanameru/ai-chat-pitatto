@@ -2,6 +2,7 @@ import { streamText, createDataStreamResponse, smoothStream, experimental_genera
 import { createClient } from '@/utils/supabase/server';
 import { myProvider } from '@/lib/ai/models';
 import { regularPrompt, artifactsPrompt } from '@/lib/ai/prompts';
+import { createDocument } from '@/lib/ai/tools/create-document';
 import {
   saveMessages,
   getChatById,
@@ -666,10 +667,19 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
           // ストリーミングレスポンスを返す
           return createDataStreamResponse({
             execute: (dataStream) => {
+              // createDocumentツールを設定
+              const documentTool = createDocument({
+                session: { user: { id: user.id } } as any,
+                dataStream
+              });
+              
               const result = streamText({
                 model: myProvider.languageModel(selectedModel),
                 system: regularPrompt,
                 messages: modelMessages,
+                tools: {
+                  createDocument: documentTool
+                },
                 experimental_transform: smoothStream({ chunking: 'word' }),
                 onFinish: async ({ response }) => {
                   if (user?.id) {
