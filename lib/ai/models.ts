@@ -1,5 +1,5 @@
 import { openai } from '@ai-sdk/openai';
-import { xai } from '@ai-sdk/xai';
+// import { xai } from '@ai-sdk/xai';
 import {
   customProvider,
 } from 'ai';
@@ -13,16 +13,15 @@ export const myProvider = customProvider({
     'chat-model-reasoning': openai('o3-mini'),
     'title-model': openai('gpt-4o'),
     'artifact-model': openai('gpt-4o-mini'),
-    // 型アサーションを使用してバージョン互換性の問題を解決
-    'grok-model': xai('grok-2-1212') as unknown as ReturnType<typeof openai>,
-    'grok-vision-model': xai('grok-2-vision-1212') as unknown as ReturnType<typeof openai>,
+    // Grokモデルは一時的に無効化
+    // 'grok-model': xai('grok-2-1212') as unknown as ReturnType<typeof openai>,
+    // 'grok-vision-model': xai('grok-2-vision-1212') as unknown as ReturnType<typeof openai>,
   },
   imageModels: {
     'small-model': openai.image('dall-e-2'),
     'large-model': openai.image('dall-e-3'),
-    // 型アサーションを使用してバージョン互換性の問題を解決
-    // Grokの画像生成モデル名を修正
-    'grok-image-model': xai.image('grok-2-vision-1212') as unknown as ReturnType<typeof openai.image>,
+    // Grokモデルは一時的に無効化
+    // 'grok-image-model': xai.image('grok-2-vision-1212') as unknown as ReturnType<typeof openai.image>,
   },
 });
 
@@ -52,16 +51,17 @@ export const chatModels: Array<ChatModel> = [
     description: '基本的なタスクに適した経済的なモデル',
     modelVersion: 'o3-mini'
   },
-  {
-    id: 'grok-model',
-    name: 'Grok-2-1212',
-    description: 'xAIの高性能テキスト生成モデル',
-    modelVersion: 'grok-2-1212'
-  },
-  {
-    id: 'grok-vision-model',
-    name: 'Grok-2-Vision-1212',
-    description: 'xAIのマルチモーダル対応モデル（画像生成機能付き）',
-    modelVersion: 'grok-2-vision-1212'
-  },
+  // Grokモデルは一時的に無効化
+  // {
+  //   id: 'grok-model',
+  //   name: 'Grok-2-1212',
+  //   description: 'xAIの高性能テキスト生成モデル',
+  //   modelVersion: 'grok-2-1212'
+  // },
+  // {
+  //   id: 'grok-vision-model',
+  //   name: 'Grok-2-Vision-1212',
+  //   description: 'xAIのマルチモーダル対応モデル（画像生成機能付き）',
+  //   modelVersion: 'grok-2-vision-1212'
+  // },
 ];
