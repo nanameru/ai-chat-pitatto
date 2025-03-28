@@ -798,6 +798,7 @@ export const BotIcon = () => {
   );
   
   export const PlusIcon = ({ size = 16, className }: { size?: number; className?: string }) => {
+    // ハイドレーションエラーを修正するため、サーバーとクライアントで同じパスを使用
     return (
       <svg
         height={size}

@@ -46,7 +46,7 @@ export function SidebarUserNav({ user }: { user: User }) {
               className="cursor-pointer"
               onSelect={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
             >
-              {`${theme === 'light' ? 'ダーク' : 'ライト'}モードに切り替え`}
+              ダークモード切替
             </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>

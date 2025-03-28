@@ -20,6 +20,7 @@ import type {
 // ChatRequestOptionsを拡張
 interface ChatRequestOptions extends BaseChatRequestOptions {
   xSearchEnabled?: boolean;
+  computerUseEnabled?: boolean;
   attachments?: Array<Attachment>;
   id?: string;
 }
@@ -39,10 +40,11 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/t
 import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
-import { Search as SearchIcon } from 'lucide-react';
+import { Search as SearchIcon, Computer } from 'lucide-react';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
 import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
+import { ComputerUseToggle } from './computer-use-toggle';
 
 function PureMultimodalInput({
   chatId,
@@ -60,6 +62,8 @@ function PureMultimodalInput({
   onXSearchToggle,
   onError,
   onShowSearchResults,
+  isComputerUseEnabled: propIsComputerUseEnabled,
+  onComputerUseToggle,
 }: {
   chatId: string;
   input: string;
@@ -77,6 +81,8 @@ function PureMultimodalInput({
   selectedModelId: string;
   isXSearchEnabled?: boolean;
   onXSearchToggle?: (newValue: boolean, silentMode?: boolean) => void;
+  isComputerUseEnabled?: boolean;
+  onComputerUseToggle?: (newValue: boolean) => void;
   onError?: (error: Error) => void;
   onShowSearchResults?: () => void;
 }) {
@@ -127,9 +133,11 @@ function PureMultimodalInput({
 
   // ローカルストレージの値をバックアップとして使用
   const [localIsXSearchEnabled, setLocalIsXSearchEnabled] = useLocalStorage('searchMode', false);
+  const [localIsComputerUseEnabled, setLocalIsComputerUseEnabled] = useLocalStorage('computerUseMode', false);
   
   // 親コンポーネントから渡された値を優先
   const isXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : localIsXSearchEnabled;
+  const isComputerUseEnabled = propIsComputerUseEnabled !== undefined ? propIsComputerUseEnabled : localIsComputerUseEnabled;
 
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
   
@@ -354,8 +362,10 @@ function PureMultimodalInput({
   const submitForm = useCallback(async () => {
     // 親コンポーネントから渡された値を優先的に使用
     const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
+    const effectiveComputerUseEnabled = propIsComputerUseEnabled !== undefined ? propIsComputerUseEnabled : isComputerUseEnabled;
+    
     console.log('[Submit] フォーム送信を開始:', {
-      mode: effectiveXSearchEnabled ? 'Deep Research' : isWebSearchEnabled ? '検索' : '通常チャット',
+      mode: effectiveComputerUseEnabled ? 'Computer Use' : effectiveXSearchEnabled ? 'Deep Research' : isWebSearchEnabled ? '検索' : '通常チャット',
       input,
       attachments
     });
@@ -370,11 +380,45 @@ function PureMultimodalInput({
       setAttachments([]);
 
       if (currentInput.trim() || currentAttachments.length > 0) {
+        // Computer Use モードが有効な場合、他のモードよりも優先する
+        if (effectiveComputerUseEnabled) {
+          console.log('[Computer Use] Computer Use処理を実行');
+          toast.info('コンピュータ操作モードで実行中...', { duration: 3000 });
+          
+          try {
+            // Computer Use用のオプションを設定
+            const options: ChatRequestOptions = {
+              computerUseEnabled: true,
+              data: {
+                chatId,
+                model: 'claude-computer-use',
+                computerUseEnabled: true
+              }
+            };
+            
+            // ユーザーメッセージを追加
+            await append({
+              id: nanoid(),
+              content: currentInput,
+              role: 'user',
+              createdAt: new Date()
+            }, options);
+            
+            return { success: true };
+          } catch (error) {
+            console.error('[Computer Use] 処理中にエラーが発生:', error);
+            toast.error('コンピュータ操作処理中にエラーが発生しました', { duration: 3000 });
+            onError?.(error as Error);
+            return { error };
+          }
+        }
+        
         // WebSearch モードが有効な場合
         console.log('[WebSearch] モード確認:', { 
           isWebSearchEnabled, 
-          effectiveXSearchEnabled, 
-          condition: isWebSearchEnabled && !effectiveXSearchEnabled,
+          effectiveXSearchEnabled,
+          effectiveComputerUseEnabled,
+          condition: isWebSearchEnabled && !effectiveXSearchEnabled && !effectiveComputerUseEnabled,
           input: currentInput
         });
         
@@ -398,7 +442,7 @@ function PureMultimodalInput({
           input: currentInput
         });
         
-        if (currentWebSearchEnabled && !effectiveXSearchEnabled) {
+        if (currentWebSearchEnabled && !effectiveXSearchEnabled && !effectiveComputerUseEnabled) {
           console.log('[WebSearch] 検索処理を実行');
           
           try {
@@ -518,8 +562,8 @@ function PureMultimodalInput({
             await handleSubmitWithLogging();
           }
         }
-        // X検索モードが有効な場合はX検索を実行
-        else if (effectiveXSearchEnabled) {
+        // X検索モードが有効な場合はX検索を実行（Computer Useモードが無効の場合）
+        else if (effectiveXSearchEnabled && !effectiveComputerUseEnabled) {
           console.log('[Deep Research] Deep Research処理を実行');
           
           try {

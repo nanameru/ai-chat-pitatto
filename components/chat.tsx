@@ -20,6 +20,7 @@ import { chatModels } from '@/lib/ai/models';
 import { Overview } from './overview';
 import { SuggestedActions } from './suggested-actions';
 import { useLocalStorage } from '../hooks/use-local-storage';
+import { useComputerUse } from '../lib/hooks/use-computer-use';
 import { useSearchParams } from 'next/navigation';
 
 export function Chat({
@@ -41,6 +42,10 @@ export function Chat({
   // カスタムフックを使用して、isXSearchEnabledの値を監視
   const [isXSearchEnabled, setIsXSearchEnabled] = useLocalStorage('searchMode', false);
   
+  // Computer Use機能の状態を監視
+  const [isComputerUseEnabled, setIsComputerUseEnabled] = useLocalStorage('computerUseMode', false);
+  const { isLoading: isComputerUseLoading } = useComputerUse();
+  
   // URLからクエリパラメータを取得
   const searchParams = useSearchParams();
   const refreshParam = searchParams.get('refresh');
@@ -49,7 +54,7 @@ export function Chat({
   const [currentMessages, setCurrentMessages] = useState<Message[]>(initialMessages);
   
   // useChat の再初期化のための一意のキーを生成
-  const [chatKey, setChatKey] = useState(`${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`);
+  const [chatKey, setChatKey] = useState(`${id}-${isComputerUseEnabled ? 'computer-use' : isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`);
   
   // チャットIDが変更されたときに内部状態を更新
   useEffect(() => {
@@ -62,11 +67,11 @@ export function Chat({
     setCurrentMessages(initialMessages);
     
     // チャットキーを更新して強制的に再初期化
-    const newKey = `${id}-${isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`;
+    const newKey = `${id}-${isComputerUseEnabled ? 'computer-use' : isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`;
     console.log(`[Chat] チャットキーを更新します: ${newKey}`);
     setChatKey(newKey);
     
-  }, [id, initialMessages, isXSearchEnabled, refreshParam]);
+  }, [id, initialMessages, isXSearchEnabled, isComputerUseEnabled, refreshParam]);
   
   // チャットの状態を保持するための参照
   const chatStateRef = useRef<{
@@ -178,7 +183,7 @@ export function Chat({
         stack: error.stack,
         cause: error.cause,
         raw: error,
-        mode: isXSearchEnabled ? 'X Search' : 'Regular Chat'
+        mode: isComputerUseEnabled ? 'Computer Use' : isXSearchEnabled ? 'X Search' : 'Regular Chat'
       });
 
       if (!chatStateRef.current.messages.length || 
@@ -205,10 +210,11 @@ export function Chat({
   } = useChat({
     ...chatOptions,
     // モードに応じたAPIエンドポイントを明示的に指定
-    api: isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat', 
+    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat', 
     body: {
       ...chatOptions.body,
       xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
+      computerUseEnabled: isComputerUseEnabled, // Computer Useモードを渡す
       preserveMessages: true // 既存のメッセージを保持するフラグを追加
     },
     id: chatKey, // 動的に生成されたキーを使用して再初期化
@@ -489,6 +495,14 @@ export function Chat({
                         console.log(`[Parent] X検索モード変更: ${oldValue ? 'X検索モード' : '通常チャットモード'} → ${newValue ? 'X検索モード' : '通常チャットモード'}`);
                       }
                       
+                      // Computer Useモードが有効な場合は無効化
+                      if (isComputerUseEnabled) {
+                        setIsComputerUseEnabled(false);
+                        if (!silentMode) {
+                          console.log(`[Parent] Computer Useモードを無効化しました`);
+                        }
+                      }
+                      
                       // 状態を即座に更新（最優先）
                       setIsXSearchEnabled(newValue);
                       if (!silentMode) {
@@ -527,6 +541,7 @@ export function Chat({
                             chatId: id,
                             model: selectedChatModel,
                             xSearchEnabled: newValue,
+                            computerUseEnabled: false,
                             timestamp: timestamp, // タイムスタンプを含めて確実に再初期化
                             forceReset: true // 強制的にリセットするフラグ
                           }
@@ -545,6 +560,57 @@ export function Chat({
                         if (!silentMode) {
                           console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
                         }
+                        window.location.reload();
+                      }
+                    }}
+                    isComputerUseEnabled={isComputerUseEnabled}
+                    onComputerUseToggle={(newValue) => {
+                      const oldValue = isComputerUseEnabled;
+                      
+                      console.log(`[Parent] Computer Useボタンがクリックされました`);
+                      console.log(`[Parent] Computer Useモード変更: ${oldValue ? 'Computer Useモード' : '通常モード'} → ${newValue ? 'Computer Useモード' : '通常モード'}`);
+                      
+                      // X検索モードが有効な場合は無効化
+                      if (isXSearchEnabled) {
+                        setIsXSearchEnabled(false);
+                        console.log(`[Parent] X検索モードを無効化しました`);
+                      }
+                      
+                      // 状態を即座に更新
+                      setIsComputerUseEnabled(newValue);
+                      console.log(`[Parent] 状態を更新しました: ${newValue}`);
+                      
+                      // メッセージをクリア
+                      if (messages.length > 0) {
+                        console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
+                        originalSetMessages([]);
+                      }
+                      
+                      // 新しいキーを生成して useChat を再初期化
+                      const timestamp = Date.now();
+                      const forcedNewKey = `${id}-${newValue ? 'computer-use' : 'chat'}-${timestamp}-reset`;
+                      console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
+                      setChatKey(forcedNewKey);
+                      
+                      // APIエンドポイントを切り替え
+                      console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/computer-use' : '/api/chat'}`);
+                      
+                      // useChat を再初期化
+                      if (reload) {
+                        console.log(`[Refresh] useChat を再初期化します`);
+                        reload({
+                          data: {
+                            chatId: id,
+                            model: newValue ? 'claude-computer-use' : selectedChatModel,
+                            xSearchEnabled: false,
+                            computerUseEnabled: newValue,
+                            timestamp: timestamp,
+                            forceReset: true
+                          }
+                        });
+                        console.log(`[Refresh] 完了: ${newValue ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
+                      } else {
+                        console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
                         window.location.reload();
                       }
                     }}

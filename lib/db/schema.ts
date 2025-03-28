@@ -15,6 +15,7 @@ export const user = pgTable('User', {
   id: uuid('id').primaryKey().notNull().defaultRandom(),
   email: varchar('email', { length: 64 }).notNull(),
   password: varchar('password', { length: 64 }),
+  role: varchar('role', { enum: ['admin', 'user'] }).notNull().default('user'),
 });
 
 export type User = InferSelectModel<typeof user>;
@@ -113,3 +114,35 @@ export const suggestion = pgTable(
 );
 
 export type Suggestion = InferSelectModel<typeof suggestion>;
+
+export const githubRepository = pgTable('GithubRepository', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  url: varchar('url', { length: 255 }).notNull(),
+  githubUrl: varchar('githubUrl', { length: 255 }).notNull(),
+  tags: text('tags').notNull(),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type GithubRepository = InferSelectModel<typeof githubRepository>;
+
+export const video = pgTable('Video', {
+  id: uuid('id').primaryKey().notNull().defaultRandom(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  tags: text('tags').notNull(),
+  fileName: varchar('fileName', { length: 255 }).notNull(),
+  fileUrl: varchar('fileUrl', { length: 255 }).notNull(),
+  fileSize: varchar('fileSize', { length: 20 }),
+  mimeType: varchar('mimeType', { length: 100 }),
+  userId: uuid('userId')
+    .notNull()
+    .references(() => user.id),
+  createdAt: timestamp('createdAt').notNull().defaultNow(),
+});
+
+export type Video = InferSelectModel<typeof video>;

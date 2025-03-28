@@ -1,8 +1,14 @@
 import { openai } from '@ai-sdk/openai';
 import { xai } from '@ai-sdk/xai';
+// TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
+// import { anthropic } from '@ai-sdk/anthropic';
 import {
   customProvider,
 } from 'ai';
+
+// Anthropicプロバイダーのインスタンスを作成
+// TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
+// export const anthropicProvider = anthropic();
 
 export const DEFAULT_CHAT_MODEL: string = 'chat-model-small';
 
@@ -16,6 +22,9 @@ export const myProvider = customProvider({
     // 型アサーションを使用してバージョン互換性の問題を解決
     'grok-model': xai('grok-2-1212') as unknown as ReturnType<typeof openai>,
     'grok-vision-model': xai('grok-2-vision-1212') as unknown as ReturnType<typeof openai>,
+    // Computer Use機能をサポートするAnthropicモデル
+    // TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
+    // 'claude-computer-use': anthropic('claude-3-5-sonnet-20241022') as unknown as ReturnType<typeof openai>,
   },
   imageModels: {
     'small-model': openai.image('dall-e-2'),
@@ -46,6 +55,15 @@ export const chatModels: Array<ChatModel> = [
     description: '高度な理解と詳細な応答が可能な標準モデル',
     modelVersion: 'gpt-4o'
   },
+  // TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
+  /*
+  {
+    id: 'claude-computer-use',
+    name: 'Claude 3.5 Sonnet (Computer Use)',
+    description: 'コンピュータ操作機能を備えたAnthropicの高性能モデル',
+    modelVersion: 'claude-3-5-sonnet-20241022'
+  },
+  */
   {
     id: 'chat-model-reasoning',
     name: 'o3 Mini',

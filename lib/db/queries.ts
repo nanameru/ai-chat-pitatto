@@ -606,6 +606,376 @@ export async function getMessageById({ id }: { id: string }) {
   }
 }
 
+// GitHubリポジトリ関連の関数
+export async function saveGithubRepository({
+  title,
+  description,
+  url,
+  githubUrl,
+  tags,
+  userId,
+}: {
+  title: string;
+  description: string;
+  url: string;
+  githubUrl: string;
+  tags: string;
+  userId: string;
+}) {
+  const supabase = await createClient();
+  try {
+    const { data, error } = await supabase
+      .from('GithubRepository')
+      .insert({
+        title,
+        description,
+        url,
+        githubUrl,
+        tags,
+        userId,
+        createdAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to save GitHub repository to database');
+    throw error;
+  }
+}
+
+export async function getGithubRepositories() {
+  const supabase = await createClient();
+  try {
+    const { data, error } = await supabase
+      .from('GithubRepository')
+      .select('*')
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Failed to get GitHub repositories from database');
+    throw error;
+  }
+}
+
+export async function getGithubRepositoryById({ id }: { id: string }) {
+  const supabase = await createClient();
+  try {
+    const { data, error } = await supabase
+      .from('GithubRepository')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to get GitHub repository by id from database');
+    throw error;
+  }
+}
+
+export async function deleteGithubRepository({ id }: { id: string }) {
+  const supabase = await createClient();
+  try {
+    // GitHubリポジトリの削除
+    const { error } = await supabase
+      .from('GithubRepository')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    return true;
+  } catch (error) {
+    console.error('Failed to delete GitHub repository from database');
+    throw error;
+  }
+}
+
+export async function updateGithubRepository({
+  id,
+  title,
+  description,
+  url,
+  githubUrl,
+  tags
+}: {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  githubUrl: string;
+  tags: string[];
+}) {
+  const supabase = await createClient();
+  try {
+    // GitHubリポジトリの更新
+    const { data, error } = await supabase
+      .from('GithubRepository')
+      .update({
+        title,
+        description,
+        url,
+        githubUrl,
+        tags
+      })
+      .eq('id', id)
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to update GitHub repository in database');
+    throw error;
+  }
+}
+
+// 動画関連の関数
+export async function saveVideo({
+  title,
+  description,
+  tags,
+  youtubeUrl,
+  userId,
+}: {
+  title: string;
+  description: string;
+  tags: string;
+  youtubeUrl: string;
+  userId: string;
+}) {
+  const supabase = await createClient();
+  try {
+    const { data, error } = await supabase
+      .from('Video')
+      .insert({
+        title,
+        description,
+        tags,
+        fileName: 'youtube-video', // NOT NULL制約のためにダミー値を設定
+        fileUrl: youtubeUrl, // YouTubeリンクをfileUrlフィールドに保存
+        userId,
+        createdAt: new Date().toISOString(),
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to save video to database');
+    throw error;
+  }
+}
+
+export async function getVideos() {
+  const supabase = await createClient();
+  try {
+    const { data, error } = await supabase
+      .from('Video')
+      .select('*')
+      .order('createdAt', { ascending: false });
+
+    if (error) throw error;
+    return data || [];
+  } catch (error) {
+    console.error('Failed to get videos from database');
+    throw error;
+  }
+}
+
+export async function getVideoById({ id }: { id: string }) {
+  const supabase = await createClient();
+  try {
+    // ユーザーの認証状態を取得
+    const { data: sessionData } = await supabase.auth.getSession();
+    const isAuthenticated = !!sessionData?.session;
+    console.log('認証状態:', isAuthenticated ? '認証済み' : '未認証');
+
+    // 動画データを取得
+    const { data, error } = await supabase
+      .from('Video')
+      .select('*')
+      .eq('id', id)
+      .single();
+
+    if (error) throw error;
+    
+    // 動画ファイルのURLが存在する場合、公開URLを生成
+    if (data && data.fileUrl) {
+      try {
+        console.log('元のファイルURL:', data.fileUrl);
+        
+        // ファイル名を抽出
+        let fileName = data.fileUrl;
+        if (fileName.includes('/')) {
+          fileName = fileName.split('/').pop() || fileName;
+        }
+        console.log('抽出したファイル名:', fileName);
+        
+        // スクリーンショットから確認した正しいパスを使用
+        // PitattoChatバケットの中のvideosフォルダに動画が保存されている
+        const correctPath = `videos/${fileName}`;
+        console.log('正しいパス:', correctPath);
+        
+        if (isAuthenticated) {
+          // 認証済みユーザーの場合、署名付きURLを生成
+          // 署名付きURLは一時的なアクセス権を付与する
+          const { data: signedUrlData, error: signedUrlError } = await supabase
+            .storage
+            .from('PitattoChat')
+            .createSignedUrl(correctPath, 60 * 60); // 1時間有効
+          
+          if (signedUrlError) {
+            console.error('署名付きURL生成エラー:', signedUrlError);
+            // 署名付きURLの生成に失敗した場合、公開URLを試す
+            const { data: publicUrlData } = await supabase
+              .storage
+              .from('PitattoChat')
+              .getPublicUrl(correctPath);
+            
+            if (publicUrlData && publicUrlData.publicUrl) {
+              data.fileUrl = publicUrlData.publicUrl;
+              console.log('公開URLを使用:', publicUrlData.publicUrl);
+            }
+          } else if (signedUrlData && signedUrlData.signedUrl) {
+            data.fileUrl = signedUrlData.signedUrl;
+            console.log('署名付きURLを使用:', signedUrlData.signedUrl);
+          }
+        } else {
+          // 未認証ユーザーの場合、公開URLを生成
+          const { data: publicUrlData } = await supabase
+            .storage
+            .from('PitattoChat')
+            .getPublicUrl(correctPath);
+          
+          if (publicUrlData && publicUrlData.publicUrl) {
+            data.fileUrl = publicUrlData.publicUrl;
+            console.log('公開URLを使用:', publicUrlData.publicUrl);
+          } else {
+            console.warn('公開URLの生成に失敗しました。元のURLを使用します:', data.fileUrl);
+          }
+        }
+      } catch (urlError) {
+        console.error('動画URL生成エラー:', urlError);
+        // エラーが発生しても元のURLを維持
+      }
+    }
+    
+    return data;
+  } catch (error) {
+    console.error('Failed to get video by id from database');
+    throw error;
+  }
+}
+
+export async function deleteVideo({ id }: { id: string }) {
+  const supabase = await createClient();
+  try {
+    // 削除前に動画情報を取得（ストレージから削除するため）
+    const { data: videoData, error: getError } = await supabase
+      .from('Video')
+      .select('fileUrl')
+      .eq('id', id)
+      .single();
+    
+    if (getError) throw getError;
+    
+    // データベースから動画を削除
+    const { error } = await supabase
+      .from('Video')
+      .delete()
+      .eq('id', id);
+
+    if (error) throw error;
+    
+    // ストレージから動画ファイルを削除（必要に応じて）
+    if (videoData && videoData.fileUrl) {
+      // ファイルパスを抽出（URLからパスを取得）
+      const bucketName = 'PitattoChat';
+      const fileUrl = videoData.fileUrl;
+      const filePath = fileUrl.split(`${bucketName}/`)[1];
+      
+      if (filePath) {
+        const { error: storageError } = await supabase.storage
+          .from(bucketName)
+          .remove([filePath]);
+          
+        if (storageError) {
+          console.error('Failed to delete video file from storage:', storageError);
+          // ファイル削除に失敗してもデータベースからの削除は成功しているので、エラーはログに残すだけ
+        }
+      }
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Failed to delete video from database');
+    throw error;
+  }
+}
+
+export async function updateVideo({
+  id,
+  title,
+  description,
+  tags,
+  youtubeUrl
+}: {
+  id: string;
+  title: string;
+  description: string;
+  tags: string | string[];
+  youtubeUrl?: string;
+}) {
+  const supabase = await createClient();
+  try {
+    console.log(`動画更新関数が呼び出されました - ID: ${id}`);
+    console.log('更新データ:', { title, description, tags, youtubeUrl });
+    
+    // 更新データの作成
+    const updateData: any = {
+      title,
+      description,
+      tags: Array.isArray(tags) ? tags.join(',') : tags,
+      updatedAt: new Date().toISOString()
+    };
+    
+    // YouTubeリンクが指定されていれば更新
+    if (youtubeUrl) {
+      updateData.fileUrl = youtubeUrl;
+    }
+    
+    console.log('最終更新データ:', updateData);
+    
+    // 動画情報の更新
+    const { data, error } = await supabase
+      .from('Video')
+      .update(updateData)
+      .eq('id', id)
+      .select('id, title, description, tags, fileUrl, createdAt, updatedAt')
+      .single();
+      
+    // データサイズの削減を確認
+    console.log('更新後のデータサイズ:', JSON.stringify(data).length, 'bytes');
+
+    if (error) throw error;
+    return data;
+  } catch (error) {
+    console.error('Failed to update video in database:', error);
+    if (error instanceof Error) {
+      console.error('Error message:', error.message);
+      console.error('Error stack:', error.stack);
+    }
+    throw error;
+  }
+}
+
 export async function deleteMessagesByChatIdAfterTimestamp({
   chatId,
   timestamp,
