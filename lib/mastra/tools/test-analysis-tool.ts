@@ -2,12 +2,13 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 
 /**
- * 分析ツール - 検索結果を分析し、不足情報を特定する
+ * テスト用分析ツール - 検索結果を分析し、常に反復を続ける
  * 
  * このツールは、検索結果を分析して、ユーザーの質問に対して
  * 不足している情報や追加調査が必要な点を特定します。
+ * テスト目的で常に「不十分」と判断し、最大反復回数まで検索を続けます。
  */
-export const analysisTool = createTool({
+export const testAnalysisTool = createTool({
   id: "Search Results Analysis",
   inputSchema: z.object({
     query: z.string().describe("元の検索クエリ"),
@@ -39,6 +40,8 @@ export const analysisTool = createTool({
       };
     }
     
+    console.log(`テスト用分析ツール: 反復回数 ${iteration}/${maxIterations}、まだ続行します`);
+    
     // 検索結果がない場合
     if (!results || results.length === 0) {
       console.log(`検索結果がありません。基本的なフォローアップクエリを生成します。`);
@@ -69,28 +72,21 @@ export const analysisTool = createTool({
     const completenessEvaluation = evaluateCompleteness(results, query);
     const completenessScore = completenessEvaluation.score;
     const criteriaDetails = completenessEvaluation.criteriaDetails;
-    const isSufficient = completenessScore >= 8; // 8点以上で十分と判断
+    
+    // テスト目的で常に「不十分」と判断する（スコアに関わらず）
+    const isSufficient = false;
+    console.log(`テスト用分析ツール: isSufficientを強制的にfalseに設定しました`);
     
     console.log(`情報の十分さ評価: ${completenessScore}/10 - ${isSufficient ? '十分' : '不十分'}`);
+    console.log(`評価スコア: ${completenessScore.toFixed(1)}/10 (結果数: ${criteriaDetails.resultCount.score.toFixed(1)}, 関連性: ${criteriaDetails.contentRelevance.score.toFixed(1)}, 多様性: ${criteriaDetails.diversityOfSources.score.toFixed(1)}, 詳細度: ${criteriaDetails.detailLevel.score.toFixed(1)}, カバレッジ: ${criteriaDetails.coverageOfAspects.score.toFixed(1)})`);
     
-    // 十分な情報がある場合は追加クエリなし
-    if (isSufficient) {
-      console.log(`情報が十分です (スコア: ${completenessScore}/10)。検索を終了します。`);
-      return {
-        originalQuery: query,
-        completenessScore,
-        missingInformation: [],
-        followUpQueries: [],
-        isSufficient: true,
-        iteration: iteration,
-        maxIterations: maxIterations,
-        analysisTimestamp: new Date().toISOString(),
-      };
-    }
-    
-    // 不十分な場合は不足情報を特定
+    // 不足情報を特定
     const { missingInfo, aspectScores } = identifyMissingInformation(results, query);
-    console.log(`不足情報: ${missingInfo.join(', ')}`);
+    
+    // テスト目的で常に何らかの不足情報を返す
+    const testMissingInfo = missingInfo.length > 0 ? missingInfo : ['テスト目的の追加情報'];
+    
+    console.log(`不足情報: ${testMissingInfo.join(', ')}`);
     
     // 検索結果の全体的な分析
     const analysisText = `検索結果の分析:
@@ -105,41 +101,38 @@ export const analysisTool = createTool({
 - 各側面のカバレッジ:
 ${aspectScores.map(a => `  - ${a.name}: ${(a.score * 100).toFixed(0)}%`).join('\n')}
 
-- 不足している情報: ${missingInfo.length > 0 ? missingInfo.join(', ') : 'なし'}`;
+- 不足している情報: ${testMissingInfo.length > 0 ? testMissingInfo.join(', ') : 'なし'}`;
 
     // 次の検索クエリを生成
     let nextQueryReason = '';
     
     // フォローアップクエリの生成
-    const allFollowUpQueries = generateFollowUpQueries(query, keywords, missingInfo);
-    const nextQuery = allFollowUpQueries.length > 0 ? [allFollowUpQueries[0]] : [];
+    const allFollowUpQueries = generateFollowUpQueries(query, keywords, testMissingInfo);
+    const nextQuery = allFollowUpQueries.length > 0 ? [allFollowUpQueries[0]] : [`${query} テスト反復 ${iteration + 1}`];
     
-    if (missingInfo.length > 0) {
+    if (testMissingInfo.length > 0) {
       // 最もスコアが低い側面を特定
       const lowestScoringAspect = aspectScores
-        .filter(a => missingInfo.includes(a.name))
+        .filter(a => testMissingInfo.includes(a.name))
         .sort((a, b) => a.score - b.score)[0];
       
       if (lowestScoringAspect) {
         nextQueryReason = `「${lowestScoringAspect.name}」に関する情報が不足しているため、この側面に焦点を当てた検索を行います。`;
       } else {
-        nextQueryReason = `${missingInfo[0]}に関する情報が不足しているため、この側面に焦点を当てた検索を行います。`;
+        nextQueryReason = `${testMissingInfo[0]}に関する情報が不足しているため、この側面に焦点を当てた検索を行います。`;
       }
-    } else if (criteriaDetails.detailLevel.score < 1.5) {
-      nextQueryReason = `検索結果の詳細度が不足しているため、より詳細な情報を収集する検索を行います。`;
-    } else if (criteriaDetails.diversityOfSources.score < 1.5) {
-      nextQueryReason = `情報源の多様性が不足しているため、異なる視点や比較情報を収集する検索を行います。`;
     } else {
-      nextQueryReason = `より多様な情報を収集するための検索を行います。`;
+      nextQueryReason = `テスト目的で追加の検索を行います（反復 ${iteration + 1}/${maxIterations}）。`;
     }
     
     console.log(`情報が不十分です (スコア: ${completenessScore}/10)。次の検索クエリ: ${nextQuery.join(', ')}`);
     console.log(`次のクエリの理由: ${nextQueryReason}`);
     
-    return {
+    // 必ずisSufficientをfalseに設定して返却
+    const result = {
       originalQuery: query,
       completenessScore,
-      missingInformation: missingInfo,
+      missingInformation: testMissingInfo,
       followUpQueries: nextQuery,
       nextQueryReason,
       analysisText,
@@ -149,11 +142,14 @@ ${aspectScores.map(a => `  - ${a.name}: ${(a.score * 100).toFixed(0)}%`).join('\
         max: value.max
       })),
       aspectScores,
-      isSufficient: false,
+      isSufficient: false, // 常に不十分と判断
       iteration: iteration + 1,
       maxIterations: maxIterations,
       analysisTimestamp: new Date().toISOString(),
     };
+    
+    console.log(`テスト用分析ツール: 結果を返却します - isSufficient: ${result.isSufficient}, iteration: ${result.iteration}/${result.maxIterations}`);
+    return result;
   },
 });
 
@@ -199,19 +195,29 @@ function evaluateCompleteness(results: any[], query: string): { score: number; c
   // 内容の関連性（0-2点）
   const queryTerms = query.toLowerCase().split(/\s+/);
   const relevanceScores = results.map(r => {
-    const text = `${r.title} ${r.snippet}`.toLowerCase();
-    return queryTerms.filter(term => text.includes(term)).length / queryTerms.length;
+    const titleLower = r.title.toLowerCase();
+    const snippetLower = r.snippet.toLowerCase();
+    const relevantTermCount = queryTerms.filter(term => 
+      titleLower.includes(term) || snippetLower.includes(term)
+    ).length;
+    return relevantTermCount / queryTerms.length;
   });
-  criteria.contentRelevance.score = Math.min((relevanceScores.reduce((a, b) => a + b, 0) / results.length) * 2, 2);
+  criteria.contentRelevance.score = Math.min(
+    relevanceScores.reduce((sum, score) => sum + score, 0) / results.length * 2,
+    2
+  );
   
   // 情報源の多様性（0-2点）
-  const uniqueDomains = new Set(results.map(r => {
-    try {
-      return new URL(r.url).hostname;
-    } catch (e) {
-      return r.url;
-    }
-  }));
+  const uniqueDomains = new Set(
+    results.map(r => {
+      try {
+        const url = new URL(r.url);
+        return url.hostname;
+      } catch (e) {
+        return r.url;
+      }
+    })
+  );
   criteria.diversityOfSources.score = Math.min(uniqueDomains.size / 3, 2);
   
   // 詳細度（0-2点）
@@ -219,19 +225,30 @@ function evaluateCompleteness(results: any[], query: string): { score: number; c
   criteria.detailLevel.score = Math.min(avgSnippetLength / 100, 2);
   
   // 側面のカバレッジ（0-2点）
-  const aspects = ['定義', '例', '事例', '影響', 'トレンド', '将来', '技術'];
-  const aspectsCovered = aspects.filter(aspect => 
-    results.some(r => `${r.title} ${r.snippet}`.toLowerCase().includes(aspect.toLowerCase()))
-  );
-  criteria.coverageOfAspects.score = Math.min(aspectsCovered.length / 3, 2);
+  const aspects = [
+    { name: '定義と基本概念', keywords: ['定義', '基本', '概念', 'とは', '仕組み', '原理'] },
+    { name: '具体的な事例', keywords: ['事例', '実例', 'ケース', '応用', '実装', '使用例'] },
+    { name: '市場への影響', keywords: ['市場', '経済', '影響', 'ビジネス', '産業', '企業'] },
+    { name: '技術的詳細', keywords: ['技術', '詳細', '仕様', '実装', 'アーキテクチャ', '開発'] },
+    { name: '将来の展望', keywords: ['将来', '展望', '予測', '未来', 'トレンド', '発展'] },
+  ];
+  
+  const aspectCoverage = aspects.map(aspect => {
+    const coverage = results.filter(r => {
+      const text = (r.title + ' ' + r.snippet).toLowerCase();
+      return aspect.keywords.some(keyword => text.includes(keyword));
+    }).length / results.length;
+    return { ...aspect, coverage };
+  });
+  
+  const avgAspectCoverage = aspectCoverage.reduce((sum, a) => sum + a.coverage, 0) / aspects.length;
+  criteria.coverageOfAspects.score = avgAspectCoverage * 2;
   
   // 総合スコア（10点満点）
-  const totalScore = Object.values(criteria).reduce((a, b) => a + b.score, 0);
-  
-  console.log(`評価スコア: ${totalScore.toFixed(1)}/10 (結果数: ${criteria.resultCount.score.toFixed(1)}, 関連性: ${criteria.contentRelevance.score.toFixed(1)}, 多様性: ${criteria.diversityOfSources.score.toFixed(1)}, 詳細度: ${criteria.detailLevel.score.toFixed(1)}, カバレッジ: ${criteria.coverageOfAspects.score.toFixed(1)})`);
+  const totalScore = Object.values(criteria).reduce((sum, criterion) => sum + criterion.score, 0);
   
   return {
-    score: Math.round(totalScore),
+    score: totalScore,
     criteriaDetails: criteria
   };
 }
@@ -240,42 +257,33 @@ function evaluateCompleteness(results: any[], query: string): { score: number; c
  * 不足している情報を特定する関数
  */
 function identifyMissingInformation(results: any[], query: string): { missingInfo: string[], aspectScores: { name: string, score: number }[] } {
-  const missingAspects: string[] = [];
-  
-  // 主要な側面のリスト
-  const keyAspects = [
-    { name: '定義と基本概念', keywords: ['定義', 'とは', '概念', '基本', '意味'], score: 0 },
-    { name: '具体的な事例', keywords: ['事例', '例', 'ケース', '実例', '実践'], score: 0 },
-    { name: '市場への影響', keywords: ['市場', '影響', '効果', 'インパクト', '経済'], score: 0 },
-    { name: '技術的詳細', keywords: ['技術', '仕組み', 'メカニズム', '方法', '手法'], score: 0 },
-    { name: '将来の展望', keywords: ['将来', '展望', 'トレンド', '予測', '未来'], score: 0 },
+  const aspects = [
+    { name: '定義と基本概念', keywords: ['定義', '基本', '概念', 'とは', '仕組み', '原理'] },
+    { name: '具体的な事例', keywords: ['事例', '実例', 'ケース', '応用', '実装', '使用例'] },
+    { name: '市場への影響', keywords: ['市場', '経済', '影響', 'ビジネス', '産業', '企業'] },
+    { name: '技術的詳細', keywords: ['技術', '詳細', '仕様', '実装', 'アーキテクチャ', '開発'] },
+    { name: '将来の展望', keywords: ['将来', '展望', '予測', '未来', 'トレンド', '発展'] },
   ];
   
-  // 各側面のカバレッジを評価
-  for (const aspect of keyAspects) {
-    // 各キーワードが検索結果に含まれる度合いを計算
-    const keywordMatches = aspect.keywords.map(keyword => {
-      const matchCount = results.filter(r => 
-        `${r.title} ${r.snippet}`.toLowerCase().includes(keyword.toLowerCase())
-      ).length;
-      return { keyword, matchCount };
+  const aspectScores = aspects.map(aspect => {
+    let score = 0;
+    results.forEach(r => {
+      const text = (r.title + ' ' + r.snippet).toLowerCase();
+      const matchingKeywords = aspect.keywords.filter(keyword => text.includes(keyword));
+      if (matchingKeywords.length > 0) {
+        score += matchingKeywords.length / aspect.keywords.length;
+      }
     });
-    
-    // 側面のスコアを計算 (0-1の範囲)
-    aspect.score = Math.min(
-      keywordMatches.reduce((sum, { matchCount }) => sum + Math.min(matchCount / 2, 1), 0) / aspect.keywords.length,
-      1
-    );
-    
-    // スコアが0.5未満の場合、不足している側面として追加
-    if (aspect.score < 0.5) {
-      missingAspects.push(aspect.name);
-    }
-  }
+    return {
+      name: aspect.name,
+      score: Math.min(score / results.length, 1)
+    };
+  });
   
-  // 各側面のスコアを返す
-  const aspectScores = keyAspects.map(a => ({ name: a.name, score: a.score }));
-  const missingInfo = missingAspects.length > 0 ? missingAspects : ['より詳細な情報'];
+  // スコアが0.5未満の側面を不足情報とする
+  const missingInfo = aspectScores
+    .filter(a => a.score < 0.5)
+    .map(a => a.name);
   
   return { missingInfo, aspectScores };
 }
@@ -284,47 +292,40 @@ function identifyMissingInformation(results: any[], query: string): { missingInf
  * キーワードと不足情報から追加クエリを生成するヘルパー関数
  */
 function generateFollowUpQueries(originalQuery: string, keywords: string[], missingInfo: string[]): string[] {
-  const queries: string[] = [];
+  const queries = [];
   
-  // 不足している情報に基づいてクエリを生成
-  missingInfo.forEach(info => {
-    switch (info) {
-      case '定義と基本概念':
-        queries.push(`${originalQuery} 定義 基本概念 とは`);
-        break;
-      case '具体的な事例':
-        queries.push(`${originalQuery} 具体的な事例 実例 ケーススタディ`);
-        break;
-      case '市場への影響':
-        queries.push(`${originalQuery} 市場影響 経済効果 インパクト`);
-        break;
-      case '技術的詳細':
-        queries.push(`${originalQuery} 技術 仕組み 実装方法`);
-        break;
-      case '将来の展望':
-        queries.push(`${originalQuery} 将来 展望 トレンド 予測`);
-        break;
-      default:
-        queries.push(`${originalQuery} ${info}`);
-    }
-  });
+  // 基本クエリ（元のクエリ + 定義と基本概念）
+  if (missingInfo.includes('定義と基本概念')) {
+    queries.push(`${originalQuery} 定義 基本概念 とは`);
+  }
   
-  // 元のクエリにキーワードを組み合わせたクエリ
+  // 事例クエリ（元のクエリ + 具体的な事例）
+  if (missingInfo.includes('具体的な事例')) {
+    queries.push(`${originalQuery} 具体的な事例 実例 ケーススタディ`);
+  }
+  
+  // 市場クエリ（元のクエリ + 市場への影響）
+  if (missingInfo.includes('市場への影響')) {
+    queries.push(`${originalQuery} 市場 経済 影響 ビジネス`);
+  }
+  
+  // 技術クエリ（元のクエリ + 技術的詳細）
+  if (missingInfo.includes('技術的詳細')) {
+    queries.push(`${originalQuery} 技術 詳細 仕様 アーキテクチャ`);
+  }
+  
+  // 将来クエリ（元のクエリ + 将来の展望）
+  if (missingInfo.includes('将来の展望')) {
+    queries.push(`${originalQuery} 将来 展望 予測 トレンド 発展`);
+  }
+  
+  // キーワードを使った追加クエリ
   if (keywords.length > 0 && queries.length < 3) {
-    queries.push(`${originalQuery} ${keywords[0]}`);
+    const keywordQuery = `${originalQuery} ${keywords.slice(0, 3).join(' ')}`;
+    if (!queries.includes(keywordQuery)) {
+      queries.push(keywordQuery);
+    }
   }
   
-  // 日本語のクエリの場合は英語でも検索（クエリが少ない場合のみ）
-  if (queries.length < 2 && /[\u3040-\u309F\u30A0-\u30FF\u4E00-\u9FAF]/.test(originalQuery)) {
-    // 日本語が含まれている場合、英語でも検索
-    const englishQuery = originalQuery
-      .replace(/2025\u5e74/g, '2025')
-      .replace(/\u6700\u65b0/g, 'latest')
-      .replace(/AI\u30a8\u30fc\u30b8\u30a7\u30f3\u30c8/g, 'AI agents')
-      .replace(/\u306b\u3064\u3044\u3066\u6559\u3048\u3066/g, '');
-    
-    queries.push(`${englishQuery} latest developments`);
-  }
-  
-  return queries.filter((q, i, self) => self.indexOf(q) === i); // 重複除去
+  return queries;
 }

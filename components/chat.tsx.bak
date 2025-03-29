@@ -25,72 +25,6 @@ import { useLocalStorage } from '../hooks/use-local-storage';
 import { useComputerUse } from '../lib/hooks/use-computer-use';
 import { useSearchParams } from 'next/navigation';
 
-// サンプル提案を生成する関数
-function getExampleSuggestions(append, setInput) {
-  return [
-    {
-      title: 'AIの最新トレンド',
-      description: '生成AIの最新技術や研究について教えてください',
-      onClick: () => {
-        const input = '生成AIの最新技術や研究について教えてください';
-        const message = {
-          id: nanoid(),
-          content: input,
-          role: 'user',
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
-      }
-    },
-    {
-      title: 'プログラミング支援',
-      description: 'コードの書き方や最適化について質問できます',
-      onClick: () => {
-        const input = 'Reactでパフォーマンスを最適化するベストプラクティスを教えてください';
-        const message = {
-          id: nanoid(),
-          content: input,
-          role: 'user',
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
-      }
-    },
-    {
-      title: 'データ分析のコツ',
-      description: '効果的なデータ分析の方法を教えてください',
-      onClick: () => {
-        const input = '大量のデータから意味のある洞察を得るための効果的なデータ分析方法を教えてください';
-        const message = {
-          id: nanoid(),
-          content: input,
-          role: 'user',
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
-      }
-    },
-    {
-      title: '学習リソース',
-      description: '機械学習を学ぶための良い教材を紹介してください',
-      onClick: () => {
-        const input = '機械学習を効率的に学ぶためのおすすめの学習リソースを教えてください';
-        const message = {
-          id: nanoid(),
-          content: input,
-          role: 'user',
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
-      }
-    }
-  ];
-}
-
 export function Chat({
   id,
   initialMessages,
@@ -312,77 +246,65 @@ export function Chat({
       // 現在のメッセージを保存
       const currentMsgs = [...messages];
       
-      try {
-        // 通常のappendを呼び出す
-        const result = await originalAppend(message, {
-          ...options,
-          data: {
-            ...((options?.data as Record<string, unknown>) || {}),
-            preserveMessages: true
-          }
-        });
+      // 通常のappendを呼び出す
+      const result = await originalAppend(message, {
+        ...options,
+        data: {
+          ...((options?.data as Record<string, unknown>) || {}),
+          preserveMessages: true
+        }
+      });
+      
+      // ストリーミング完了時またはメッセージが失われた場合に復元
+      setTimeout(() => {
+        // 最新のメッセージを取得
+        const latestMessages = chatStateRef.current.messages;
         
-        // ストリーミング完了時またはメッセージが失われた場合に復元
-        setTimeout(() => {
-          // 最新のメッセージを取得
-          const latestMessages = chatStateRef.current.messages;
+        // ストリーミング完了後のメッセージ数をチェック
+        if (latestMessages.length < currentMsgs.length + 1) {
+          console.log('[Chat] メッセージが失われたため復元します');
           
-          // ストリーミング完了後のメッセージ数をチェック
-          if (latestMessages.length < currentMsgs.length + 1) {
-            console.log('[Chat] メッセージが失われたため復元します');
+          // 新しいメッセージを作成
+          const newMessage = {
+            id: typeof message === 'object' && 'id' in message ? 
+                (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
+                nanoid(),
+            content: typeof message === 'string' ? message : message.content,
+            role: typeof message === 'string' ? 'user' : message.role,
+            createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
+          };
+          
+          // 完全なメッセージリストを再構築
+          const restoredMessages = [...currentMsgs, newMessage];
+          console.log('[Chat] 復元後のメッセージ数:', restoredMessages.length);
+          
+          // メッセージを更新
+          originalSetMessages(restoredMessages);
+        } else {
+          // メッセージが正しく存在する場合でも、内容が最新であることを確認
+          const lastMessage = latestMessages[latestMessages.length - 1];
+          const expectedContent = typeof message === 'string' ? message : message.content;
+          
+          // 最後のメッセージの内容が期待と異なる場合は更新
+          if (lastMessage && lastMessage.role === (typeof message === 'string' ? 'user' : message.role) && 
+              lastMessage.content !== expectedContent) {
+            console.log('[Chat] 最後のメッセージの内容を更新します');
             
-            // 新しいメッセージを作成
-            const newMessage = {
-              id: typeof message === 'object' && 'id' in message ? 
-                  (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
-                  nanoid(),
-              content: typeof message === 'string' ? message : message.content,
-              role: typeof message === 'string' ? 'user' : message.role,
-              createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
+            // 最後のメッセージを更新
+            const updatedMessages = [...latestMessages];
+            updatedMessages[updatedMessages.length - 1] = {
+              ...updatedMessages[updatedMessages.length - 1],
+              content: expectedContent
             };
             
-            // 完全なメッセージリストを再構築
-            const restoredMessages = [...currentMsgs, newMessage];
-            console.log('[Chat] 復元後のメッセージ数:', restoredMessages.length);
-            
-            // メッセージを更新
-            originalSetMessages(restoredMessages);
-          } else {
-            // メッセージが正しく存在する場合でも、内容が最新であることを確認
-            const lastMessage = latestMessages[latestMessages.length - 1];
-            const expectedContent = typeof message === 'string' ? message : message.content;
-            
-            // 最後のメッセージの内容が期待と異なる場合は更新
-            if (lastMessage && lastMessage.role === (typeof message === 'string' ? 'user' : message.role) && 
-                lastMessage.content !== expectedContent) {
-              console.log('[Chat] 最後のメッセージの内容を更新します');
-              
-              // 最後のメッセージを更新
-              const updatedMessages = [...latestMessages];
-              updatedMessages[updatedMessages.length - 1] = {
-                ...updatedMessages[updatedMessages.length - 1],
-                content: expectedContent
-              };
-              
-              originalSetMessages(updatedMessages);
-            }
+            originalSetMessages(updatedMessages);
           }
-        }, 100); // 少し遅延させて状態の更新を確実にする
-        
-        return result;
-      } catch (error) {
-        console.error('[Chat] メッセージ送信エラー:', {
-          error,
-          api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat',
-          mode: isComputerUseEnabled ? 'Computer Use' : isXSearchEnabled ? 'X Search' : 'Regular Chat',
-          messageType: typeof message === 'string' ? 'string' : message.role,
-          options
-        });
-        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-        throw error;
-      }
+        }
+      }, 100); // 少し遅延させて状態の更新を確実にする
+      
+      return result;
     },
-    [messages, originalAppend, originalSetMessages, chatStateRef, isXSearchEnabled, isComputerUseEnabled]
+    [messages, originalAppend, originalSetMessages, chatStateRef]
   );
 
   // チャットの状態が変わったときに参照を更新
@@ -445,24 +367,16 @@ export function Chat({
             if (!silentMode) {
               console.log(`[Event] useChat のリロードを同期的に実行`);
             }
-            try {
-              reload({
-                data: {
-                  chatId: id,
-                  model: selectedChatModel,
-                  xSearchEnabled: enabled,
-                  computerUseEnabled: false,
-                  timestamp: timestampValue, // タイムスタンプを含めて確実に再初期化
-                  forceReset: true // 強制的にリセットするフラグ
-                }
-              });
-              if (!silentMode) {
-                console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+            reload({
+              data: {
+                chatId: id,
+                model: selectedChatModel,
+                xSearchEnabled: enabled,
+                timestamp: timestampValue // タイムスタンプを含めて確実に再初期化
               }
-            } catch (error) {
-              console.error('[X検索] リロードエラー:', error);
-              toast.error('モード切替に失敗しました。ページを再読み込みします。');
-              window.location.reload();
+            });
+            if (!silentMode) {
+              console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
             }
           } else {
             if (!silentMode) {
@@ -477,24 +391,16 @@ export function Chat({
               if (!silentMode) {
                 console.log(`[Event] useChat のリロードを実行`);
               }
-              try {
-                reload({
-                  data: {
-                    chatId: id,
-                    model: selectedChatModel,
-                    xSearchEnabled: enabled,
-                    computerUseEnabled: false,
-                    timestamp: timestampValue, // タイムスタンプを含めて確実に再初期化
-                    forceReset: true // 強制的にリセットするフラグ
-                  }
-                });
-                if (!silentMode) {
-                  console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+              reload({
+                data: {
+                  chatId: id,
+                  model: selectedChatModel,
+                  xSearchEnabled: enabled,
+                  timestamp: timestampValue // タイムスタンプを含めて確実に再初期化
                 }
-              } catch (error) {
-                console.error('[X検索] リロードエラー:', error);
-                toast.error('モード切替に失敗しました。ページを再読み込みします。');
-                window.location.reload();
+              });
+              if (!silentMode) {
+                console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
               }
             } else {
               if (!silentMode) {
@@ -586,6 +492,7 @@ export function Chat({
                       input={input}
                       setInput={handleSetInput}
                       isLoading={isLoading}
+                      stop={stop}
                       attachments={attachments}
                       setAttachments={setAttachments}
                       messages={messages}
@@ -642,24 +549,18 @@ export function Chat({
                           if (!silentMode) {
                             console.log(`[Refresh] useChat を同期的に再初期化します`);
                           }
-                          try {
-                            reload({
-                              data: {
-                                chatId: id,
-                                model: selectedChatModel,
-                                xSearchEnabled: newValue,
-                                computerUseEnabled: false,
-                                timestamp: timestamp, // タイムスタンプを含めて確実に再初期化
-                                forceReset: true // 強制的にリセットするフラグ
-                              }
-                            });
-                            if (!silentMode) {
-                              console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                          reload({
+                            data: {
+                              chatId: id,
+                              model: selectedChatModel,
+                              xSearchEnabled: newValue,
+                              computerUseEnabled: false,
+                              timestamp: timestamp, // タイムスタンプを含めて確実に再初期化
+                              forceReset: true // 強制的にリセットするフラグ
                             }
-                          } catch (error) {
-                            console.error('[X検索] リロードエラー:', error);
-                            toast.error('モード切替に失敗しました。ページを再読み込みします。');
-                            window.location.reload();
+                          });
+                          if (!silentMode) {
+                            console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
                           }
                           
                           // 確実に再初期化されたことを確認するためのチェック
@@ -710,23 +611,17 @@ export function Chat({
                         // useChat を再初期化
                         if (reload) {
                           console.log(`[Refresh] useChat を再初期化します`);
-                          try {
-                            reload({
-                              data: {
-                                chatId: id,
-                                model: selectedChatModel,
-                                xSearchEnabled: false,
-                                computerUseEnabled: newValue,
-                                timestamp: timestamp,
-                                forceReset: true
-                              }
-                            });
-                            console.log(`[Refresh] 完了: ${newValue ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
-                          } catch (error) {
-                            console.error('[Computer Use] リロードエラー:', error);
-                            toast.error('モード切替に失敗しました。ページを再読み込みします。');
-                            window.location.reload();
-                          }
+                          reload({
+                            data: {
+                              chatId: id,
+                              model: selectedChatModel,
+                              xSearchEnabled: false,
+                              computerUseEnabled: newValue,
+                              timestamp: timestamp,
+                              forceReset: true
+                            }
+                          });
+                          console.log(`[Refresh] 完了: ${newValue ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
                         } else {
                           console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
                           window.location.reload();
@@ -742,43 +637,7 @@ export function Chat({
                       setIsReasoningLoading={setIsReasoningLoading}
                     />
 
-                    {isArtifactVisible && <Artifact 
-                      chatId={id}
-                      input={input}
-                      setInput={handleSetInput}
-                      handleSubmit={async (event, options) => {
-                        if (event?.preventDefault) event.preventDefault();
-                        await append({
-                          id: nanoid(),
-                          content: input,
-                          role: 'user',
-                          createdAt: new Date()
-                        }, options);
-                        return { success: true };
-                      }}
-                      isLoading={isLoading}
-                      stop={stop}
-                      attachments={attachments}
-                      setAttachments={setAttachments}
-                      messages={messages}
-                      setMessages={originalSetMessages}
-                      append={append}
-                      reload={reload}
-                      votes={votes}
-                      isReadonly={isReadonly}
-                      selectedModelId={selectedChatModel}
-                    />}
-
-                    {!isArtifactVisible && (
-                      <div className="mb-4">
-                        <SuggestedActions
-                          chatId={id}
-                          append={append}
-                          key={isArtifactVisible ? 'artifact' : 'suggested-actions'}
-                          suggestions={isArtifactVisible ? [] : getExampleSuggestions(append, handleSetInput)}
-                        />
-                      </div>
-                    )}
+                    {isArtifactVisible && <Artifact />}
                   </>
                 )}
               </form>
@@ -786,7 +645,7 @@ export function Chat({
           </div>
 
           {/* ReasoningSidebar - 右側に表示 */}
-          {isXSearchEnabled && showReasoningSidebar && messages.length > 0 && (
+          {isXSearchEnabled && showReasoningSidebar && (
             <div className="w-96 border-l border-gray-200 overflow-y-auto h-full">
               <ReasoningSidebar 
                 steps={reasoningSteps} 

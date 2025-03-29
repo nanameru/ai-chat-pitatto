@@ -1,5 +1,7 @@
 // Mastraエージェントのテストスクリプト
-import { researchAgent } from '../lib/mastra';
+// TypeScriptファイルを直接実行するためのts-nodeを使用
+require('ts-node').register();
+const { deepResearchAgent } = require('../lib/mastra/index.ts');
 
 async function testMastraAgent() {
   console.log('Mastraエージェントのテスト開始');
@@ -12,18 +14,16 @@ async function testMastraAgent() {
     
     // エージェントの呼び出し
     console.log('エージェント処理中...');
-    const response = await researchAgent.invoke({
-      messages: [
-        {
-          role: 'user',
-          content: testQuery
-        }
-      ]
-    });
+    const response = await deepResearchAgent.generate([
+      {
+        role: 'user',
+        content: testQuery
+      }
+    ]);
     
     // 結果の表示
     console.log('\n結果:');
-    console.log(response);
+    console.log(response.text);
     console.log('\nテスト完了');
   } catch (error) {
     console.error('エラー発生:', error);

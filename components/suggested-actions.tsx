@@ -17,7 +17,7 @@ interface SuggestedActionsProps {
   suggestions?: Suggestion[];
   append: (
     message: Message | CreateMessage,
-    chatRequestOptions?: ChatRequestOptions,
+    chatRequestOptions?: ChatRequestOptions & { xSearchEnabled?: boolean },
   ) => Promise<string | null | undefined>;
   chatId: string;
 }
