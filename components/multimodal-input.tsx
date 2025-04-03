@@ -1385,12 +1385,13 @@ const PureXSearchButton = memo(function PureXSearchButton({
             type="button"
             onClick={handleButtonClick}
             disabled={false}
-            className={cx(
+            suppressHydrationWarning
+            className={typeof window !== 'undefined' ? cx(
               "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200",
               clientSideEnabled
                 ? "bg-blue-100 text-blue-700 hover:bg-blue-200 border-transparent"
                 : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
-            )}
+            ) : "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 border border-gray-200"}
             aria-label="Deep Research"
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>

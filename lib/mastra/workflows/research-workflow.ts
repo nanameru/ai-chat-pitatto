@@ -1,6 +1,7 @@
 import { Workflow, Step } from "@mastra/core/workflows";
 import { z } from "zod";
-import { deepResearchAgent } from "../agents/deep-research-agent";
+import { deepResearchAgentV2, researchAgent, integrationAgent } from "../agents/deep-research-v2";
+import { searchTool, analysisTool } from "../tools/index";
 
 /**
  * 研究ワークフロー - 反復連鎖検索のプロセスを定義
@@ -33,11 +34,20 @@ const initialSearchStep = new Step({
     timestamp: z.string(),
   }),
   execute: async ({ context }) => {
-    const query = context?.getStepResult<{ query: string }>("trigger")?.query;
+    const query = context?.getStepResult<{ query: string }>("trigger")?.query || "";
     
-    const response = await deepResearchAgent.tools.searchTool.execute({
+    if (!query) {
+      return { query: "", results: [], timestamp: new Date().toISOString() };
+    }
+    
+    // nullチェックを追加
+    if (!searchTool || !searchTool.execute) {
+      return { query, results: [], timestamp: new Date().toISOString() };
+    }
+    
+    const response = await searchTool.execute({
       context: { query },
-    });
+    }) as { query: string; results: { title: string; snippet: string; url: string; }[]; timestamp: string; };
     
     return response;
   },
@@ -53,14 +63,33 @@ const analysisStep = new Step({
     analysisTimestamp: z.string(),
   }),
   execute: async ({ context }) => {
-    const searchResults = context?.getStepResult("initialSearch");
+    const searchResults = context?.getStepResult("initialSearch") || { query: "", results: [] };
     
-    const response = await deepResearchAgent.tools.analysisTool.execute({
+    if (!searchResults || !searchResults.query) {
+      return { 
+        originalQuery: "", 
+        missingInformation: [], 
+        followUpQueries: [], 
+        analysisTimestamp: new Date().toISOString() 
+      };
+    }
+    
+    // nullチェックを追加
+    if (!analysisTool || !analysisTool.execute) {
+      return {
+        originalQuery: searchResults.query,
+        missingInformation: [],
+        followUpQueries: [],
+        analysisTimestamp: new Date().toISOString()
+      };
+    }
+    
+    const response = await analysisTool.execute({
       context: {
         query: searchResults.query,
-        results: searchResults.results,
+        results: searchResults.results || [],
       },
-    });
+    }) as { originalQuery: string; missingInformation: string[]; followUpQueries: string[]; analysisTimestamp: string; };
     
     return response;
   },
@@ -96,10 +125,22 @@ const followUpSearchStep = new Step({
       };
     }
     
-    for (const query of analysis.followUpQueries) {
-      const response = await deepResearchAgent.tools.searchTool.execute({
+    const followUpQueries = analysis?.followUpQueries || [];
+    for (const query of followUpQueries) {
+      if (!query) continue;
+      
+      // nullチェックを追加
+      if (!searchTool || !searchTool.execute) {
+        additionalResults.push({
+          query,
+          results: [],
+        });
+        continue;
+      }
+      
+      const response = await searchTool.execute({
         context: { query },
-      });
+      }) as { query: string; results: { title: string; snippet: string; url: string; }[]; timestamp: string; };
       
       additionalResults.push({
         query,
@@ -116,17 +157,27 @@ const followUpSearchStep = new Step({
       追加で収集した情報: ${JSON.stringify(additionalResults)}
     `;
     
-    const evaluationResponse = await deepResearchAgent.generate(evaluationPrompt, {
+    // 型アサーションを使用して正しい型を指定
+    const evaluationResponse = await researchAgent.generate(evaluationPrompt, {
       output: z.object({
         isInformationSufficient: z.boolean(),
         reasonForDecision: z.string(),
       }),
-    });
+    }) as unknown as {
+      text: string;
+      object: {
+        isInformationSufficient: boolean;
+        reasonForDecision: string;
+      };
+    };
+    
+    // 情報が十分かどうかのデフォルト値を設定
+    const isInformationSufficient = evaluationResponse?.object?.isInformationSufficient ?? true;
     
     return { 
       additionalResults: [...(previousIterations?.additionalResults || []), ...additionalResults],
       iterationCount: iterationCount + 1,
-      isInformationSufficient: evaluationResponse.object.isInformationSufficient
+      isInformationSufficient
     };
   },
 });
@@ -164,7 +215,7 @@ const resultIntegrationStep = new Step({
       追加検索結果: ${JSON.stringify(followUpSearch.additionalResults)}
     `;
     
-    const response = await deepResearchAgent.generate(prompt);
+    const response = await integrationAgent.generate(prompt) as { text: string };
     
     return {
       originalQuery: initialSearch.query,
@@ -181,16 +232,13 @@ researchWorkflow
   .then(analysisStep)
   .then(followUpSearchStep)
   .then(analysisStep, {
-    when: { "followUpSearch.isInformationSufficient": false },
-    after: "followUpSearch"
+    when: { "followUpSearch.isInformationSufficient": false }
   })
   .then(followUpSearchStep, {
-    when: { "followUpSearch.isInformationSufficient": false },
-    after: "analysisStep"
+    when: { "followUpSearch.isInformationSufficient": false }
   })
   .then(resultIntegrationStep, {
-    when: { "followUpSearch.isInformationSufficient": true },
-    after: "followUpSearch"
+    when: { "followUpSearch.isInformationSufficient": true }
   });
 
 researchWorkflow.commit();

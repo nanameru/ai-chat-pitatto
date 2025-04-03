@@ -1,12 +1,12 @@
 import { Mastra } from '@mastra/core';
-import { deepResearchAgent } from './agents/deep-research-agent';
+import { deepResearchAgentV2 } from './agents/deep-research-v2';
 import { researchWorkflow } from './workflows/research-workflow';
 
 export const mastra = new Mastra({
-  agents: { deepResearchAgent },
+  agents: { deepResearchAgent: deepResearchAgentV2 },
   workflows: { researchWorkflow },
 });
 
-export { deepResearchAgent } from './agents/deep-research-agent';
+export { deepResearchAgentV2 as deepResearchAgent } from './agents/deep-research-v2';
 export { researchWorkflow } from './workflows/research-workflow';
 export * as tools from './tools';
