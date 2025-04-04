@@ -1,3 +1,7 @@
+# Devin Branch
+
+This is the Devin branch of the AI Chat Pitatto project. This branch includes the latest UI improvements and bug fixes.
+
 <a href="https://chat.vercel.ai/">
   <img alt="Next.js 14 and App Router-ready AI chatbot." src="app/(chat)/opengraph-image.png">
   <h1 align="center">Next.js AI Chatbot</h1>
