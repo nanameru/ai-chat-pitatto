@@ -68,9 +68,19 @@ export function ModelSelector({
               onSelect={() => {
                 setOpen(false);
 
-                startTransition(() => {
+                // 楽観的UIの更新とServer Actionの実行を同じstartTransition内で行う
+                startTransition(async () => {
+                  // 楽観的UI更新
                   setOptimisticModelId(id);
-                  saveChatModelAsCookie(id);
+                  
+                  try {
+                    // Server Actionを実行
+                    await saveChatModelAsCookie(id);
+                  } catch (error) {
+                    console.error('モデル保存エラー:', error);
+                    // エラーが発生した場合は元のモデルに戻す
+                    setOptimisticModelId(selectedModelId);
+                  }
                 });
               }}
               className="flex items-center justify-between px-2 py-1.5 rounded-md"
