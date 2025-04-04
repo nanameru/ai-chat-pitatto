@@ -90,8 +90,11 @@ export async function POST(req: NextRequest) {
             }
         } catch (error) {
             console.error('[API] 明確化ツールの実行中にエラーが発生しました:', error);
-            // エラーが発生した場合は計画段階に進む
-            console.log('[API] エラーのため明確化をスキップし、計画段階へ進みます。');
+            // ★ エラーが発生した場合、ここでエラー応答を返して終了する ★
+            return NextResponse.json(
+                { error: '明確化処理中にエラーが発生しました', details: error instanceof Error ? error.message : String(error) },
+                { status: 500 }
+            );
         }
     } else {
         console.log('[API] 明確化応答あり。計画段階へ進みます。');
