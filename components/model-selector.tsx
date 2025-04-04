@@ -67,19 +67,24 @@ export function ModelSelector({
               key={id}
               onSelect={() => {
                 setOpen(false);
-
-                // 楽観的UIの更新とServer Actionの実行を同じstartTransition内で行う
+                
+                // Server Actionの実行とUI更新を同じトランザクション内で行う
                 startTransition(async () => {
-                  // 楽観的UI更新
+                  // 楽観的UI更新をトランザクション内で行う
                   setOptimisticModelId(id);
                   
                   try {
                     // Server Actionを実行
-                    await saveChatModelAsCookie(id);
+                    const result = await saveChatModelAsCookie(id);
+                    console.log('モデル保存成功:', id);
+                    
+                    // ページをリロードせずにモデル変更を反映
+                    window.dispatchEvent(new CustomEvent('modelChanged', { detail: { modelId: id } }));
                   } catch (error) {
                     console.error('モデル保存エラー:', error);
                     // エラーが発生した場合は元のモデルに戻す
                     setOptimisticModelId(selectedModelId);
+                    alert('モデルの変更に失敗しました。もう一度お試しください。');
                   }
                 });
               }}

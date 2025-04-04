@@ -5,7 +5,7 @@ const nextConfig = {
   },
   experimental: {
     serverActions: {
-      allowedOrigins: ['localhost:3000', '127.0.0.1:60428'],
+      allowedOrigins: ['localhost:3000', 'localhost:3005', '127.0.0.1:60428', '127.0.0.1:54548'],
       bodySizeLimit: '2mb',
     },
   },

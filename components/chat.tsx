@@ -5,7 +5,7 @@ import { useChat } from 'ai/react';
 import { useEffect, useOptimistic, useState, useRef, useCallback } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
-import { ReasoningStep } from '@/types/reasoning';
+import type { ReasoningStep } from '@/types/reasoning';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -390,7 +390,58 @@ export function Chat({
     updateChatStateRef(messages, input);
   }, [messages, input, updateChatStateRef]);
 
-  // カスタムイベントをリッスンして、ローカルストレージの値を直接確認
+  // モデル変更イベントをリッスンして、モデル選択が即時に反映されるようにする
+  useEffect(() => {
+    const handleModelChange = (event: CustomEvent) => {
+      const { modelId } = event.detail;
+      
+      console.log('[Event] モデル変更イベントを受信:', {
+        前のモデル: selectedChatModel,
+        新しいモデル: modelId,
+        タイムスタンプ: Date.now()
+      });
+      
+      if (modelId && modelId !== selectedChatModel) {
+        // 新しいチャットキーを生成して useChat を再初期化
+        const timestamp = Date.now();
+        const newKey = `${id}-${modelId}-${timestamp}`;
+        console.log(`[Chat] モデル変更によりチャットキーを更新: ${newKey}`);
+        setChatKey(newKey);
+        
+        // useChat を再初期化
+        if (reload) {
+          console.log(`[Refresh] モデル変更により useChat を再初期化します`);
+          try {
+            reload({
+              data: {
+                chatId: id,
+                model: modelId,
+                xSearchEnabled: isXSearchEnabled,
+                computerUseEnabled: isComputerUseEnabled,
+                timestamp: timestamp,
+                forceReset: false // メッセージは保持
+              }
+            });
+            console.log(`[Refresh] 完了: モデルが ${modelId} に変更されました`);
+          } catch (error) {
+            console.error('[モデル変更] リロードエラー:', error);
+            toast.error('モデル変更に失敗しました。ページを再読み込みします。');
+            window.location.reload();
+          }
+        }
+      }
+    };
+    
+    // モデル変更イベントリスナーを追加
+    window.addEventListener('modelChanged', handleModelChange as EventListener);
+    
+    // クリーンアップ関数
+    return () => {
+      window.removeEventListener('modelChanged', handleModelChange as EventListener);
+    };
+  }, [id, selectedChatModel, setChatKey, reload, isXSearchEnabled, isComputerUseEnabled]);
+
+  // X検索モード変更イベントをリッスン
   useEffect(() => {
     const handleModeChange = (event: CustomEvent) => {
       const { enabled, previous, timestamp, force, immediate, source, resetChat, silentMode } = event.detail;
