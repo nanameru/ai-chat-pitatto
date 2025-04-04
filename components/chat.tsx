@@ -769,7 +769,7 @@ export function Chat({
                       selectedModelId={selectedChatModel}
                     />}
 
-                    {!isArtifactVisible && (
+                    {!isArtifactVisible && messages.length === 0 && (
                       <div className="mb-4">
                         <SuggestedActions
                           chatId={id}
