@@ -30,7 +30,7 @@ function PureSuggestedActions({
   if (!suggestions || suggestions.length === 0) return null;
 
   return (
-    <div className="grid sm:grid-cols-2 gap-3 w-full max-w-3xl mx-auto">
+    <div className="grid sm:grid-cols-2 gap-3 w-full max-w-3xl mx-auto mt-4">
       {suggestions.map((suggestion, index) => (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
