@@ -1,6 +1,5 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getJson } from "serpapi";
 
 /**
  * 検索ツール - ウェブ検索を実行して結果を返す

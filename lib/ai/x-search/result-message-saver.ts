@@ -3,7 +3,7 @@
  */
 
 import { XSearchError } from './types';
-import { TwitterPost } from '@/lib/ai/coze/coze';
+import type { TwitterPost } from '@/lib/ai/coze/coze';
 import { db } from '../../db';
 
 /**
@@ -25,8 +25,8 @@ async function waitForSessionStatus(
   supabase: any,
   sessionId: string,
   targetStatus: string,
-  maxAttempts: number = 30,  // デフォルトは30回試行（30秒）
-  intervalMs: number = 1000  // デフォルトは1秒間隔
+  maxAttempts = 30,  // デフォルトは30回試行（30秒）
+  intervalMs = 1000  // デフォルトは1秒間隔
 ): Promise<boolean> {
   console.log(`\x1b[46m\x1b[30m[XSearchService] ステータス確認\x1b[0m \x1b[36m'${targetStatus}' になるのを待機中...\x1b[0m`);
   console.log(`\x1b[36m----------------------------------------------------------\x1b[0m`);

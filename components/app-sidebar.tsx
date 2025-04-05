@@ -2,7 +2,6 @@
 
 import type { User } from 'next-auth';
 import { useRouter } from 'next/navigation';
-import Image from 'next/image';
 
 import { PlusIcon, SidebarToggleIcon } from '@/components/icons';
 import { SidebarHistory } from '@/components/sidebar-history';
@@ -16,7 +15,6 @@ import {
   SidebarMenu,
   useSidebar,
 } from '@/components/ui/sidebar';
-import Link from 'next/link';
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip';
 
 export function AppSidebar({ user }: { user: User | undefined }) {

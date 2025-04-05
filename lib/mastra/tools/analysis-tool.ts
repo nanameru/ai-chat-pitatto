@@ -63,7 +63,7 @@ export const analysisTool = createTool({
     const snippets = results.map(r => r.snippet).join('\n');
     
     // 検索結果の内容に基づいて、キーワードを抽出
-    const keywords = extractKeywords(titles + '\n' + snippets);
+    const keywords = extractKeywords(`${titles}\n${snippets}`);
     
     // 情報の十分さを評価（10点満点）
     const completenessEvaluation = evaluateCompleteness(results, query);

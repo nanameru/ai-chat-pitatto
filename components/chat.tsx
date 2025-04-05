@@ -4,7 +4,7 @@ import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai'
 import { useChat } from 'ai/react';
 import { useEffect, useOptimistic, useState, useRef, useCallback } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
-import { ReasoningSidebar } from '@/components/reasoning-sidebar';
+import ReasoningSidebar from '@/components/reasoning-sidebar';
 import type { ReasoningStep } from '@/types/reasoning';
 
 import { ChatHeader } from '@/components/chat-header';

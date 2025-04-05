@@ -315,7 +315,7 @@ export async function POST(request: Request): Promise<Response> {
               
               // 画像データをレスポンス形式に変換
               // 画像データが正しく取得できたか確認
-              if (result && result.image && result.image.base64) {
+              if (result?.image?.base64) {
                 console.log('[画像] 画像データが正常に取得できました');
                 imageResponse = { images: [result.image.base64] };
               } else {
@@ -348,7 +348,7 @@ export async function POST(request: Request): Promise<Response> {
                 
                 // 画像データをレスポンス形式に変換
                 // 画像データが正しく取得できたか確認
-                if (result && result.image && result.image.base64) {
+                if (result?.image?.base64) {
                   console.log('[画像] DALL-E 3の画像データが正常に取得できました');
                   imageResponse = { images: [result.image.base64] };
                 } else {

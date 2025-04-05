@@ -807,7 +807,7 @@ export async function getVideoById({ id }: { id: string }) {
     if (error) throw error;
     
     // 動画ファイルのURLが存在する場合、公開URLを生成
-    if (data && data.fileUrl) {
+    if (data?.fileUrl) {
       try {
         console.log('元のファイルURL:', data.fileUrl);
         
@@ -839,11 +839,11 @@ export async function getVideoById({ id }: { id: string }) {
               .from('PitattoChat')
               .getPublicUrl(correctPath);
             
-            if (publicUrlData && publicUrlData.publicUrl) {
+            if (publicUrlData?.publicUrl) {
               data.fileUrl = publicUrlData.publicUrl;
               console.log('公開URLを使用:', publicUrlData.publicUrl);
             }
-          } else if (signedUrlData && signedUrlData.signedUrl) {
+          } else if (signedUrlData?.signedUrl) {
             data.fileUrl = signedUrlData.signedUrl;
             console.log('署名付きURLを使用:', signedUrlData.signedUrl);
           }
@@ -854,7 +854,7 @@ export async function getVideoById({ id }: { id: string }) {
             .from('PitattoChat')
             .getPublicUrl(correctPath);
           
-          if (publicUrlData && publicUrlData.publicUrl) {
+          if (publicUrlData?.publicUrl) {
             data.fileUrl = publicUrlData.publicUrl;
             console.log('公開URLを使用:', publicUrlData.publicUrl);
           } else {
@@ -895,7 +895,7 @@ export async function deleteVideo({ id }: { id: string }) {
     if (error) throw error;
     
     // ストレージから動画ファイルを削除（必要に応じて）
-    if (videoData && videoData.fileUrl) {
+    if (videoData?.fileUrl) {
       // ファイルパスを抽出（URLからパスを取得）
       const bucketName = 'PitattoChat';
       const fileUrl = videoData.fileUrl;

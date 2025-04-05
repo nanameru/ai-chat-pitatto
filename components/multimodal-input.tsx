@@ -40,11 +40,10 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/t
 import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
-import { Search as SearchIcon, Computer } from 'lucide-react';
+import { Search as SearchIcon, } from 'lucide-react';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
-import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
-import { ComputerUseToggle } from './computer-use-toggle';
+import { executeParallelCozeQueries, } from '@/lib/ai/coze/coze';
 
 function PureMultimodalInput({
   chatId,
@@ -845,7 +844,7 @@ function PureMultimodalInput({
           console.log('[デバッグ] 画像生成コマンドが検出されました');
           
           // 強制的に画像生成モードを有効化
-          toast.info('画像生成コマンドを検出しました: ' + imagePrompt);
+          toast.info(`画像生成コマンドを検出しました: ${imagePrompt}`);
           
           try {
             console.log('[画像生成] 画像生成コマンドを検出:', imagePrompt);

@@ -1,13 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { 
-  deepResearchAgentV2, 
   planningAgent,
   researchAgent,
   integrationAgent 
 } from '@/lib/mastra/agents/deep-research-v2';
 import { queryClarifier } from '@/lib/mastra/agents/deep-research-v2/clarification';
-import { Tool } from '@mastra/core';
-import { z } from 'zod';
 import { getJson } from 'serpapi';
 
 type ResearchPlan = {
@@ -103,7 +100,7 @@ export async function POST(req: NextRequest) {
         `以下のトピックに関する詳細な調査計画を作成してください: "${initialInput}"\n\n計画には、主要なセクションとその焦点、初期検索クエリ案を含めてください。`
     );
 
-    let plan: ResearchPlan = { 
+    const plan: ResearchPlan = { 
         outline: `計画概要:\n${planningResult.text}`, 
         sections: [] 
     }; 
@@ -119,7 +116,7 @@ export async function POST(req: NextRequest) {
 
     // --- 2. 調査段階 (Research Phase - Iterative Loop) ---
     console.log('[API] 調査段階開始');
-    let accumulatedInfo: AccumulatedInfo = {};
+    const accumulatedInfo: AccumulatedInfo = {};
     let iterationCount = 0;
     let needsMoreResearch = true; 
 
@@ -134,7 +131,7 @@ export async function POST(req: NextRequest) {
             const queriesToSearch = section.queries || [`${section.title} ${section.focus}`]; 
             console.log(`[API] 検索クエリ: ${queriesToSearch.join(', ')}`);
 
-            let searchResultsData: SearchResultData[] = []; 
+            const searchResultsData: SearchResultData[] = []; 
             for (const q of queriesToSearch) {
                 console.log(`[API] Web検索実行中: ${q}`);
                 
@@ -263,7 +260,7 @@ ${Object.entries(accumulatedInfo).map(([title, data]) =>
       result: finalDocument, 
       needsClarification: false,
       plan: plan.outline,
-      sources: Object.entries(accumulatedInfo).map(([title, data]) => data.sources).flat()
+      sources: Object.entries(accumulatedInfo).flatMap(([title, data]) => data.sources)
     });
 
   } catch (error) {
