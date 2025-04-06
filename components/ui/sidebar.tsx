@@ -288,15 +288,7 @@ const SidebarUserMenu = () => {
 
   return (
     <div className="flex flex-col gap-1 p-2">
-      <Button
-        variant="ghost"
-        className="w-full justify-start"
-        onClick={() => {
-          document.documentElement.classList.toggle('dark');
-        }}
-      >
-        ダークモード切替
-      </Button>
+
       <Button
         variant="ghost"
         className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
