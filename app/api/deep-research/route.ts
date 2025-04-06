@@ -24,6 +24,13 @@ import { deepResearchAgentV2 } from '@/lib/mastra/agents/deep-research-v2';
 import { mastra } from '@/lib/mastra'; // ★ lib/mastra/index.ts から mastra インスタンスをインポート
 // ★★★ ここまで再修正 ★★★
 
+// 以下の不要なインポートを削除
+// import { SupabaseClient } from '@supabase/supabase-js';
+import { type Message as VercelChatMessage } from 'ai';
+// import { StreamingTextResponse } from 'ai/react'; // ★ インポート元を ai/react に変更
+
+// import { saveMessages } from '@/utils/supabase/chat-actions'; // ★ 重複のためコメントアウト
+
 // ★ 型定義のコメントアウト解除 ★★★
 // 必要に応じて AgentResponse などの型をインラインで定義するか、any を使う
 type ResearchPlan = { /* ... */ };
@@ -221,24 +228,71 @@ export async function POST(req: NextRequest) {
         ];
         
         // AgentResponse 型がないため、一旦 any で回避
-        const agentResponse: any = await agent.generate(
+        const agentResult: any = await agent.generate(
           messages, // ← メッセージ配列を第一引数に
           options   // ← options オブジェクトを直接第二引数に
         );
 
-        console.log('[API] Deep Research Agent実行完了:', agentResponse);
+        console.log('[API] Deep Research Agent実行完了:', agentResult);
 
-        // ★ 応答形式を修正 (agentResponse.text があると仮定) ★
-        if (agentResponse && agentResponse.text) {
-            // TODO: 明確化が必要かどうかの判断ロジックも追加する
-            // 例: if (agentResponse.toolCalls?.some(tc => tc.function.name === 'queryClarifier')) { ... }
-            return NextResponse.json({ result: agentResponse.text, success: true }); 
-        } else {
-            console.error('[API] Deep Research Agent failed or returned unexpected format:', agentResponse);
-            // エラー応答も agentResponse の構造に合わせる (より安全なエラーメッセージ)
-            const errorDetails = agentResponse?.finishReason || 'Agent returned unexpected format or failed silently'; 
-            return NextResponse.json({ error: 'Deep Research Agent failed', details: errorDetails }, { status: 500 });
+        // ★ 修正: agentResult の内容に基づいて明確化が必要か判断
+        const needsClarification = agentResult.toolCalls?.some((tc: any) => tc.function.name === 'queryClarifier');
+        const clarificationMessage = needsClarification ? agentResult.text : null; // toolCallsがある場合、textに明確化質問が入ると仮定
+
+        // 明確化が必要な場合、質問を返す
+        if (needsClarification && clarificationMessage) {
+          console.log('[API Deep Research] Clarification needed. Returning clarification message.');
+          
+          // AI明確化メッセージをDBに保存
+          const assistantMessageObject: Omit<DBMessage, 'userId'> = {
+            id: randomUUID(),
+            chatId: chatId,
+            role: 'assistant', // 重要: role を 'assistant' に設定
+            content: clarificationMessage,
+            createdAt: new Date(),
+          };
+          
+          try {
+            await saveMessages({ messages: [assistantMessageObject] });
+            console.log('[API Deep Research] Assistant clarification message saved to database.');
+          } catch (error) {
+            console.error('[API Deep Research] Failed to save assistant message:', error);
+            // エラーがあっても処理を続行
+          }
+          
+          return NextResponse.json({
+            needsClarification: true,
+            clarificationMessage: clarificationMessage,
+            originalQuery: query, 
+            success: true, 
+          });
         }
+
+        // 通常の結果を返す
+        console.log('[API Deep Research] No clarification needed. Returning final result.');
+        
+        // AI最終結果をDBに保存
+        const assistantResultObject: Omit<DBMessage, 'userId'> = {
+          id: randomUUID(),
+          chatId: chatId,
+          role: 'assistant', // 重要: role を 'assistant' に設定
+          content: agentResult.text,
+          createdAt: new Date(),
+        };
+        
+        try {
+          await saveMessages({ messages: [assistantResultObject] });
+          console.log('[API Deep Research] Assistant final result saved to database.');
+        } catch (error) {
+          console.error('[API Deep Research] Failed to save assistant result:', error);
+          // エラーがあっても処理を続行
+        }
+        
+        return NextResponse.json({
+          result: agentResult.text,
+          success: true,
+          needsClarification: false, 
+        });
 
     } catch (agentError) {
         console.error('[API] Error running Deep Research Agent:', agentError);
