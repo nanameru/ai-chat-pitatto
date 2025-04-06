@@ -34,19 +34,7 @@ export function AppSidebar({ user }: { user: User | undefined }) {
         <SidebarMenu>
           {/* ヘッダーに左右のボタンを配置 */}
           <div className="flex justify-between items-center p-2">
-            {/* サイドバーの開閉ボタン（左側） */}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  onClick={toggleSidebar}
-                  variant="ghost"
-                  className="p-2 h-fit"
-                >
-                  <SidebarToggleIcon size={16} />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent align="start">サイドバーの切り替え</TooltipContent>
-            </Tooltip>
+            {/* サイドバーの開閉ボタンを削除 */}
 
             {/* New Chatボタン（右側） */}
             <Tooltip>
