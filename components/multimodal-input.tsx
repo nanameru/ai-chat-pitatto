@@ -201,19 +201,30 @@ function PureMultimodalInput({
    * @param clarificationResponse 明確化質問に対するユーザーの回答（オプション）
    */
   const executeDeepResearchAgent = async (query: string, chatId: string, modelId: string, clarificationResponse?: string) => {
+    console.log('[Deep Research] executeDeepResearchAgent 開始:', { query, chatId, modelId, clarificationResponse });
+
+    // ★ 修正: ローディングメッセージを追加
+    const loadingMessageId = nanoid();
+    append({
+      id: loadingMessageId,
+      content: '詳細な調査を実行中...', // ローディングメッセージの内容
+      role: 'assistant' as const,      // 正しく role を assistant に設定
+      createdAt: new Date()
+    });
+
     try {
       toast.info('Deep Research Agentを実行中...', { duration: 3000 });
       console.log('[Deep Research] APIリクエストを開始:', query);
       
-      // 処理中の状態を表示
-      const loadingMessage: CreateMessage = { 
-        id: nanoid(), 
-        content: '詳細な調査を実行中...', 
-        role: 'assistant' as const, 
-        createdAt: new Date() 
+      // ★★★ デバッグログ追加: APIに渡す直前の body を確認 ★★★
+      const requestBody = {
+        query: query,
+        chatId: chatId,
+        clarificationResponse: clarificationResponse, // 将来的に明確化応答を追加する場合
       };
-      await append(loadingMessage, { id: loadingMessage.id });
-      
+      console.log('[Deep Research] API Request Body:', requestBody);
+      // ★★★ ここまで ★★★
+
       // Deep Research APIを呼び出し
       const response = await fetch('/api/deep-research', {
         method: 'POST',
@@ -234,87 +245,65 @@ function PureMultimodalInput({
       const data = await response.json();
       
       // APIレスポンスのバリデーション
-      // success フィールドが明示的に false の場合のみエラーとして扱う
-      if (data.success === false) {
-        throw new Error(data.error || 'APIからエラーが返されました');
+      if (!data || data.success !== true) { // successがtrueでない場合はエラー
+        throw new Error(data?.error || 'APIから予期せぬ応答が返されました');
       }
-      
-      // データの構造を確認し、必要なフィールドが存在しない場合はデフォルト値を設定
-      const validatedData = {
-        ...data,
-        success: data.success !== false, // 明示的に false でなければ true とみなす
-        needsClarification: !!data.needsClarification,
-        clarificationMessage: data.clarificationMessage || ''
-      };
-      
-      console.log('[Deep Research] API実行結果:', validatedData);
-      
-      // 明確化が必要な場合
-      if (validatedData.needsClarification && validatedData.clarificationMessage) {
-        console.log('[Deep Research] 明確化が必要です:', validatedData.clarificationMessage);
-        
-        // 前のローディングメッセージを削除
-        // Note: この部分は実際のアプリケーションの実装によって異なる場合があります
-        
-        // 明確化質問を表示
-        await append({ 
-          id: nanoid(), 
-          content: validatedData.clarificationMessage, 
-          role: 'assistant' as const, 
-          createdAt: new Date() 
+
+      console.log('[Deep Research] API実行結果:', data);
+
+      // ★ 修正: data.needsClarification を確認
+      if (data.needsClarification === true && data.clarificationMessage) {
+        console.log('[Deep Research] 明確化が必要です:', data.clarificationMessage);
+
+        // ★ 修正: appendはAI応答をUIに追加するのに使う
+        await append({
+          id: nanoid(),
+          content: data.clarificationMessage,
+          role: 'assistant' as const,
+          createdAt: new Date()
         });
-        
+
         // 明確化モードをセット
         setClarificationMode({
           active: true,
-          originalQuery: validatedData.originalQuery || query
+          originalQuery: data.originalQuery || query // APIから返された元のクエリを使う
         });
-        
+
         toast.info('詳細情報を教えてください', { duration: 3000 });
+        setInput(''); // 入力欄をクリア
+        return; // ★ 処理を中断してユーザーの入力を待つ
+      }
+
+      // ★ 修正: 明確化が不要な場合（最終結果）
+      if (data.needsClarification === false && data.result) {
+        console.log('[Deep Research] 最終結果を受信:', data.result);
+
+        // ★ 修正: ユーザーメッセージをappendするのはsubmitFormで行うのでここでは不要かも？
+        // 状況に応じてコメントアウトまたは削除を検討
+        // await append({ 
+        //   id: nanoid(), 
+        //   content: clarificationResponse ? `${query}\n\n${clarificationResponse}` : query, 
+        //   role: 'user' as const, 
+        //   createdAt: new Date() 
+        // }, options);
+
+        // 最終的な結果を表示
+        await append({
+          id: nanoid(),
+          content: data.result,
+          role: 'assistant' as const,
+          createdAt: new Date()
+        });
+
+        toast.success('Deep Research完了', { duration: 3000 });
+        setClarificationMode({ active: false, originalQuery: '' }); // 明確化モードをリセット
         return;
       }
-      
-      // 結果を表示
-      const resultContent = data.result || JSON.stringify(data);
-      
-      // 検索オプションを設定
-      const options: ChatRequestOptions = {
-        xSearchEnabled: true,
-        data: {
-          searchType: 'deep-research',
-          query,
-          chatId,
-          model: modelId,
-          agentResponse: resultContent
-        }
-      };
-      
-      // 明確化モードをリセット
-      setClarificationMode({
-        active: false,
-        originalQuery: ''
-      });
-      
-      // ユーザーメッセージを追加
-      await append({ 
-        id: nanoid(), 
-        content: clarificationResponse ? `${query}\n\n${clarificationResponse}` : query, 
-        role: 'user' as const, 
-        createdAt: new Date() 
-      }, options);
-      
-      // 前のローディングメッセージを削除
-      // Note: この部分は実際のアプリケーションの実装によって異なる場合があります
-      
-      // 最終的な結果を表示
-      await append({ 
-        id: nanoid(), 
-        content: resultContent, 
-        role: 'assistant' as const, 
-        createdAt: new Date() 
-      });
-      
-      toast.success('Deep Research完了', { duration: 3000 });
+
+      // 予期せぬデータ形式の場合
+      console.error('[Deep Research] 予期せぬAPI応答形式:', data);
+      throw new Error('APIから予期せぬ応答形式が返されました');
+
     } catch (error) {
       console.error('[Deep Research] 実行中にエラーが発生:', error);
       toast.error('Deep Research処理に失敗しました', { duration: 5000 });
@@ -594,12 +583,12 @@ function PureMultimodalInput({
           try {
             // Deep Research Agent V2を実行
             await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
-            return { success: true };
+            return;
           } catch (error) {
             console.error('[Deep Research] 処理中にエラーが発生:', error);
             toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 });
             onError?.(error as Error);
-            return { error };
+            return;
           }
         }
         

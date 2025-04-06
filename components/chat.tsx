@@ -339,7 +339,14 @@ export function Chat({
 
       // 2. ★ startTransition でラップして optimistic update を実行
       startTransition(() => {
-        console.log('[Chat] Optimistically adding user message (right side) within transition:', userMessageToAdd);
+        // ★★★ デバッグログ追加: appendされるメッセージの内容を確認 ★★★
+        console.log('[Chat] Optimistically adding message within transition:', {
+          id: userMessageToAdd.id,
+          role: userMessageToAdd.role, // ← role を確認
+          content: typeof userMessageToAdd.content === 'string' ? userMessageToAdd.content.substring(0, 50) + '...' : '[Non-string content]',
+          createdAt: userMessageToAdd.createdAt
+        });
+        // ★★★ ここまで ★★★
         addOptimisticMessage(userMessageToAdd);
       });
 

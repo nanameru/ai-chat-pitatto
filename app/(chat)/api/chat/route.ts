@@ -416,6 +416,27 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
             
             await saveMessages({ messages: [userMessage, assistantMessage] });
             
+            // ★★★ デバッグログ追加: DB保存直前のデータ確認 ★★★
+            const dataToSave = {
+              id: assistantMessage.id,
+              chat_id: chatId,
+              user_id: userId,
+              role: assistantMessage.role, // ← この値を確認！
+              content: JSON.stringify(assistantMessage.content),
+              created_at: assistantMessage.createdAt.toISOString(),
+              updated_at: new Date().toISOString(),
+            };
+            console.log('[API Chat][onCompletion] Saving assistant message data:', dataToSave);
+            // ★★★ ここまで ★★★
+
+            // ★ 直接 Supabase insert を使用
+            const { error: assistantMsgError } = await supabase.from('Message').insert(dataToSave);
+
+            if (assistantMsgError) {
+              console.error('Failed to save assistant message:', assistantMsgError);
+              throw new Error(`Failed to save assistant message: ${assistantMsgError.message}`);
+            }
+
             // レスポンスを返す
             return new Response(
               JSON.stringify({
