@@ -13,15 +13,21 @@ import { Button } from './ui/button';
 export function SidebarToggle({
   className,
 }: ComponentProps<typeof SidebarTrigger>) {
-  const { toggleSidebar } = useSidebar();
+  const { toggleSidebar, open } = useSidebar();
+
+  // サイドバーが閉じている場合のみボタンを表示
+  if (open) {
+    return null;
+  }
 
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           onClick={toggleSidebar}
-          variant="outline"
-          className="md:px-2 md:h-fit"
+          variant="ghost"
+          className="p-2 h-10 flex items-center justify-center"
+          data-component-name="_c"
         >
           <SidebarToggleIcon size={16} />
         </Button>
