@@ -1,9 +1,13 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
-import { getJson } from "serpapi";
+// import { getJson } from "serpapi"; // SerpAPI は不要になる
+import fetch from 'node-fetch'; // node-fetch を使用 (環境によっては標準 fetch でも可)
+
+// 1秒待機する関数
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
- * 検索ツール - ウェブ検索を実行して結果を返す
+ * 検索ツール - ウェブ検索を実行して結果を返す (Brave Search 使用)
  * 
  * このツールは、ユーザーの検索クエリに基づいてウェブ検索を実行し、
  * 検索結果を構造化されたデータとして返します。
@@ -13,52 +17,76 @@ export const searchTool = createTool({
   inputSchema: z.object({
     query: z.string().describe("検索クエリ"),
   }),
-  description: "ウェブ検索を実行して情報を取得します",
+  description: "ウェブ検索を実行して情報を取得します (Brave Search)",
   execute: async ({ context: { query } }) => {
-    console.log(`検索実行: ${query}`);
+    console.log(`検索実行 (Brave Search): ${query}`);
     console.log(`検索ツールが呼び出されました - ${new Date().toISOString()}`);
-    
+
     try {
-      // テスト用に常に詳細なモックデータを返す
-      const mockResult = getEnhancedMockResults(query);
-      console.log('詳細なモックデータを返します。検索結果数:', mockResult.results.length);
-      return mockResult;
-      
-      /* 本番環境では以下のコードを使用
-      // SerpAPIを使用して実際の検索を実行
-      const apiKey = process.env.SERPAPI_API_KEY;
-      
+      // Brave Search APIキーを取得
+      const apiKey = process.env.BRAVE_API_KEY;
+
       if (!apiKey) {
-        console.warn('SERPAPI_API_KEY が設定されていません。モックデータを返します。');
+        console.warn('BRAVE_API_KEY が設定されていません。モックデータを返します。');
         const mockResult = getEnhancedMockResults(query);
         console.log('モックデータを返します:', JSON.stringify(mockResult, null, 2));
         return mockResult;
       }
-      
-      const params = {
-        engine: "google",
+
+      // Brave Search APIエンドポイントとパラメータ
+      const endpoint = "https://api.search.brave.com/res/v1/web/search";
+      const params = new URLSearchParams({
         q: query,
-        api_key: apiKey,
-        hl: "ja"
-      };
-      
-      const searchResults = await getJson(params);
-      
-      // 検索結果を整形
-      const formattedResults = searchResults.organic_results?.map((result: any) => ({
+        country: "JP", // 必要に応じて国コードを指定
+        search_lang: "jp", // 言語コードを 'jp' に修正
+      });
+
+      // レート制限対策: API呼び出し前に1秒待機
+      console.log('レート制限対策のため1秒待機します...');
+      await sleep(1000);
+
+      // APIリクエストを実行
+      const response = await fetch(`${endpoint}?${params.toString()}`, {
+        method: 'GET',
+        headers: {
+          'Accept': 'application/json',
+          'X-Subscription-Token': `${apiKey}`
+        },
+      });
+
+      if (!response.ok) {
+        // エラーレスポンスの内容を確認
+        let errorBody = '不明なAPIエラー';
+        try {
+            errorBody = await response.text();
+        } catch {}
+        console.error(`Brave Search API エラー: ${response.status} ${response.statusText}`, errorBody);
+        throw new Error(`Brave Search API returned status ${response.status}`);
+      }
+
+      const searchResults = await response.json() as any; // 型は Brave API の仕様に合わせて調整が必要
+
+      // 検索結果を整形 (Brave API のレスポンス構造に合わせる)
+      // 例: searchResults.web?.results のような構造を想定
+      const formattedResults = searchResults.web?.results?.map((result: any) => ({
         title: result.title || '',
-        snippet: result.snippet || '',
-        url: result.link || ''
+        // Brave API は snippet や description を返すことが多い
+        snippet: result.description || result.snippet || '', 
+        url: result.url || ''
       })) || [];
-      
+
+      console.log(`Brave Search 結果取得件数: ${formattedResults.length}`);
+
       return {
         query,
+        // 結果が0件の場合もフォールバックとしてモックを使用するか検討
         results: formattedResults.length > 0 ? formattedResults : getEnhancedMockResults(query).results,
         timestamp: new Date().toISOString(),
       };
-      */
+
     } catch (error) {
-      console.error('検索APIでエラーが発生しました:', error);
+      console.error('検索処理でエラーが発生しました (Brave Search):', error);
+      // エラー時もフォールバックとしてモックデータを返す
       return getEnhancedMockResults(query);
     }
   },

@@ -1,19 +1,44 @@
-import { createTool } from "@mastra/core/tools";
+import { createTool, Tool } from "@mastra/core/tools";
 import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
+
+// queryClarifier の入力スキーマを定義
+const queryClarifierInputSchema = z.object({
+  query: z.string().describe("ユーザーの元のクエリ"),
+});
+
+// queryClarifier の出力スキーマを定義
+const queryClarifierOutputSchema = z.object({
+  needsClarification: z.boolean(),
+  message: z.string(),
+  originalQuery: z.string(),
+  topic: z.string().optional(), // topic は曖昧な場合のみ存在するためオプショナル
+});
+
+// 出力スキーマから TypeScript 型を推論
+type QueryClarifierOutput = z.infer<typeof queryClarifierOutputSchema>;
+
+// ★ 明確化質問生成専用の Agent を定義 (gpt-4o-mini を使用) ★
+const clarificationQuestionAgent = new Agent({
+  name: "Clarification Question Generator",
+  // 指示はプロンプトで与えるためシンプルに
+  instructions: "ユーザーの曖昧なクエリに基づいて、明確化のための質問を生成するアシスタントです。",
+  model: openai("gpt-4o-mini"), // ★ モデルを gpt-4o-mini に設定 ★
+  // ツールは不要
+});
 
 /**
  * クエリ明確化ツール
  * ユーザーの曖昧なクエリに対して、より具体的な情報を求めるための質問を生成します
  */
-export const queryClarifier = createTool({
+// queryClarifier に Zod スキーマを用いた型注釈を追加
+export const queryClarifier: Tool<typeof queryClarifierInputSchema, typeof queryClarifierOutputSchema> = createTool({
   id: "Query Clarifier",
   description: "ユーザーのクエリが曖昧な場合に、より詳細な情報を求めるための質問を生成します",
-  inputSchema: z.object({
-    query: z.string().describe("ユーザーの元のクエリ"),
-  }),
-  execute: async ({ context }) => {
+  inputSchema: queryClarifierInputSchema, // 定義済みの入力スキーマを使用
+  // execute に Zod スキーマから推論した型で戻り値の型注釈を追加
+  execute: async ({ context }): Promise<QueryClarifierOutput> => {
     const { query } = context;
     
     // クエリが十分に具体的かどうかをAIで判断
@@ -30,12 +55,40 @@ export const queryClarifier = createTool({
     // クエリのトピックを特定
     const topic = identifyTopic(query);
     
-    // トピックに基づいて適切な質問を生成
-    const clarificationQuestions = generateClarificationQuestions(topic);
-    
+    // ★ プロンプトを少しシンプルに変更 ★
+    const clarificationPrompt = `ユーザーの曖昧なクエリ: "${query}"
+トピック: "${topic}"
+このユーザーが何を知りたいか明確にするための、箇条書きの質問を5つ生成してください。`;
+
+    let generatedQuestionsText = "エラー：明確化質問を生成できませんでした。";
+    const TIMEOUT_MS = 30000; // タイムアウト時間 (30秒)
+
+    try {
+        console.log("[AI質問生成] 開始 (gpt-4o-mini):", clarificationPrompt); // モデル名をログに追加
+
+        // ★ 新しい clarificationQuestionAgent を使用 ★
+        const generatePromise = clarificationQuestionAgent.generate(clarificationPrompt);
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error(`AI質問生成がタイムアウトしました (${TIMEOUT_MS}ms)`)), TIMEOUT_MS)
+        );
+
+        const clarificationResponse: any = await Promise.race([generatePromise, timeoutPromise]);
+
+        if (clarificationResponse && clarificationResponse.text) {
+            generatedQuestionsText = clarificationResponse.text;
+            console.log("[AI質問生成] 成功 (gpt-4o-mini):", generatedQuestionsText);
+        } else {
+            console.warn("[AI質問生成] AIからの応答が予期しない形式です:", clarificationResponse);
+            generatedQuestionsText = "エラー：AIからの応答形式が不正です。";
+        }
+    } catch (error) {
+        console.error("[AI質問生成エラー] (gpt-4o-mini)", error);
+        generatedQuestionsText = `エラー：明確化質問の生成に失敗しました (${error instanceof Error ? error.message : String(error)})`;
+    }
+
     return {
       needsClarification: true,
-      message: `${query}についてどのような情報をお求めでしょうか？以下のような観点を教えていただけると助かります。\n\n${clarificationQuestions.join("\n\n")}\n\nどの観点で深掘りすればよいか教えてください。`,
+      message: `${query}についてどのような情報をお求めでしょうか？以下のような観点を教えていただけると助かります。\n\n${generatedQuestionsText}\n\nどの観点で深掘りすればよいか教えてください。`,
       originalQuery: query,
       topic
     };
@@ -169,50 +222,6 @@ function identifyTopic(query: string): string {
   
   // デフォルトのトピック
   return "テクノロジー";
-}
-
-/**
- * トピックに基づいて適切な質問を生成する関数
- * 将来的にはこれもAIを使用して生成するように拡張可能
- */
-function generateClarificationQuestions(topic: string): string[] {
-  // 共通の質問
-  const commonQuestions = [
-    "基本的な仕組みや定義について知りたいのか？",
-    "活用事例（ビジネス、教育、医療、芸術など）を知りたいのか？",
-    "日本国内や海外の最新動向やトレンドを調べてほしいのか？",
-    "倫理的課題や規制、リスクに関心があるのか？",
-    "技術的な仕組みや実装方法に興味があるのか？"
-  ];
-  
-  // トピック固有の質問
-  const topicSpecificQuestions: Record<string, string[]> = {
-    "AI": [
-      "AIの種類や分類について知りたいのか？",
-      "AIの学習方法や訓練データについて知りたいのか？",
-      "AIの限界や課題について知りたいのか？"
-    ],
-    "人工知能": [
-      "人工知能の歴史や発展について知りたいのか？",
-      "人工知能の種類や分類について知りたいのか？",
-      "人工知能の社会的影響について知りたいのか？"
-    ],
-    "生成AI": [
-      "生成AIの種類（テキスト生成、画像生成、音声生成など）について知りたいのか？",
-      "生成AIのビジネス活用事例について知りたいのか？",
-      "生成AIの著作権や法的問題について知りたいのか？"
-    ],
-    "ブロックチェーン": [
-      "ブロックチェーンの仕組みや技術的特徴について知りたいのか？",
-      "ブロックチェーンの応用分野について知りたいのか？",
-      "ブロックチェーンの課題や限界について知りたいのか？"
-    ]
-  };
-  
-  // トピックに固有の質問がある場合は追加
-  const specificQuestions = topicSpecificQuestions[topic] || [];
-  
-  return [...commonQuestions, ...specificQuestions];
 }
 
 /**

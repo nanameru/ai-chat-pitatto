@@ -222,6 +222,7 @@ function PureMultimodalInput({
         },
         body: JSON.stringify({ 
           query,
+          chatId,
           clarificationResponse // 明確化回答がある場合は送信
         }),
       });
@@ -510,8 +511,6 @@ function PureMultimodalInput({
     },
     [propIsXSearchEnabled, isXSearchEnabled, isWebSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError, setInput, setLocalStorageInput, isComputerUseEnabled, propIsComputerUseEnabled]
   );
-
-
 
   const submitForm = useCallback(async () => {
     // 親コンポーネントから渡された値を優先的に使用
