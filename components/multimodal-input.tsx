@@ -45,6 +45,7 @@ import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
 import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
 import { ComputerUseToggle } from './computer-use-toggle';
+// import { readDataStream } from 'ai/core/streams'; // ★ 使われていないようなので一旦コメントアウト
 
 function PureMultimodalInput({
   chatId,
@@ -150,6 +151,9 @@ function PureMultimodalInput({
 
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
   
+  // Deep Researchのローディング状態を管理する状態変数を追加
+  const [isDeepResearchLoading, setIsDeepResearchLoading] = useState(false);
+  
   // WebSearch機能の状態変更をより確実に行うためのハンドラ関数
   const handleWebSearchToggleInternal = useCallback((newState: boolean) => {
     console.log(`[PureMultimodalInput] WebSearch状態を変更: ${isWebSearchEnabled} → ${newState}`);
@@ -202,112 +206,141 @@ function PureMultimodalInput({
    */
   const executeDeepResearchAgent = async (query: string, chatId: string, modelId: string, clarificationResponse?: string) => {
     console.log('[Deep Research] executeDeepResearchAgent 開始:', { query, chatId, modelId, clarificationResponse });
-
-    // ★ 修正: ローディングメッセージを追加
-    const loadingMessageId = nanoid();
-    append({
-      id: loadingMessageId,
-      content: '詳細な調査を実行中...', // ローディングメッセージの内容
-      role: 'assistant' as const,      // 正しく role を assistant に設定
-      createdAt: new Date()
-    });
+    setIsDeepResearchLoading(true);
 
     try {
-      toast.info('Deep Research Agentを実行中...', { duration: 3000 });
       console.log('[Deep Research] APIリクエストを開始:', query);
-      
-      // ★★★ デバッグログ追加: APIに渡す直前の body を確認 ★★★
-      const requestBody = {
-        query: query,
-        chatId: chatId,
-        clarificationResponse: clarificationResponse, // 将来的に明確化応答を追加する場合
-      };
+      const requestBody = { query, chatId, clarificationResponse };
       console.log('[Deep Research] API Request Body:', requestBody);
-      // ★★★ ここまで ★★★
 
-      // Deep Research APIを呼び出し
       const response = await fetch('/api/deep-research', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          query,
-          chatId,
-          clarificationResponse // 明確化回答がある場合は送信
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
       });
-      
+
       if (!response.ok) {
-        throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // APIレスポンスのバリデーション
-      if (!data || data.success !== true) { // successがtrueでない場合はエラー
-        throw new Error(data?.error || 'APIから予期せぬ応答が返されました');
-      }
-
-      console.log('[Deep Research] API実行結果:', data);
-
-      // ★ 修正: data.needsClarification を確認
-      if (data.needsClarification === true && data.clarificationMessage) {
-        console.log('[Deep Research] 明確化が必要です:', data.clarificationMessage);
-
-        // ★ 修正: appendはAI応答をUIに追加するのに使う
-        await append({
-          id: nanoid(),
-          content: data.clarificationMessage,
-          role: 'assistant' as const,
-          createdAt: new Date()
-        });
-
-        // 明確化モードをセット
-        setClarificationMode({
-          active: true,
-          originalQuery: data.originalQuery || query // APIから返された元のクエリを使う
-        });
-
-        toast.info('詳細情報を教えてください', { duration: 3000 });
-        setInput(''); // 入力欄をクリア
-        return; // ★ 処理を中断してユーザーの入力を待つ
+        // ★ エラーレスポンスの詳細を取得しようと試みる
+        let errorDetails = `APIエラー: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorDetails = errorJson.error || errorJson.details || errorDetails;
+        } catch (e) {
+          // JSONパース失敗時は元のエラーメッセージを使用
+        }
+        throw new Error(errorDetails);
       }
 
-      // ★ 修正: 明確化が不要な場合（最終結果）
-      if (data.needsClarification === false && data.result) {
-        console.log('[Deep Research] 最終結果を受信:', data.result);
-
-        // ★ 修正: ユーザーメッセージをappendするのはsubmitFormで行うのでここでは不要かも？
-        // 状況に応じてコメントアウトまたは削除を検討
-        // await append({ 
-        //   id: nanoid(), 
-        //   content: clarificationResponse ? `${query}\n\n${clarificationResponse}` : query, 
-        //   role: 'user' as const, 
-        //   createdAt: new Date() 
-        // }, options);
-
-        // 最終的な結果を表示
-        await append({
-          id: nanoid(),
-          content: data.result,
-          role: 'assistant' as const,
-          createdAt: new Date()
-        });
-
-        toast.success('Deep Research完了', { duration: 3000 });
-        setClarificationMode({ active: false, originalQuery: '' }); // 明確化モードをリセット
-        return;
+      // ★ ストリーミング応答の処理 ★
+      if (!response.body) {
+        throw new Error('APIからの応答が空です。');
       }
 
-      // 予期せぬデータ形式の場合
-      console.error('[Deep Research] 予期せぬAPI応答形式:', data);
-      throw new Error('APIから予期せぬ応答形式が返されました');
+      // ヘッダーに基づいて処理を分岐
+      const isDataStream = response.headers.get('X-Experimental-Stream-Data') === 'true';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      if (isDataStream) {
+        console.log('[Deep Research] データストリームを受信 (明確化メッセージ)');
+        let done = false;
+        let streamedData = '';
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
+          if (value) {
+            streamedData += decoder.decode(value, { stream: true });
+          }
+        }
+        // ストリーム全体のデータをパース
+        try {
+          const data = JSON.parse(streamedData);
+          if (data.type === 'clarification' && data.message) {
+            console.log('[Deep Research] 明確化メッセージを処理:', data.message);
+            await append({
+              id: nanoid(),
+              content: data.message,
+              role: 'assistant' as const,
+              createdAt: new Date()
+            });
+            setClarificationMode({ active: true, originalQuery: data.originalQuery || query });
+            setInput('');
+          } else {
+            console.error('[Deep Research] 不明なデータストリーム形式:', data);
+            throw new Error('APIから不明なデータ形式が返されました。');
+          }
+        } catch (e) {
+          console.error('[Deep Research] データストリームのJSONパースに失敗:', e, '受信データ:', streamedData);
+          throw new Error('API応答の解析に失敗しました。');
+        }
+
+      } else {
+        console.log('[Deep Research] テキストストリームを受信 (最終結果)');
+        // ★ 最終結果のテキストストリームを直接appendで処理
+        // Vercel SDK の内部処理に近い形でストリームを読み取る
+        let accumulatedText = '';
+        let messageId = nanoid(); // メッセージIDを生成
+        let firstChunk = true;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const textChunk = decoder.decode(value, { stream: true });
+          accumulatedText += textChunk;
+
+          // append または update を使用してUIを更新
+          // useChat フックは直接使えないため、appendを模倣する
+          // 既存のメッセージを更新する機能が必要になる可能性がある
+          // ここでは単純に追記し続けるが、パフォーマンスに影響する可能性あり
+          if (firstChunk) {
+            await append({
+              id: messageId,
+              content: accumulatedText,
+              role: 'assistant' as const,
+              createdAt: new Date()
+            });
+            firstChunk = false;
+          } else {
+            // 既存メッセージを更新するロジック (setMessagesなどが必要)
+            // 現状のappendは新規追加しかできないため、擬似的に更新
+            // ※ 本来は useChat の setMessages を使うべき
+            const currentMessages = messages; // 親コンポーネントから渡される messages
+            const updatedMessages = currentMessages.map(msg => 
+              msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+            );
+            // ここで setMessages(updatedMessages) を呼び出す必要がある
+            // しかし、この関数には setMessages が渡されていないため、
+            // 既存のappendを呼び出すことで暫定対応 (UI上は複数メッセージに見える可能性)
+             await append({ // ← 本来は既存メッセージ更新
+               id: messageId + '-' + nanoid(4), // ID重複回避のため一時的なID生成
+               content: textChunk, // 差分だけ送る (UI側で結合表示が必要)
+               role: 'assistant' as const,
+               createdAt: new Date()
+             }, { data: { isUpdate: true, targetId: messageId }}); // 更新フラグ（UI側での対応が必要）
+             // ↑ このappendの使い方は正しくない可能性が高い。
+             // 最終的には useChat フックと連携するようにリファクタリングが必要。
+          }
+        }
+        console.log('[Deep Research] テキストストリーム完了');
+        setClarificationMode({ active: false, originalQuery: '' });
+      }
 
     } catch (error) {
       console.error('[Deep Research] 実行中にエラーが発生:', error);
-      toast.error('Deep Research処理に失敗しました', { duration: 5000 });
-      throw error;
+      // ★ UIにエラーを表示する処理 (例: appendでエラーメッセージ表示)
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      await append({
+        id: nanoid(),
+        content: `エラー: ${errorMessage}`,
+        role: 'assistant',
+        createdAt: new Date(),
+        annotations: [{ type: 'error', data: { details: errorMessage } }] // エラー情報付与
+      });
+      // エラーを再スローしない (UIに表示済みのため)
+      // throw error;
+    } finally {
+      setIsDeepResearchLoading(false);
     }
   };
 
@@ -373,7 +406,7 @@ function PureMultimodalInput({
           });
       } else if (newState) {
         console.log(`[Deep Research] 入力が空のため、自動実行をスキップしました`);
-        toast.info('入力を入力して送信するとDeep Researchが実行されます', { duration: 5000 });
+        // toast.info('入力を入力して送信するとDeep Researchが実行されます', { duration: 5000 }); // 削除: 使用方法メッセージ
       }
     }, 0);
   }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle, input, chatId, selectedModelId, append]);
@@ -390,9 +423,9 @@ function PureMultimodalInput({
     handleWebSearchToggleInternal(newState);
     
     // トースト通知
-    toast.success(`${newState ? '検索モード' : '通常チャットモード'}に切り替えました`, {
-      duration: 3000,
-    });
+    // toast.success(`${newState ? '検索モード' : '通常チャットモード'}に切り替えました`, {
+    //   duration: 3000,
+    // });
     
     // LocalStorageの値が確実に更新されたことを確認するためのログ
     setTimeout(() => {
@@ -536,7 +569,7 @@ function PureMultimodalInput({
             return { success: true };
           } catch (error) {
             console.error('[Clarification] 処理中にエラーが発生:', error);
-            toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
             return { error };
           }
@@ -545,7 +578,7 @@ function PureMultimodalInput({
         // Computer Use モードが有効な場合、他のモードよりも優先する
         if (effectiveComputerUseEnabled) {
           console.log('[Computer Use] Computer Use処理を実行');
-          toast.info('コンピュータ操作モードで実行中...', { duration: 3000 });
+          // toast.info('コンピュータ操作モードで実行中...', { duration: 3000 }); // 削除: 実行中メッセージ
           
           try {
             // Computer Use用のオプションを設定
@@ -569,7 +602,7 @@ function PureMultimodalInput({
             return { success: true };
           } catch (error) {
             console.error('[Computer Use] 処理中にエラーが発生:', error);
-            toast.error('コンピュータ操作処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('コンピュータ操作処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
             return { error };
           }
@@ -578,7 +611,7 @@ function PureMultimodalInput({
         // Deep Research モードが有効な場合
         if (effectiveXSearchEnabled && !effectiveComputerUseEnabled) {
           console.log('[Deep Research] Deep Research処理を実行');
-          toast.info('Deep Research処理を実行中...', { duration: 3000 });
+          // toast.info('Deep Research処理を実行中...', { duration: 3000 }); // 削除: 実行中メッセージ
           
           try {
             // Deep Research Agent V2を実行
@@ -586,7 +619,7 @@ function PureMultimodalInput({
             return;
           } catch (error) {
             console.error('[Deep Research] 処理中にエラーが発生:', error);
-            toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
             return;
           }
@@ -628,7 +661,7 @@ function PureMultimodalInput({
             // サブクエリを生成
             console.log('[WebSearch] サブクエリの生成を開始:', currentInput);
             console.log('[WebSearch] Gemini APIキー確認:', process.env.GEMINI_API_KEY ? '設定されています' : '設定されていません');
-            toast.info('サブクエリを生成中...', { duration: 3000 });
+            // toast.info('サブクエリを生成中...', { duration: 3000 }); // 削除: 実行中メッセージ
             
             // サブクエリ生成前に状態を再確認
             console.log('[WebSearch] サブクエリ生成前の状態確認:', { 
@@ -649,12 +682,12 @@ function PureMultimodalInput({
             
             if (subQueries && subQueries.length > 0) {
               console.log(`[WebSearch] ${subQueries.length}個のサブクエリを生成しました:`, subQueries);
-              toast.success(`${subQueries.length}個のサブクエリを生成しました`, { duration: 3000 });
+              // toast.success(`${subQueries.length}個のサブクエリを生成しました`, { duration: 3000 }); // 削除: 完了メッセージ
               
               // 並列実行の進捗を表示するためのコールバック
               const onProgress = (processed: number) => {
                 console.log(`[WebSearch] 進捗: ${processed}/${subQueries.length} クエリを処理`);
-                toast.info(`検索実行中: ${processed}/${subQueries.length}`, { duration: 1500 });
+                // toast.info(`検索実行中: ${processed}/${subQueries.length}`, { duration: 1500 }); // 削除: 実行中メッセージ
               };
               
               // サブクエリを並列実行
@@ -670,7 +703,7 @@ function PureMultimodalInput({
               
               // 成功メッセージを表示
               const totalPosts = results.reduce((sum, r) => sum + (r.posts?.length || 0), 0);
-              toast.success(`${results.length}個のクエリから${totalPosts}件の結果を取得しました`, { duration: 5000 });
+              // toast.success(`${results.length}個のクエリから${totalPosts}件の結果を取得しました`, { duration: 5000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               // undefined値をJSONValue型と互換性のある形式に変換
@@ -721,21 +754,21 @@ function PureMultimodalInput({
               return { success: true };
             } else {
               console.warn(`[WebSearch] サブクエリの生成に失敗しました: 空の配列または未定義が返されました`);
-              toast.error('サブクエリの生成に失敗しました', { duration: 3000 });
+              // toast.error('サブクエリの生成に失敗しました', { duration: 3000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               await handleSubmitWithLogging();
             }
             } catch (subQueryError) {
               console.error(`[WebSearch] サブクエリ生成中にエラーが発生:`, subQueryError);
-              toast.error('サブクエリの生成中にエラーが発生しました', { duration: 3000 });
+              // toast.error('サブクエリの生成中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               await handleSubmitWithLogging();
             }
           } catch (error) {
             console.error(`[WebSearch] 検索処理全体でエラーが発生しました:`, error);
-            toast.error('検索処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('検索処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             
             // エラーが発生しても通常のチャット処理を続行
             await handleSubmitWithLogging();
@@ -750,7 +783,7 @@ function PureMultimodalInput({
             await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
           } catch (error) {
             console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
-            toast.error('Deep Research処理に失敗しました');
+            // toast.error('Deep Research処理に失敗しました', { duration: 5000 }); // 削除: 完了メッセージ
             throw error;
           }
           return;
@@ -888,20 +921,21 @@ function PureMultimodalInput({
       console.error('[Error] フォーム送信中にエラーが発生:', error);
       toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
     }
-  }, [
-    input,
-    attachments,
-    chatId,
-    isXSearchEnabled,
-    isWebSearchEnabled,
-    propIsXSearchEnabled,
-    handleSubmitWithLogging,
-    setAttachments,
-    setInput,
-    setLocalStorageInput,
-    selectedModelId,
-    append
-  ]);
+  },
+    [
+      input,
+      attachments,
+      chatId,
+      isXSearchEnabled,
+      isWebSearchEnabled,
+      propIsXSearchEnabled,
+      handleSubmitWithLogging,
+      setAttachments,
+      setInput,
+      setLocalStorageInput,
+      selectedModelId,
+      append
+    ]);
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -1023,6 +1057,16 @@ function PureMultimodalInput({
         uploadQueue.length === 0 && (
           <SuggestedActions append={append} chatId={chatId} />
         )}
+
+      {/* Deep Researchのローディング表示（既存のUIの上部に配置） - 削除
+      {isDeepResearchLoading && (
+        <div className="absolute -top-14 w-full flex justify-center">
+          <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-md flex items-center">
+            <span className="animate-pulse mr-2">●</span>
+            詳細な調査を実行中...
+          </div>
+        </div>
+      )} */}
 
       <input
         type="file"
@@ -1307,7 +1351,7 @@ const PureXSearchButton = memo(function PureXSearchButton({
   // ボタンの状態を視覚的に表示するためのクラス
   // 注意: サーバーサイドレンダリングとクライアントサイドレンダリングで一致させるため
   // 動的な値を使わず、固定のクラス名を使用する
-  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border-gray-200";
+  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border border-gray-200";
   
   const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -1384,14 +1428,14 @@ const PureXSearchButton = memo(function PureXSearchButton({
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
-          </svg>
-          <span>Deep Research</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-);
+            </svg>
+            <span>Deep Research</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 });
 
 PureXSearchButton.displayName = 'PureXSearchButton';

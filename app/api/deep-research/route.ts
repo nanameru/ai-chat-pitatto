@@ -10,7 +10,7 @@ import { createClient } from '@/utils/supabase/server';
 import { saveMessages } from '@/lib/db/queries';
 import type { Message as DBMessage } from '@/lib/db/schema';
 import { randomUUID } from 'crypto'; // ★ crypto.randomUUID を戻す
-import { type CoreMessage } from 'ai';
+import { type CoreMessage, StreamData } from 'ai';
 // ★★★ @mastra 関連のインポートを再修正 ★★★
 import {
   Mastra,                // Mastra クラスはこれで合っているはず
@@ -27,7 +27,7 @@ import { mastra } from '@/lib/mastra'; // ★ lib/mastra/index.ts から mastra 
 // 以下の不要なインポートを削除
 // import { SupabaseClient } from '@supabase/supabase-js';
 import { type Message as VercelChatMessage } from 'ai';
-// import { StreamingTextResponse } from 'ai/react'; // ★ インポート元を ai/react に変更
+// import { StreamingTextResponse } from 'ai/dist/edge'; // ★ パスを 'ai/dist/edge' に変更
 
 // import { saveMessages } from '@/utils/supabase/chat-actions'; // ★ 重複のためコメントアウト
 
@@ -176,7 +176,7 @@ export async function POST(req: NextRequest) {
         id: randomUUID(), 
         chatId: chatId,
         role: 'user',
-        content: query,
+        content: clarificationResponse ? `${query}\n\nClarification: ${clarificationResponse}` : query,
         createdAt: new Date(),
     };
 
@@ -222,9 +222,7 @@ export async function POST(req: NextRequest) {
         // input オブジェクトを CoreMessage 配列に変換 (簡易的な例)
         const messages: CoreMessage[] = [
           { role: 'user', content: query }, // ユーザーのクエリ
-          // 必要なら clarificationResponse もメッセージに追加
-          // { role: 'user', content: clarificationResponse }, 
-          // 必要なら chat_history もここに追加
+          ...(clarificationResponse ? [{ role: 'user' as const, content: clarificationResponse }] : []), // ★ 明確化回答を追加
         ];
         
         // AgentResponse 型がないため、一旦 any で回避
@@ -239,9 +237,12 @@ export async function POST(req: NextRequest) {
         const needsClarification = agentResult.toolCalls?.some((tc: any) => tc.function.name === 'queryClarifier');
         const clarificationMessage = needsClarification ? agentResult.text : null; // toolCallsがある場合、textに明確化質問が入ると仮定
 
-        // 明確化が必要な場合、質問を返す
+        // ★ StreamData を初期化
+        const data = new StreamData();
+
+        // 明確化が必要な場合
         if (needsClarification && clarificationMessage) {
-          console.log('[API Deep Research] Clarification needed. Returning clarification message.');
+          console.log('[API Deep Research] Clarification needed. Streaming clarification message.');
           
           // AI明確化メッセージをDBに保存
           const assistantMessageObject: Omit<DBMessage, 'userId'> = {
@@ -260,16 +261,25 @@ export async function POST(req: NextRequest) {
             // エラーがあっても処理を続行
           }
           
-          return NextResponse.json({
-            needsClarification: true,
-            clarificationMessage: clarificationMessage,
-            originalQuery: query, 
-            success: true, 
+          // ★ ストリームにデータを追加 (JSON形式で追加)
+          data.append(JSON.stringify({
+            type: 'clarification', // フロントエンドで区別するためのタイプ
+            message: clarificationMessage,
+            originalQuery: query,
+          }));
+          await data.close(); // ★ ストリームを閉じる
+
+          // ★ データストリームを返すレスポンス
+          return new Response(data.stream, {
+            headers: {
+              'Content-Type': 'text/plain; charset=utf-8',
+              'X-Experimental-Stream-Data': 'true' // フロントでデータストリームであることを示すヘッダー
+            }
           });
         }
 
         // 通常の結果を返す
-        console.log('[API Deep Research] No clarification needed. Returning final result.');
+        console.log('[API Deep Research] No clarification needed. Streaming final result.');
         
         // AI最終結果をDBに保存
         const assistantResultObject: Omit<DBMessage, 'userId'> = {
@@ -288,10 +298,21 @@ export async function POST(req: NextRequest) {
           // エラーがあっても処理を続行
         }
         
-        return NextResponse.json({
-          result: agentResult.text,
-          success: true,
-          needsClarification: false, 
+        // ★ 修正: StreamData と標準 Response を使用してテキストストリームを返す ★
+        const textStream = new ReadableStream({
+          start(controller) {
+            const encoder = new TextEncoder();
+            controller.enqueue(encoder.encode(agentResult.text || ''));
+            controller.close();
+          },
+        });
+        // StreamData にテキストストリームの内容を追加（必要ならメタデータも）
+        // data.append(JSON.stringify({ type: 'finalResultMetadata' })); // 例: メタデータ追加
+        // await data.close(); // メタデータ用
+
+        // テキストストリーム自体を返す (StreamDataは使わない)
+        return new Response(textStream, {
+          headers: { 'Content-Type': 'text/plain; charset=utf-8' }
         });
 
     } catch (agentError) {
