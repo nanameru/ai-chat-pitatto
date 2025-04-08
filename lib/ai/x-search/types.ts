@@ -3,7 +3,7 @@
  * 新しいデータベース構造に対応した型定義を提供します
  */
 
-import { TwitterPost } from '@/lib/ai/coze/coze';
+import type { TwitterPost } from '@/lib/ai/coze/coze';
 
 /**
  * X検索のソース情報

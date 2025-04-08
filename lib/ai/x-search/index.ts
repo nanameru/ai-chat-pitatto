@@ -3,27 +3,22 @@
  * ユーザークエリからサブクエリを生成し、検索を実行して結果を返す
  */
 
-import { DatabaseAdapter } from '../../db/adapter';
+import type { DatabaseAdapter } from '../../db/adapter';
 import { XSearchAdapter } from '../../db/x-search-adapter';
 import { generateSubQueries } from './subquery-generator';
 import { 
-  XSearchResponse, 
-  XSearchSource, 
+  type XSearchResponse, 
+  type XSearchSource, 
   XSearchState, 
   XSearchError, 
-  FetchedData, 
-  SubQuery, 
-  XSearchResult, 
-  XSearchResultMessage,
-  ProcessedPosts
+  type SubQuery, 
 } from './types';
 import { 
-  executeCozeQueries, 
   executeParallelCozeQueries, 
   generateCozeResponse, 
   rerankSimilarDocuments, 
   storeDataWithEmbedding,
-  TwitterPost
+  type TwitterPost
 } from '@/lib/ai/coze/coze';
 
 // デバッグモードの設定

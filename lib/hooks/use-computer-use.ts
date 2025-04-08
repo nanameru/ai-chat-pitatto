@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { Message } from 'ai';
+import type { Message } from 'ai';
 
 interface UseComputerUseOptions {
   onError?: (error: Error) => void;
@@ -11,7 +11,7 @@ export function useComputerUse(options: UseComputerUseOptions = {}) {
   const [error, setError] = useState<Error | null>(null);
   
   const executeComputerUse = useCallback(
-    async (messages: Message[], model: string = 'claude-computer-use') => {
+    async (messages: Message[], model = 'claude-computer-use') => {
       setIsLoading(true);
       setError(null);
       
