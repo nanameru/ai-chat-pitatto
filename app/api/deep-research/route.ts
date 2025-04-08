@@ -10,7 +10,8 @@ import { createClient } from '@/utils/supabase/server';
 import { saveMessages } from '@/lib/db/queries';
 import type { Message as DBMessage } from '@/lib/db/schema';
 import { randomUUID } from 'crypto'; // ★ crypto.randomUUID を戻す
-import { type CoreMessage, StreamData } from 'ai';
+import { type CoreMessage, StreamData, createDataStreamResponse, smoothStream, streamText } from 'ai';
+import { myProvider } from '@/lib/ai/models';
 // ★★★ @mastra 関連のインポートを再修正 ★★★
 import {
   Mastra,                // Mastra クラスはこれで合っているはず
@@ -225,97 +226,90 @@ export async function POST(req: NextRequest) {
           ...(clarificationResponse ? [{ role: 'user' as const, content: clarificationResponse }] : []), // ★ 明確化回答を追加
         ];
         
+        // Deep Researchエージェントの実行
         // AgentResponse 型がないため、一旦 any で回避
-        const agentResult: any = await agent.generate(
+        const agentResult = await agent.generate(
           messages, // ← メッセージ配列を第一引数に
           options   // ← options オブジェクトを直接第二引数に
         );
-
+        
         console.log('[API] Deep Research Agent実行完了:', agentResult);
-
+        
         // ★ 修正: agentResult の内容に基づいて明確化が必要か判断
-        const needsClarification = agentResult.toolCalls?.some((tc: any) => tc.function.name === 'queryClarifier');
+        const needsClarification = agentResult.toolCalls?.some((tc) => 
+          tc.toolName === 'queryClarifier' || // toolNameを使用
+          (tc.type === 'tool-call' && tc.toolName === 'queryClarifier') // 別の形式の可能性
+        );
         const clarificationMessage = needsClarification ? agentResult.text : null; // toolCallsがある場合、textに明確化質問が入ると仮定
 
         // ★ StreamData を初期化
         const data = new StreamData();
 
-        // 明確化が必要な場合
-        if (needsClarification && clarificationMessage) {
-          console.log('[API Deep Research] Clarification needed. Streaming clarification message.');
-          
-          // AI明確化メッセージをDBに保存
-          const assistantMessageObject: Omit<DBMessage, 'userId'> = {
-            id: randomUUID(),
-            chatId: chatId,
-            role: 'assistant', // 重要: role を 'assistant' に設定
-            content: clarificationMessage,
-            createdAt: new Date(),
+        // ★ 修正: ストリーミングレスポンスを正しく返す
+        if (needsClarification) {
+          // 明確化が必要な場合
+          console.log('[API] 明確化が必要です:', clarificationMessage);
+          const assistantMessage = {
+            chatId,
+            role: 'assistant',
+            content: typeof clarificationMessage === 'string' ? clarificationMessage : undefined,
+            createdAt: Date.now(),
           };
-          
-          try {
-            await saveMessages({ messages: [assistantMessageObject] });
-            console.log('[API Deep Research] Assistant clarification message saved to database.');
-          } catch (error) {
-            console.error('[API Deep Research] Failed to save assistant message:', error);
-            // エラーがあっても処理を続行
-          }
-          
-          // ★ ストリームにデータを追加 (JSON形式で追加)
-          data.append(JSON.stringify({
-            type: 'clarification', // フロントエンドで区別するためのタイプ
-            message: clarificationMessage,
-            originalQuery: query,
-          }));
-          await data.close(); // ★ ストリームを閉じる
 
-          // ★ データストリームを返すレスポンス
-          return new Response(data.stream, {
-            headers: {
-              'Content-Type': 'text/plain; charset=utf-8',
-              'X-Experimental-Stream-Data': 'true' // フロントでデータストリームであることを示すヘッダー
-            }
+          try {
+            await saveMessages({ messages: [assistantMessage] });
+            console.log('[API] 明確化メッセージを保存しました');
+          } catch (error) {
+            console.error('[API] 明確化メッセージの保存に失敗しました:', error);
+          }
+
+          // 明確化メッセージをストリーミング形式で返す
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(clarificationMessage || ''));
+              controller.close();
+            },
+          });
+          
+          return new Response(stream, {
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        } else {
+          // 最終結果の場合
+          console.log('[API] 最終結果を返します');
+          const content = agentResult.text || '';
+          
+          // アシスタントメッセージを保存
+          const assistantMessage = {
+            chatId,
+            role: 'assistant',
+            content,
+            createdAt: Date.now(),
+          };
+
+          try {
+            await saveMessages({ messages: [assistantMessage] });
+            console.log('[API] アシスタントメッセージを保存しました');
+          } catch (error) {
+            console.error('[API] アシスタントメッセージの保存に失敗しました:', error);
+          }
+
+          // テキストをストリーミング形式で返す
+          const encoder = new TextEncoder();
+          const stream = new ReadableStream({
+            start(controller) {
+              controller.enqueue(encoder.encode(content));
+              controller.close();
+            },
+          });
+          
+          return new Response(stream, {
+            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
           });
         }
 
-        // 通常の結果を返す
-        console.log('[API Deep Research] No clarification needed. Streaming final result.');
-        
-        // AI最終結果をDBに保存
-        const assistantResultObject: Omit<DBMessage, 'userId'> = {
-          id: randomUUID(),
-          chatId: chatId,
-          role: 'assistant', // 重要: role を 'assistant' に設定
-          content: agentResult.text,
-          createdAt: new Date(),
-        };
-        
-        try {
-          await saveMessages({ messages: [assistantResultObject] });
-          console.log('[API Deep Research] Assistant final result saved to database.');
-        } catch (error) {
-          console.error('[API Deep Research] Failed to save assistant result:', error);
-          // エラーがあっても処理を続行
-        }
-        
-        // ★ 修正: StreamData と標準 Response を使用してテキストストリームを返す ★
-        const textStream = new ReadableStream({
-          start(controller) {
-            const encoder = new TextEncoder();
-            controller.enqueue(encoder.encode(agentResult.text || ''));
-            controller.close();
-          },
-        });
-        // StreamData にテキストストリームの内容を追加（必要ならメタデータも）
-        // data.append(JSON.stringify({ type: 'finalResultMetadata' })); // 例: メタデータ追加
-        // await data.close(); // メタデータ用
-
-        // テキストストリーム自体を返す (StreamDataは使わない)
-        return new Response(textStream, {
-          headers: { 'Content-Type': 'text/plain; charset=utf-8' }
-        });
-
-    } catch (agentError) {
+    } catch (agentError: unknown) {
         console.error('[API] Error running Deep Research Agent:', agentError);
         // getAgent が失敗した場合もここで捕捉される
         const errorMessage = agentError instanceof Error ? agentError.message : String(agentError);

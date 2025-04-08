@@ -564,13 +564,30 @@ function PureMultimodalInput({
           });
           
           try {
-            // Deep Research Agent V2を実行（明確化回答付き）
+            // ★★★ 修正点：ユーザーのフィードバックメッセージをUIに追加 ★★★
+            const userFeedbackMessage: CreateMessage = {
+              id: nanoid(), // 一意なIDを生成
+              role: 'user',
+              content: currentInput, // ユーザーのフィードバック内容
+              createdAt: new Date(),
+            };
+            // append を使ってUIにユーザーメッセージを追加
+            await append(userFeedbackMessage); // ★★★ この行を追加 ★★★
+            console.log('[Clarification] ユーザーフィードバックメッセージをUIに追加しました:', userFeedbackMessage.id);
+            // ★★★ 修正ここまで ★★★
+
+            // Deep Research Agentを呼び出してAIの応答を取得・表示
             await executeDeepResearchAgent(clarificationMode.originalQuery, chatId, selectedModelId, currentInput);
+
+            // 処理成功後に明確化モードを解除
+            setClarificationMode({ active: false, originalQuery: '' });
+
             return { success: true };
           } catch (error) {
             console.error('[Clarification] 処理中にエラーが発生:', error);
-            // toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
+            // エラー発生時も明確化モードを解除する方が良い場合がある
+            // setClarificationMode({ active: false, originalQuery: '' });
             return { error };
           }
         }
