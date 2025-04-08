@@ -1,8 +1,8 @@
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import fs from 'fs';
-import path from 'path';
-import os from 'os';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 type Platform = 'darwin' | 'win32' | 'linux' | string;
 

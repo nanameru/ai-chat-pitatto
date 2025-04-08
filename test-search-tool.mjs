@@ -1,7 +1,7 @@
 // Brave Search APIを利用した検索ツールテスト
 import dotenv from 'dotenv';
-import { fileURLToPath } from 'url';
-import { dirname, resolve } from 'path';
+import { fileURLToPath } from 'node:url';
+import { dirname, resolve } from 'node:path';
 import { searchTool } from './lib/mastra/tools/search-tool.ts';
 
 // 現在のファイルのディレクトリパスを取得

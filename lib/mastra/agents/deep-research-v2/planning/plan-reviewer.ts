@@ -65,7 +65,7 @@ function improvePlanBasedOnFeedback(sections: any[], feedback: string): any[] {
   // 「詳細」というキーワードがある場合、各セクションの目的をより詳細に
   if (feedback.includes('詳細')) {
     improvedSections.forEach(section => {
-      section.purpose = section.purpose + '。より詳細な分析と具体例を含めます。';
+      section.purpose = `${section.purpose}。より詳細な分析と具体例を含めます。`;
     });
   }
   

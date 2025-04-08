@@ -189,7 +189,7 @@ function parseStreamContent(content: string): any {
   
   // 入力内容の表示（長すぎる場合は最初の200文字のみ）
   const displayContent = content.length > 200 
-    ? content.substring(0, 200) + '... (truncated)' 
+    ? `${content.substring(0, 200)}... (truncated)` 
     : content;
   console.log('Raw content:', displayContent);
 
@@ -218,7 +218,7 @@ function parseStreamContent(content: string): any {
     
     // JSON文字列の表示（長すぎる場合は最初の300文字のみ）
     const displayJsonStr = jsonStr.length > 300 
-      ? jsonStr.substring(0, 300) + '... (truncated)' 
+      ? `${jsonStr.substring(0, 300)}... (truncated)` 
       : jsonStr;
     console.log('Extracted JSON string:', displayJsonStr);
 
@@ -226,21 +226,21 @@ function parseStreamContent(content: string): any {
       // 最初のJSONパース
       const firstParse = JSON.parse(jsonStr);
       console.log('First parse result structure:', Object.keys(firstParse));
-      console.log('First parse result (sample):', JSON.stringify(firstParse).substring(0, 300) + '...');
+      console.log('First parse result (sample):', `${JSON.stringify(firstParse).substring(0, 300)}...`);
       
       // contentプロパティが文字列として存在する場合は二重パース
       if (firstParse.content && typeof firstParse.content === 'string') {
         console.log('Found nested content, performing second parse');
-        console.log('Nested content (sample):', firstParse.content.substring(0, 200) + '...');
+        console.log('Nested content (sample):', `${firstParse.content.substring(0, 200)}...`);
         
         try {
           const secondParse = JSON.parse(firstParse.content);
           console.log('Second parse successful, data structure:', Object.keys(secondParse));
-          console.log('Second parse result (sample):', JSON.stringify(secondParse).substring(0, 300) + '...');
+          console.log('Second parse result (sample):', `${JSON.stringify(secondParse).substring(0, 300)}...`);
           return secondParse;
         } catch (nestedError) {
           console.error('Error parsing nested content:', nestedError);
-          console.error('Problematic nested content:', firstParse.content.substring(0, 200) + '...');
+          console.error('Problematic nested content:', `${firstParse.content.substring(0, 200)}...`);
           return firstParse; // ネストされたパースに失敗した場合は最初の結果を返す
         }
       }
@@ -274,12 +274,12 @@ function parseStreamContent(content: string): any {
       return firstParse;
     } catch (parseError) {
       console.error('JSON parse error:', parseError);
-      console.error('Problematic JSON string:', jsonStr.substring(0, 200) + '...');
+      console.error('Problematic JSON string:', `${jsonStr.substring(0, 200)}...`);
       return null;
     }
   } catch (e) {
     console.error('Error in parseStreamContent:', e);
-    console.error('Content causing error:', content.substring(0, 200) + '...');
+    console.error('Content causing error:', `${content.substring(0, 200)}...`);
     return null;
   }
 }
@@ -314,7 +314,7 @@ async function processStreamResponse(
     // 生のレスポンスデータを表示（長すぎる場合は最初の1000文字のみ）
     if (responseText.length > 0) {
       const displayText = responseText.length > 1000 
-        ? responseText.substring(0, 1000) + '... (truncated)' 
+        ? `${responseText.substring(0, 1000)}... (truncated)` 
         : responseText;
       console.log('Raw response data:\n', displayText);
     }
@@ -789,7 +789,7 @@ export async function storeDataWithEmbedding(
         if (!item.metadata.id && item.sourceUrl) {
           // Twitterの投稿URLからIDを抽出
           const match = item.sourceUrl.match(/\/status\/(\d+)/);
-          if (match && match[1]) {
+          if (match?.[1]) {
             item.metadata.id = match[1];
             debugLog(`アイテム ${i} のIDをURLから抽出しました: ${item.metadata.id}`);
           }

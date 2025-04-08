@@ -208,7 +208,7 @@ function calculateOverallScore(qualityAssessment: any): number {
     qualityAssessment.informationDepth.score * weights.informationDepth +
     qualityAssessment.structure.score * weights.structure;
   
-  return parseFloat(weightedScore.toFixed(1));
+  return Number.parseFloat(weightedScore.toFixed(1));
 }
 
 /**

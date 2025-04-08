@@ -61,11 +61,11 @@ function parseOutlineToSections(outline: string): any[] {
         const [, sectionNumber, sectionName] = sectionMatch;
         currentSection = {
           id: `section-${sectionNumber}`,
-          number: parseInt(sectionNumber),
+          number: Number.parseInt(sectionNumber),
           name: sectionName.trim(),
           purpose: generateSectionPurpose(sectionName),
           focus: generateSectionFocus(sectionName),
-          priority: calculatePriority(parseInt(sectionNumber))
+          priority: calculatePriority(Number.parseInt(sectionNumber))
         };
         currentSubsections = [];
       }

@@ -1,9 +1,9 @@
 // TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
 // import { anthropic } from '@ai-sdk/anthropic';
-import fs from 'fs';
-import { exec } from 'child_process';
-import { promisify } from 'util';
-import path from 'path';
+import fs from 'node:fs';
+import { exec } from 'node:child_process';
+import { promisify } from 'node:util';
+import path from 'node:path';
 // TODO: screenshotモジュールが見つからないため、一時的にコメントアウト
 // import { captureScreenshot } from './screenshot';
 

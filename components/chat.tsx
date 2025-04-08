@@ -5,12 +5,12 @@ import { useChat } from 'ai/react';
 import { useEffect, useOptimistic, useState, useRef, useCallback, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
-import { ReasoningStep } from '@/types/reasoning';
+import type { ReasoningStep } from '@/types/reasoning';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
-import { randomUUID } from 'crypto';
+import { nanoid } from 'nanoid';
 
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
@@ -26,7 +26,7 @@ import { useComputerUse } from '../lib/hooks/use-computer-use';
 import { useSearchParams } from 'next/navigation';
 
 // サンプル提案を生成する関数
-function getExampleSuggestions(append, setInput) {
+function getExampleSuggestions(append: (message: string | { content: string; role: string }) => Promise<void>, setInput: (input: string) => void) {
   return [
     {
       title: 'AIの最新トレンド',
@@ -34,7 +34,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '生成AIの最新技術や研究について教えてください';
         const message = {
-          id: randomUUID(),
+          id: nanoid(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -49,7 +49,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = 'Reactでパフォーマンスを最適化するベストプラクティスを教えてください';
         const message = {
-          id: randomUUID(),
+          id: nanoid(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -64,7 +64,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '大量のデータから意味のある洞察を得るための効果的なデータ分析方法を教えてください';
         const message = {
-          id: randomUUID(),
+          id: nanoid(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -79,7 +79,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '機械学習を効率的に学ぶためのおすすめの学習リソースを教えてください';
         const message = {
-          id: randomUUID(),
+          id: nanoid(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -116,7 +116,7 @@ export function Chat({
   
   // URLからクエリパラメータを取得
   const searchParams = useSearchParams();
-  const refreshParam = searchParams.get('refresh');
+  const refreshParam = searchParams?.get('refresh');
 
   // 推論ステップの状態管理
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
@@ -331,7 +331,7 @@ export function Chat({
       
       // 1. 送信するユーザーメッセージオブジェクトを作成 (role: 'user')
       const userMessageToAdd: Message = {
-        id: typeof message === 'object' && 'id' in message ? (message.id || randomUUID()) : randomUUID(),
+        id: typeof message === 'object' && 'id' in message ? (message.id || nanoid()) : nanoid(),
         content: typeof message === 'string' ? message : message.content,
         role: 'user', // ユーザーロール
         createdAt: typeof message === 'object' && 'createdAt' in message ? message.createdAt : new Date()
@@ -343,7 +343,7 @@ export function Chat({
         console.log('[Chat] Optimistically adding message within transition:', {
           id: userMessageToAdd.id,
           role: userMessageToAdd.role, // ← role を確認
-          content: typeof userMessageToAdd.content === 'string' ? userMessageToAdd.content.substring(0, 50) + '...' : '[Non-string content]',
+          content: typeof userMessageToAdd.content === 'string' ? `${userMessageToAdd.content.substring(0, 50)}...` : '[Non-string content]',
           createdAt: userMessageToAdd.createdAt
         });
         // ★★★ ここまで ★★★
@@ -545,35 +545,33 @@ export function Chat({
     setIsReasoningLoading(true); // ローディング開始
 
     try {
-      // ... (fetch /api/deep-research の呼び出しと成功時の処理) ...
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: '不明なエラーが発生しました' }));
-        console.error('[Deep Research] APIエラー:', response.status, errorData);
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-
-      // ... (data.needsClarification や data.result の処理) ...
-
+      await append({
+        content: query,
+        role: 'user'
+      }, {
+        body: {
+          query: query,
+          chatId: id,
+          model: selectedChatModel
+        }
+      });
+      
+      console.log('[Deep Research] メッセージを送信しました:', query);
+      
     } catch (error) {
       console.error('[Deep Research] 実行エラー:', error);
       const errorMessage = error instanceof Error ? error.message : String(error);
       toast.error(`Deep Research中にエラーが発生しました: ${errorMessage}`);
 
-      // ★ エラーメッセージをチャットに追加して終了 ★
-      // addOptimisticMessage は useChat 管理外なので、元の messages 配列を直接操作する
-      // （または、useChat の setMessages を使う方が安全かもしれないが、まずはこれで試す）
-      // 既存のメッセージ配列を取得 (useChat の内部状態を参照するべきだが、ここでは暫定的に optimisticMessages を使う)
-      // ※注意: この方法は useChat の状態と完全に同期しない可能性がある
-      const currentMsgs = optimisticMessages; // または chatStateRef.current.messages
+      const currentMsgs = optimisticMessages;
       originalSetMessages([
         ...currentMsgs,
         {
-            id: randomUUID(),
+            id: nanoid(),
             role: 'assistant',
             content: `エラーが発生したため、Deep Research を中断しました: ${errorMessage}`,
             createdAt: new Date(),
-            annotations: [{ type: 'error', data: { details: errorMessage } }] // エラーを示す注釈
+            annotations: [{ type: 'error', data: { details: errorMessage } }]
         }
       ]);
 
@@ -623,6 +621,7 @@ export function Chat({
                       chatId={id}
                       input={input}
                       setInput={handleSetInput}
+                      stop={stop}
                       isLoading={isLoading}
                       attachments={attachments}
                       setAttachments={setAttachments}
@@ -774,10 +773,7 @@ export function Chat({
                         console.log(`[Chat] 検索結果の表示状態を変更`);
                         setShowReasoningSidebar(true);
                       }}
-                      reasoningSteps={reasoningSteps}
-                      setReasoningSteps={setReasoningSteps}
-                      isReasoningLoading={isReasoningLoading}
-                      setIsReasoningLoading={setIsReasoningLoading}
+
                     />
 
                     {isArtifactVisible && <Artifact 
@@ -787,7 +783,7 @@ export function Chat({
                       handleSubmit={async (event, options) => {
                         if (event?.preventDefault) event.preventDefault();
                         await append({
-                          id: randomUUID(),
+                          id: nanoid(),
                           content: input,
                           role: 'user',
                           createdAt: new Date()
@@ -813,7 +809,13 @@ export function Chat({
                           chatId={id}
                           append={append}
                           key={isArtifactVisible ? 'artifact' : 'suggested-actions'}
-                          suggestions={isArtifactVisible ? [] : getExampleSuggestions(append, handleSetInput)}
+                          suggestions={isArtifactVisible ? [] : getExampleSuggestions(
+                            async (message) => { 
+                              await append(typeof message === 'string' ? message : message as any);
+                              return;
+                            },
+                            handleSetInput
+                          )}
                         />
                       </div>
                     )}
@@ -850,7 +852,7 @@ export function Chat({
             event.preventDefault();
           }
           const message: CreateMessage = {
-            id: randomUUID(),
+            id: nanoid(),
             content: input,
             role: 'user',
             createdAt: new Date()

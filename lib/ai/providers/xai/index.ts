@@ -2,7 +2,7 @@
  * xAIプロバイダーの実装
  */
 import { xai } from '@ai-sdk/xai';
-import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types';
+import { type ChatModel, type ModelProvider, ProviderType } from '../../types';
 
 /**
  * xAIで利用可能なチャットモデル

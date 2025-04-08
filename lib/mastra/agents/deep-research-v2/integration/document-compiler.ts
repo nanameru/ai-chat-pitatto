@@ -57,7 +57,7 @@ function orderSections(sections: any[]): any[] {
     const bMatch = b.sectionId.match(/section-(\d+)/);
     
     if (aMatch && bMatch) {
-      return parseInt(aMatch[1]) - parseInt(bMatch[1]);
+      return Number.parseInt(aMatch[1]) - Number.parseInt(bMatch[1]);
     }
     
     return 0;
@@ -174,7 +174,7 @@ function generateDocumentStats(sections: any[]): any {
   return {
     totalSections,
     completedSections,
-    completionRate: completionRate.toFixed(2) + '%',
+    completionRate: `${completionRate.toFixed(2)}%`,
     totalSources,
     uniqueSources: uniqueUrls.size,
   };

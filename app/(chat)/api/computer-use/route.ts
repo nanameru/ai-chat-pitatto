@@ -1,5 +1,4 @@
-import { NextRequest } from 'next/server';
-import { streamText } from 'ai';
+import type { NextRequest } from 'next/server';
 import { createClient } from '@/utils/supabase/server';
 // TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
 // import { anthropicProvider } from '@/lib/ai/models';

@@ -50,7 +50,7 @@ export async function POST(request: Request) {
           console.log(`[ツール結果] ${toolCall.name}`);
           if (toolCall.name === 'searchTool') {
             console.log(`検索クエリ: "${toolCall.input.query}"`);
-            if (result && result.results) {
+            if (result?.results) {
               console.log(`結果件数: ${result.results.length}件`);
               if (result.results.length > 0) {
                 console.log(`最初の3件: ${result.results.slice(0, 3).map((r: any) => r.title).join(', ')}`);

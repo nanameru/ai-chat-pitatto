@@ -1,7 +1,7 @@
 import deepResearchAgentV2 from './lib/mastra/agents/deep-research-v2';
 import { config } from 'dotenv';
-import * as path from 'path';
-import * as fs from 'fs';
+import * as path from 'node:path';
+import * as fs from 'node:fs';
 
 // .env.local ファイルから環境変数をロード
 const envLocalPath = path.resolve(process.cwd(), '.env.local');

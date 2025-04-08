@@ -1,6 +1,6 @@
 import { Workflow, Step } from "@mastra/core/workflows";
 import { z } from "zod";
-import { deepResearchAgentV2, researchAgent, integrationAgent } from "../agents/deep-research-v2";
+import { researchAgent, integrationAgent } from "../agents/deep-research-v2";
 import { searchTool, analysisTool } from "../tools/index";
 
 /**

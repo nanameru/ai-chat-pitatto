@@ -43,7 +43,7 @@ export default function VideoDetailPage({ params }: { params: { id: string } | P
         if (authResponse.ok) {
           const authData = await authResponse.json();
           setIsAuthenticated(!!authData.user);
-          console.log('認証状態:', !!authData.user ? '認証済み' : '未認証');
+          console.log('認証状態:', authData.user ? '認証済み' : '未認証');
         } else {
           setIsAuthenticated(false);
           console.log('認証状態の確認に失敗しました。未認証として処理します。');
@@ -219,7 +219,7 @@ export default function VideoDetailPage({ params }: { params: { id: string } | P
                       frameBorder="0"
                       allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                       allowFullScreen
-                    ></iframe>
+                    />
                   </div>
                 ) : (
                   // 通常の動画ファイルの場合
@@ -299,7 +299,7 @@ export default function VideoDetailPage({ params }: { params: { id: string } | P
 // 動画IDから文字起こしを取得する関数（APIから取得できない場合のフォールバック）
 function getTranscriptForVideo(videoData: any): string | null {
   // APIから取得したデータに文字起こしがある場合はそれを使用
-  if (videoData && videoData.transcript) {
+  if (videoData?.transcript) {
     return videoData.transcript;
   }
   

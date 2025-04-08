@@ -2,7 +2,7 @@
  * OpenAIプロバイダーの実装
  */
 import { openai } from '@ai-sdk/openai';
-import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types';
+import { type ChatModel, type ModelProvider, ProviderType } from '../../types';
 
 /**
  * OpenAIで利用可能なチャットモデル

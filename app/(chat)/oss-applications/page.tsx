@@ -2,9 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { use } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { ExternalLinkIcon, GithubIcon, PlayIcon, EyeIcon, BookOpenIcon, PlusCircleIcon, Trash2Icon, EditIcon } from 'lucide-react';
+import { ExternalLinkIcon, GithubIcon, PlayIcon, EyeIcon, BookOpenIcon, Trash2Icon, EditIcon } from 'lucide-react';
 
 // コンテンツの型定義
 interface Content {
@@ -384,7 +383,7 @@ export default function OSSApplicationsPage() {
         let errorMessage = `編集に失敗しました (${response.status})`;
         try {
           const errorData = JSON.parse(responseText);
-          if (errorData && errorData.error) {
+          if (errorData?.error) {
             errorMessage = errorData.error;
           }
         } catch (parseError) {
@@ -730,7 +729,7 @@ export default function OSSApplicationsPage() {
         </div>
       )}
       {!isAdmin && (
-        <div className="mb-8"></div>
+        <div className="mb-8" />
       )}
       
       {/* GitHubリポジトリ登録モーダル */}
@@ -742,8 +741,8 @@ export default function OSSApplicationsPage() {
               className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
             
@@ -775,7 +774,7 @@ export default function OSSApplicationsPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                   rows={3}
                   required
-                ></textarea>
+                />
               </div>
               
               <div>
@@ -840,8 +839,8 @@ export default function OSSApplicationsPage() {
               className="absolute top-4 right-4 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
+                <line x1="18" y1="6" x2="6" y2="18" />
+                <line x1="6" y1="6" x2="18" y2="18" />
               </svg>
             </button>
             
@@ -873,7 +872,7 @@ export default function OSSApplicationsPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                   rows={3}
                   required
-                ></textarea>
+                />
               </div>
               
 
@@ -1177,7 +1176,7 @@ export default function OSSApplicationsPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                       rows={3}
                       required
-                    ></textarea>
+                    />
                   </div>
                   
                   <div>
@@ -1271,7 +1270,7 @@ export default function OSSApplicationsPage() {
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                       rows={3}
                       required
-                    ></textarea>
+                    />
                   </div>
                   
                   <div>

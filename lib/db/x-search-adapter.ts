@@ -1,8 +1,7 @@
-import { DatabaseAdapter } from './adapter';
+import type { DatabaseAdapter } from './adapter';
 import { db } from './index';
 import { v4 as uuidv4 } from 'uuid';
-import { TwitterPost } from '@/lib/ai/coze/coze';
-import { XSearchResult, XSearchResultMessage } from '@/lib/ai/x-search/types';
+import type { TwitterPost } from '@/lib/ai/coze/coze';
 
 /**
  * X検索用のデータベースアダプター実装

@@ -53,7 +53,7 @@ export async function generateSubQueries(userQuery: string): Promise<string[]> {
   const MAX_RETRIES = 3;
   const TIMEOUT = 60000; // 60 seconds に延長
 
-  const makeRequest = async (attempt: number = 1): Promise<string[]> => {
+  const makeRequest = async (attempt = 1): Promise<string[]> => {
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), TIMEOUT);
 
