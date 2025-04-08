@@ -504,7 +504,7 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
         // 通常モード用のプロンプトを設定
         const aiMessages: any[] = [
           {
-            id: crypto.randomUUID(),
+            id: nanoid(),
             role: 'system' as const,
             content: useArtifacts 
               ? `${regularPrompt}\n\n${artifactsPrompt}`
