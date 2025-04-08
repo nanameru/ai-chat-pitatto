@@ -9,6 +9,7 @@ import {
   deleteChatById,
 } from '@/lib/db/queries';
 import type { Message as DBMessage } from '@/lib/db/schema';
+import { nanoid } from 'nanoid';
 
 // 定数の定義
 const MESSAGE_SIZE_LIMIT = 1024 * 1024; // 1MB
@@ -315,7 +316,7 @@ export async function POST(request: Request): Promise<Response> {
               
               // 画像データをレスポンス形式に変換
               // 画像データが正しく取得できたか確認
-              if (result && result.image && result.image.base64) {
+              if (result?.image?.base64) {
                 console.log('[画像] 画像データが正常に取得できました');
                 imageResponse = { images: [result.image.base64] };
               } else {
@@ -348,7 +349,7 @@ export async function POST(request: Request): Promise<Response> {
                 
                 // 画像データをレスポンス形式に変換
                 // 画像データが正しく取得できたか確認
-                if (result && result.image && result.image.base64) {
+                if (result?.image?.base64) {
                   console.log('[画像] DALL-E 3の画像データが正常に取得できました');
                   imageResponse = { images: [result.image.base64] };
                 } else {
@@ -369,7 +370,7 @@ export async function POST(request: Request): Promise<Response> {
             console.log('[Image] Generated image data available (base64)');
             
             // ドキュメントIDを生成
-            const documentId = crypto.randomUUID();
+            const documentId = nanoid();
             const currentTime = new Date();
             
             // ドキュメントオブジェクトを作成
@@ -385,7 +386,7 @@ export async function POST(request: Request): Promise<Response> {
             
             // ユーザーメッセージとアシスタントメッセージを作成
             const userMessage = {
-              id: crypto.randomUUID(),
+              id: nanoid(),
               chatId,
               role: 'user',
               content: `/image ${imagePrompt}`,
@@ -393,7 +394,7 @@ export async function POST(request: Request): Promise<Response> {
             };
             
             const assistantMessage = {
-              id: crypto.randomUUID(),
+              id: nanoid(),
               chatId,
               role: 'assistant',
               content: `I've generated an image based on your prompt: "${imagePrompt}"
@@ -403,7 +404,7 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
               toolInvocations: [
                 {
                   toolName: 'createDocument',
-                  toolCallId: crypto.randomUUID(),
+                  toolCallId: nanoid(),
                   state: 'result',
                   args: {
                     title: document.title,
@@ -642,7 +643,7 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
           const messagesToSave: DBMessage[] = [
             // ユーザーのメッセージ
             {
-              id: crypto.randomUUID(),
+              id: nanoid(),
               chatId: id,
               role: 'user',
               content: {
@@ -653,7 +654,7 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
             },
             // アシスタントのメッセージ
             {
-              id: crypto.randomUUID(),
+              id: nanoid(),
               chatId: id,
               role: 'assistant',
               content: {
