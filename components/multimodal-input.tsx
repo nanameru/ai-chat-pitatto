@@ -40,11 +40,10 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from './ui/t
 import equal from 'fast-deep-equal';
 import { nanoid } from 'nanoid';
 import { ArrowUpIcon, PaperclipIcon, StopIcon } from './icons';
-import { Search as SearchIcon, Computer } from 'lucide-react';
+import { Search as SearchIcon, } from 'lucide-react';
 import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
-import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
-import { ComputerUseToggle } from './computer-use-toggle';
+import { executeParallelCozeQueries, } from '@/lib/ai/coze/coze';
 // import { readDataStream } from 'ai/core/streams'; // ★ 使われていないようなので一旦コメントアウト
 
 function PureMultimodalInput({
@@ -209,136 +208,44 @@ function PureMultimodalInput({
     setIsDeepResearchLoading(true);
 
     try {
-      console.log('[Deep Research] APIリクエストを開始:', query);
-      const requestBody = { query, chatId, clarificationResponse };
-      console.log('[Deep Research] API Request Body:', requestBody);
-
-      const response = await fetch('/api/deep-research', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+      console.log('[Deep Research] メッセージを送信:', query);
+      
+      const content = clarificationResponse 
+        ? `${query}\n\n明確化回答: ${clarificationResponse}`
+        : query;
+      
+      await append({
+        id: nanoid(),
+        content: content,
+        role: 'user',
+        createdAt: new Date()
+      }, {
+        body: {
+          query: query,
+          chatId: chatId,
+          model: modelId,
+          clarificationResponse: clarificationResponse
+        }
       });
-
-      if (!response.ok) {
-        // ★ エラーレスポンスの詳細を取得しようと試みる
-        let errorDetails = `APIエラー: ${response.status} ${response.statusText}`;
-        try {
-          const errorJson = await response.json();
-          errorDetails = errorJson.error || errorJson.details || errorDetails;
-        } catch (e) {
-          // JSONパース失敗時は元のエラーメッセージを使用
-        }
-        throw new Error(errorDetails);
-      }
-
-      // ★ ストリーミング応答の処理 ★
-      if (!response.body) {
-        throw new Error('APIからの応答が空です。');
-      }
-
-      // ヘッダーに基づいて処理を分岐
-      const isDataStream = response.headers.get('X-Experimental-Stream-Data') === 'true';
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      if (isDataStream) {
-        console.log('[Deep Research] データストリームを受信 (明確化メッセージ)');
-        let done = false;
-        let streamedData = '';
-        while (!done) {
-          const { value, done: readerDone } = await reader.read();
-          done = readerDone;
-          if (value) {
-            streamedData += decoder.decode(value, { stream: true });
-          }
-        }
-        // ストリーム全体のデータをパース
-        try {
-          const data = JSON.parse(streamedData);
-          if (data.type === 'clarification' && data.message) {
-            console.log('[Deep Research] 明確化メッセージを処理:', data.message);
-            await append({
-              id: nanoid(),
-              content: data.message,
-              role: 'assistant' as const,
-              createdAt: new Date()
-            });
-            setClarificationMode({ active: true, originalQuery: data.originalQuery || query });
-            setInput('');
-          } else {
-            console.error('[Deep Research] 不明なデータストリーム形式:', data);
-            throw new Error('APIから不明なデータ形式が返されました。');
-          }
-        } catch (e) {
-          console.error('[Deep Research] データストリームのJSONパースに失敗:', e, '受信データ:', streamedData);
-          throw new Error('API応答の解析に失敗しました。');
-        }
-
-      } else {
-        console.log('[Deep Research] テキストストリームを受信 (最終結果)');
-        // ★ 最終結果のテキストストリームを直接appendで処理
-        // Vercel SDK の内部処理に近い形でストリームを読み取る
-        let accumulatedText = '';
-        let messageId = nanoid(); // メッセージIDを生成
-        let firstChunk = true;
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          const textChunk = decoder.decode(value, { stream: true });
-          accumulatedText += textChunk;
-
-          // append または update を使用してUIを更新
-          // useChat フックは直接使えないため、appendを模倣する
-          // 既存のメッセージを更新する機能が必要になる可能性がある
-          // ここでは単純に追記し続けるが、パフォーマンスに影響する可能性あり
-          if (firstChunk) {
-            await append({
-              id: messageId,
-              content: accumulatedText,
-              role: 'assistant' as const,
-              createdAt: new Date()
-            });
-            firstChunk = false;
-          } else {
-            // 既存メッセージを更新するロジック (setMessagesなどが必要)
-            // 現状のappendは新規追加しかできないため、擬似的に更新
-            // ※ 本来は useChat の setMessages を使うべき
-            const currentMessages = messages; // 親コンポーネントから渡される messages
-            const updatedMessages = currentMessages.map(msg => 
-              msg.id === messageId ? { ...msg, content: accumulatedText } : msg
-            );
-            // ここで setMessages(updatedMessages) を呼び出す必要がある
-            // しかし、この関数には setMessages が渡されていないため、
-            // 既存のappendを呼び出すことで暫定対応 (UI上は複数メッセージに見える可能性)
-             await append({ // ← 本来は既存メッセージ更新
-               id: messageId + '-' + nanoid(4), // ID重複回避のため一時的なID生成
-               content: textChunk, // 差分だけ送る (UI側で結合表示が必要)
-               role: 'assistant' as const,
-               createdAt: new Date()
-             }, { data: { isUpdate: true, targetId: messageId }}); // 更新フラグ（UI側での対応が必要）
-             // ↑ このappendの使い方は正しくない可能性が高い。
-             // 最終的には useChat フックと連携するようにリファクタリングが必要。
-          }
-        }
-        console.log('[Deep Research] テキストストリーム完了');
+      
+      console.log('[Deep Research] メッセージを送信しました');
+      
+      if (clarificationResponse) {
         setClarificationMode({ active: false, originalQuery: '' });
       }
-
+      
     } catch (error) {
       console.error('[Deep Research] 実行中にエラーが発生:', error);
-      // ★ UIにエラーを表示する処理 (例: appendでエラーメッセージ表示)
       const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      
       await append({
         id: nanoid(),
         content: `エラー: ${errorMessage}`,
         role: 'assistant',
         createdAt: new Date(),
-        annotations: [{ type: 'error', data: { details: errorMessage } }] // エラー情報付与
+        annotations: [{ type: 'error', data: { details: errorMessage } }]
       });
-      // エラーを再スローしない (UIに表示済みのため)
-      // throw error;
+      
     } finally {
       setIsDeepResearchLoading(false);
     }
@@ -883,7 +790,7 @@ function PureMultimodalInput({
           console.log('[デバッグ] 画像生成コマンドが検出されました');
           
           // 強制的に画像生成モードを有効化
-          toast.info('画像生成コマンドを検出しました: ' + imagePrompt);
+          toast.info(`画像生成コマンドを検出しました: ${imagePrompt}`);
           
           try {
             console.log('[画像生成] 画像生成コマンドを検出:', imagePrompt);
