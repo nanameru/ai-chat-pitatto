@@ -263,17 +263,19 @@ export async function POST(req: NextRequest) {
             console.error('[API] 明確化メッセージの保存に失敗しました:', error);
           }
 
-          // 明確化メッセージをストリーミング形式で返す
-          const encoder = new TextEncoder();
-          const stream = new ReadableStream({
-            start(controller) {
-              controller.enqueue(encoder.encode(clarificationMessage || ''));
-              controller.close();
+          // Vercel AI SDKのストリーミングを使用
+          return createDataStreamResponse({
+            execute: (dataStream) => {
+              const result = streamText({
+                model: myProvider.languageModel('gpt-4-turbo'),
+                messages: [{ role: 'assistant', content: clarificationMessage || '' }],
+                experimental_transform: smoothStream({ chunking: 'word' }),
+              });
+              result.mergeIntoDataStream(dataStream);
             },
-          });
-          
-          return new Response(stream, {
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            onError: () => {
+              return '明確化メッセージの送信に失敗しました。もう一度お試しください。';
+            },
           });
         } else {
           // 最終結果の場合
@@ -295,17 +297,19 @@ export async function POST(req: NextRequest) {
             console.error('[API] アシスタントメッセージの保存に失敗しました:', error);
           }
 
-          // テキストをストリーミング形式で返す
-          const encoder = new TextEncoder();
-          const stream = new ReadableStream({
-            start(controller) {
-              controller.enqueue(encoder.encode(content));
-              controller.close();
+          // Vercel AI SDKのストリーミングを使用
+          return createDataStreamResponse({
+            execute: (dataStream) => {
+              const result = streamText({
+                model: myProvider.languageModel('gpt-4-turbo'),
+                messages: [{ role: 'assistant', content: content }],
+                experimental_transform: smoothStream({ chunking: 'word' }),
+              });
+              result.mergeIntoDataStream(dataStream);
             },
-          });
-          
-          return new Response(stream, {
-            headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+            onError: () => {
+              return 'メッセージの送信に失敗しました。もう一度お試しください。';
+            },
           });
         }
 
