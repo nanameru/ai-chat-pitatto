@@ -1,5 +1,5 @@
 import React from 'react';
-import { ReasoningStep } from '@/types/reasoning';
+import type { ReasoningStep } from '@/types/reasoning';
 
 type ReasoningSidebarProps = {
   steps: ReasoningStep[];
@@ -73,7 +73,7 @@ export const ReasoningSidebar: React.FC<ReasoningSidebarProps> = ({ steps, isLoa
       <div className="p-4">
         {isLoading ? (
           <div className="flex flex-col items-center justify-center py-8">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900" />
             <p className="mt-4 text-sm text-gray-600">思考中...</p>
           </div>
         ) : filteredSteps.length === 0 ? (

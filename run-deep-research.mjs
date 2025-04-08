@@ -1,5 +1,5 @@
 // Node.js script to run deepResearchAgentV2 agent
-import { createRequire } from 'module';
+import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 
 // Try to dynamically import the agent
