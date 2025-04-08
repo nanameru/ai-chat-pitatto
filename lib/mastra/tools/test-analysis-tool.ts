@@ -66,7 +66,7 @@ export const testAnalysisTool = createTool({
     const snippets = results.map(r => r.snippet).join('\n');
     
     // 検索結果の内容に基づいて、キーワードを抽出
-    const keywords = extractKeywords(titles + '\n' + snippets);
+    const keywords = extractKeywords(`${titles}\n${snippets}`);
     
     // 情報の十分さを評価（10点満点）
     const completenessEvaluation = evaluateCompleteness(results, query);
@@ -235,7 +235,7 @@ function evaluateCompleteness(results: any[], query: string): { score: number; c
   
   const aspectCoverage = aspects.map(aspect => {
     const coverage = results.filter(r => {
-      const text = (r.title + ' ' + r.snippet).toLowerCase();
+      const text = (`${r.title} ${r.snippet}`).toLowerCase();
       return aspect.keywords.some(keyword => text.includes(keyword));
     }).length / results.length;
     return { ...aspect, coverage };
@@ -268,7 +268,7 @@ function identifyMissingInformation(results: any[], query: string): { missingInf
   const aspectScores = aspects.map(aspect => {
     let score = 0;
     results.forEach(r => {
-      const text = (r.title + ' ' + r.snippet).toLowerCase();
+      const text = (`${r.title} ${r.snippet}`).toLowerCase();
       const matchingKeywords = aspect.keywords.filter(keyword => text.includes(keyword));
       if (matchingKeywords.length > 0) {
         score += matchingKeywords.length / aspect.keywords.length;

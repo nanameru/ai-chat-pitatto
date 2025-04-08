@@ -1,4 +1,4 @@
-import { createTool, Tool } from "@mastra/core/tools";
+import { createTool, type Tool } from "@mastra/core/tools";
 import { z } from "zod";
 import { openai } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
@@ -74,7 +74,7 @@ export const queryClarifier: Tool<typeof queryClarifierInputSchema, typeof query
 
         const clarificationResponse: any = await Promise.race([generatePromise, timeoutPromise]);
 
-        if (clarificationResponse && clarificationResponse.text) {
+        if (clarificationResponse?.text) {
             generatedQuestionsText = clarificationResponse.text;
             console.log("[AI質問生成] 成功 (gpt-4o-mini):", generatedQuestionsText);
         } else {

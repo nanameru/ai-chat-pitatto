@@ -2,9 +2,9 @@
  * X検索APIエンドポイント
  */
 
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { XSearchService } from '@/lib/ai/x-search';
-import { XSearchState } from '@/lib/ai/x-search/types';
+import type { XSearchState } from '@/lib/ai/x-search/types';
 
 /**
  * X検索APIのPOSTハンドラ
@@ -79,7 +79,7 @@ export async function POST_streaming(req: NextRequest) {
     const onStateChange = async (state: XSearchState, data?: any) => {
       await writer.write(
         encoder.encode(
-          JSON.stringify({ type: 'state_update', state, data }) + '\n'
+          `${JSON.stringify({ type: 'state_update', state, data })}\n`
         )
       );
     };
@@ -95,17 +95,17 @@ export async function POST_streaming(req: NextRequest) {
         // 最終結果を送信
         await writer.write(
           encoder.encode(
-            JSON.stringify({ type: 'result', data: result }) + '\n'
+            `${JSON.stringify({ type: 'result', data: result })}\n`
           )
         );
       } catch (error) {
         // エラーを送信
         await writer.write(
           encoder.encode(
-            JSON.stringify({ 
+            `${JSON.stringify({ 
               type: 'error', 
               error: error instanceof Error ? error.message : '不明なエラー' 
-            }) + '\n'
+            })}\n`
           )
         );
       } finally {
