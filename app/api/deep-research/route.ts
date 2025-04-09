@@ -121,20 +121,40 @@ export async function POST(req: NextRequest) {
 
     // ★ req.json() と入力チェックは実行 -> Vercel AI SDK の形式に合わせる
     // const { query, clarificationResponse, chatId } = await req.json();
-    const json = await req.json();
-    const parseResult = RequestBodySchema.safeParse(json);
+    let requestBody: any;
+    let parseResult: z.SafeParseReturnType<any, any>;
+    try {
+      requestBody = await req.json();
+      // ★ デバッグログ追加: 生のリクエストボディを出力 ★
+      console.log('[API Deep Research DEBUG] Received raw request body:', JSON.stringify(requestBody, null, 2));
+      parseResult = RequestBodySchema.safeParse(requestBody);
+    } catch (error) {
+      console.error('[API Deep Research] Error parsing request JSON:', error);
+      return NextResponse.json({ error: 'Invalid JSON format' }, { status: 400 });
+    }
 
     if (!parseResult.success) {
       // ★ NextResponse.json を使用 ★
       // return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 });
+      console.error('[API Deep Research] Invalid request body:', parseResult.error.flatten()); // ★ エラー詳細ログ追加
       return NextResponse.json({ error: 'Invalid request body', details: parseResult.error.flatten() }, { status: 400 });
     }
 
     const { messages, chatId, model } = parseResult.data;
     const coreMessages = messages as CoreMessage[];
-    // ★★★ query の内容をログ出力 ★★★ -> messages をログ出力
-    // console.log('[API Deep Research DEBUG] req.json result:', { query, clarificationResponse, chatId });
     console.log('[API Deep Research] Parsed request body:', { messagesCount: coreMessages.length, chatId, model });
+
+    // ★ ユーザーメッセージを特定して保存用に保持 ★
+    const userMessageContent = coreMessages.find(m => m.role === 'user')?.content;
+    const userMessageToSaveInitially: Omit<DBMessage, 'userId'> | null =
+      userMessageContent !== undefined ? {
+        id: randomUUID(),
+        chatId: chatId,
+        role: 'user',
+        content: typeof userMessageContent === 'string' ? userMessageContent : JSON.stringify(userMessageContent),
+        createdAt: new Date(),
+      } : null;
+    // ★ ここまで追加 ★
 
     // ... (入力チェックコード) ... -> スキーマ検証でカバー
 
@@ -318,40 +338,39 @@ export async function POST(req: NextRequest) {
             console.error('[API Deep Research] Failed to write execution error to stream:', writeErrorError);
           }
         } finally {
-          // --- DB保存 --- (変更なし、fullCompletionText を使う)
-          const lastUserMessage = coreMessages[coreMessages.length - 1];
-          const userMessageToSave: Omit<DBMessage, 'userId'> | null = lastUserMessage?.role === 'user' ? {
-            id: randomUUID(),
-            chatId: chatId,
-            role: 'user',
-            content: typeof lastUserMessage.content === 'string' ? lastUserMessage.content : JSON.stringify(lastUserMessage.content),
-            createdAt: new Date(),
-          } : null;
+          // --- DB保存 --- ★
+          // ★ 保存するユーザーメッセージを、最初に保持したものに変更 ★
+          // const lastUserMessage = coreMessages[coreMessages.length - 1];
+          // const userMessageToSave: Omit<DBMessage, 'userId'> | null = lastUserMessage?.role === 'user' ? { ... } : null;
+          const userMessageToSave = userMessageToSaveInitially; // ★ 最初に保持したユーザーメッセージを使用
 
           const assistantMessageToSave: Omit<DBMessage, 'userId'> | null = !agentError && fullCompletionText ? {
-            id: randomUUID(), // assistant の ID はここで生成 (必要に応じて変更)
+            id: randomUUID(),
             chatId: chatId,
             role: 'assistant',
             content: fullCompletionText,
-            // ★ アノテーションも保存する場合 (DBスキーマによる) ★
-            // annotations: needsClarification ? JSON.stringify([{ type: 'clarification' }]) : null,
             createdAt: new Date(),
           } : null;
 
-          const messagesToSave = [userMessageToSave, assistantMessageToSave].filter(Boolean) as Omit<DBMessage, 'userId'>[];
+          // ★ userMessageToSave が null でないことを確認してから配列に追加 ★
+          const messagesToSave: Omit<DBMessage, 'userId'>[] = [];
+          if (userMessageToSave) {
+            messagesToSave.push(userMessageToSave);
+          }
+          if (assistantMessageToSave) {
+            messagesToSave.push(assistantMessageToSave);
+          }
 
           if (messagesToSave.length > 0) {
             try {
               console.log(`[API Deep Research] Saving ${messagesToSave.length} messages to DB...`);
-              // userId を付与して保存
               await saveMessages({ messages: messagesToSave.map(m => ({ ...m, userId })) });
               console.log('[API Deep Research] Successfully saved messages to DB.');
             } catch (dbSaveError) {
               console.error('[API Deep Research] Failed to save messages to DB:', dbSaveError);
-              // DB保存エラーはストリームに書き込めない場合があるため、ログのみ
             }
           }
-          // streamData を閉じる
+          // ★ ここまで修正 ★
           streamData.close();
           console.log('[API Deep Research DEBUG] Closed stream data.');
         }

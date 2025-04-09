@@ -421,9 +421,9 @@ Image generated using ${usedModel === 'grok' ? 'Grok Vision' : 'DALL-E 3'}`,
               id: assistantMessage.id,
               chat_id: chatId,
               user_id: userId,
-              role: assistantMessage.role, // ← この値を確認！
+              role: assistantMessage.role,
               content: JSON.stringify(assistantMessage.content),
-              created_at: assistantMessage.createdAt.toISOString(),
+              created_at: assistantMessage.createdAt,
               updated_at: new Date().toISOString(),
             };
             console.log('[API Chat][onCompletion] Saving assistant message data:', dataToSave);

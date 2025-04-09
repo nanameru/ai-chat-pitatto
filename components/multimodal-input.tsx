@@ -209,14 +209,31 @@ function PureMultimodalInput({
     setIsDeepResearchLoading(true);
 
     try {
-      console.log('[Deep Research] APIリクエストを開始:', query);
-      const requestBody = { query, chatId, clarificationResponse };
-      console.log('[Deep Research] API Request Body:', requestBody);
+      // ★ 修正: Vercel AI SDK が期待する形式に合わせる ★
+      const newUserMessage: Message = {
+        id: nanoid(), // 新しいメッセージID
+        role: 'user' as const,
+        content: clarificationResponse ? `${query}\n\n[Clarification Response]:\n${clarificationResponse}` : query, // 明確化応答も内容に含める
+        createdAt: new Date()
+      };
+
+      // 既存の messages 配列に新しいユーザーメッセージを追加
+      const messagesToSend = [...messages, newUserMessage];
+
+      // APIに送信するリクエストボディ
+      const requestBody = {
+        messages: messagesToSend, // ★ messages 配列を含める ★
+        chatId: chatId,
+        model: modelId, // ★ モデルIDも追加 (API側で受け取れるように変更済み) ★
+        // clarificationResponse は messages に含めたので不要
+      };
+      console.log('[Deep Research] APIリクエストを開始 (Body修正版):', { query, chatId, modelId: modelId, clarificationResponse, bodySize: JSON.stringify(requestBody).length }); // ログ更新
+      console.log('[Deep Research] API Request Body:', requestBody); // ログはそのまま
 
       const response = await fetch('/api/deep-research', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody),
+        body: JSON.stringify(requestBody), // 修正されたボディを送信
       });
 
       if (!response.ok) {
