@@ -1,50 +1,73 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
-// ★★★ @mastra 関連はコメントアウトしたまま ★★★
-/*
-// import { ... } from '@/lib/mastra/...';
-// import { getJson } from 'serpapi'; 
-*/
+// // ★★★ @mastra 関連はコメントアウトしたまま ★★★
+// /*
+// // import { ... } from '@/lib/mastra/...';
+// // import { getJson } from 'serpapi';
+// */
 // ★ DB関連の import を戻す
 import { createClient } from '@/utils/supabase/server';
 import { saveMessages } from '@/lib/db/queries';
 import type { Message as DBMessage } from '@/lib/db/schema';
 import { randomUUID } from 'crypto'; // ★ crypto.randomUUID を戻す
-import { type CoreMessage, StreamData, createDataStreamResponse, smoothStream, streamText } from 'ai';
-import { myProvider } from '@/lib/ai/models';
-// ★★★ @mastra 関連のインポートを再修正 ★★★
-import {
-  Mastra,                // Mastra クラスはこれで合っているはず
-  // 型は一旦 @mastra/core から直接インポートせず、
-  // 使用箇所で Mastra の型定義から推論させるか、必要なら後で特定する
-  // type ActionObservation, 
-  // type AgentResponse,     
-  // type ActionOptions      
-} from '@mastra/core'; 
-import { deepResearchAgentV2 } from '@/lib/mastra/agents/deep-research-v2'; 
+// import { type CoreMessage, StreamData, createDataStreamResponse, smoothStream, streamText } from 'ai'; // ★ streamText を使用するように変更
+import { type CoreMessage, createDataStreamResponse, DataStreamWriter, StreamData } from 'ai'; // StreamData, createDataStreamResponse, smoothStream は一旦不要 ★ StreamingTextResponse をインポート
+// // ★★★ @mastra 関連のインポートを再修正 ★★★
+// import {
+//   Mastra,                // Mastra クラスはこれで合っているはず
+//   // 型は一旦 @mastra/core から直接インポートせず、
+//   // 使用箇所で Mastra の型定義から推論させるか、必要なら後で特定する
+//   // type ActionObservation,
+//   // type AgentResponse,
+//   // type ActionOptions
+// } from '@mastra/core';
+// import { deepResearchAgentV2 } from '@/lib/mastra/agents/deep-research-v2';
 import { mastra } from '@/lib/mastra'; // ★ lib/mastra/index.ts から mastra インスタンスをインポート
-// ★★★ ここまで再修正 ★★★
+// // ★★★ ここまで再修正 ★★★
 
-// 以下の不要なインポートを削除
-// import { SupabaseClient } from '@supabase/supabase-js';
-import { type Message as VercelChatMessage } from 'ai';
-// import { StreamingTextResponse } from 'ai/dist/edge'; // ★ パスを 'ai/dist/edge' に変更
+// // 以下の不要なインポートを削除
+// // import { SupabaseClient } from '@supabase/supabase-js';
+// import { type Message as VercelChatMessage } from 'ai'; // ★ VercelChatMessage は streamText で内部的に使われるため残す
+// // import { StreamingTextResponse } from 'ai/dist/edge'; // ★ streamText の結果を toAIStreamResponse で返すため不要
 
-// import { saveMessages } from '@/utils/supabase/chat-actions'; // ★ 重複のためコメントアウト
+// // import { saveMessages } from '@/utils/supabase/chat-actions'; // ★ 重複のためコメントアウト
 
-// ★ 型定義のコメントアウト解除 ★★★
-// 必要に応じて AgentResponse などの型をインラインで定義するか、any を使う
-type ResearchPlan = { /* ... */ };
-// ... 他の型定義 ...
-const InputSchema = z.object({
-  query: z.string(),
+// // ★ 型定義のコメントアウト解除 ★★★ -> 不要な型定義は削除
+// type ResearchPlan = { /* ... */ }; // -> 不要
+// // ... 他の型定義 ...
+// const InputSchema = z.object({ // ★ 入力スキーマはリクエストボディの形式に合わせて変更
+//   query: z.string(),
+//   chatId: z.string().uuid(),
+//   clarificationResponse: z.string().optional(),
+// });
+// // ★★★ ここまで解除 ★★★ -> 変更
+const RequestBodySchema = z.object({
+  messages: z.array(z.any()), // Vercel AI SDK の CoreMessage 型に合わせる
   chatId: z.string().uuid(),
-  clarificationResponse: z.string().optional(),
+  model: z.string().optional(), // モデル指定を受け付けるようにする
+  // clarificationResponse は messages に含める想定
 });
-// ★★★ ここまで解除 ★★★
+
+// export const runtime = 'edge'; // ★ Edge Runtime指定を削除
+
+// Agent の generate メソッドの戻り値の型 (より具体的に)
+type AgentResult = {
+  text?: string; // 最終的なテキスト応答
+  steps?: Array<{ // ステップ情報
+    stepType?: string;
+    toolCalls?: Array<{ // ツール呼び出し情報
+      name?: string;
+      input?: any;
+      result?: any; // ツールの実行結果
+    }>;
+    text?: string; // ステップごとのテキスト (最終応答と同じ場合あり)
+  }>;
+  error?: any; // エラー情報
+  // 他にもプロパティがある可能性
+};
 
 export async function POST(req: NextRequest) {
-  console.log('[API Deep Research TEST 4] Received POST request.'); 
+  console.log('[API Deep Research] Received POST request (Node.js Runtime).'); // ログ変更
   try {
     // ★★★ createClient と getUser の呼び出しを戻す ★★★
     // デバッグログ: 環境変数の確認 (念のため残す)
@@ -54,43 +77,24 @@ export async function POST(req: NextRequest) {
     console.log(`  SUPABASE_SERVICE_ROLE_KEY exists: ${!!process.env.SUPABASE_SERVICE_ROLE_KEY}`); 
 
     // Supabaseクライアントとユーザー情報を取得
-    console.log('[API Deep Research DEBUG] Calling createClient()...');
+    console.log('[API Deep Research] Calling createClient()...');
     const supabase = await createClient();
-    console.log('[API Deep Research DEBUG] createClient() successful.');
+    console.log('[API Deep Research] createClient() successful.');
     
-    console.log('[API Deep Research DEBUG] Calling supabase.auth.getUser()...');
+    console.log('[API Deep Research] Calling supabase.auth.getUser()...');
     const { data: { user }, error: authError } = await supabase.auth.getUser();
-    console.log('[API Deep Research DEBUG] supabase.auth.getUser() finished.');
+    console.log('[API Deep Research] supabase.auth.getUser() finished.');
 
     if (authError || !user?.id) {
-      console.error('[API Deep Research] Unauthorized:', authError);
+      // ★ Node.js Runtime なので NextResponse.json を使ってもOK ★
+      // return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 });
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
     const userId = user.id; // userId は取得しておく
     // ★★★ ここまで戻す ★★★
 
-    // ★★★ テスト用DB読み取り処理のコメントアウトを解除 ★★★
-    let testUserData: any;
-    try {
-      console.log(`[API Deep Research DEBUG] Attempting simple DB read for userId: ${userId}`);
-      const { data, error: testDbReadError } = await supabase
-        .from('User') 
-        .select('id')
-        .eq('id', userId)
-        .maybeSingle();
-      testUserData = data; // 成功データを保持
-
-      if (testDbReadError) {
-        console.error('[API Deep Research ERROR] Simple DB read failed:', testDbReadError);
-        throw testDbReadError; // エラーとして処理を止める
-            } else {
-        console.log('[API Deep Research DEBUG] Simple DB read successful. User data:', testUserData);
-      }
-    } catch (testError) {
-        console.error('[API Deep Research ERROR] Exception during simple DB read test:', testError);
-        return NextResponse.json({ error: 'データベース接続テスト中にエラーが発生しました' }, { status: 500 });
-    }
-    // ★★★ ここまで戻す ★★★
+    // ★★★ テスト用DB読み取り処理のコメントアウトを解除 ★★★ -> 削除 (本番コードには不要)
+    // ...
 
     // ★★★ テスト用DB読み取り処理のコメントアウトを解除 ★★★
     let testChatData: any;
@@ -115,218 +119,261 @@ export async function POST(req: NextRequest) {
     }
     // ★★★ ここまで戻す ★★★
 
-    // ★ req.json() と入力チェックは実行
-    const { query, clarificationResponse, chatId } = await req.json();
-    // ★★★ query の内容をログ出力 ★★★
-    console.log('[API Deep Research DEBUG] req.json result:', { query, clarificationResponse, chatId }); 
-    // ★★★ ログ追加ここまで ★★★
+    // ★ req.json() と入力チェックは実行 -> Vercel AI SDK の形式に合わせる
+    // const { query, clarificationResponse, chatId } = await req.json();
+    const json = await req.json();
+    const parseResult = RequestBodySchema.safeParse(json);
 
-    // ... (入力チェックコード) ...
+    if (!parseResult.success) {
+      // ★ NextResponse.json を使用 ★
+      // return new Response(JSON.stringify({ error: 'Invalid request body' }), { status: 400 });
+      return NextResponse.json({ error: 'Invalid request body', details: parseResult.error.flatten() }, { status: 400 });
+    }
 
-    // ★★★ Chat レコード存在確認 & 必要なら作成 ★★★
-    console.log(`[API Deep Research DEBUG] Checking/Creating chat: ${chatId}`);
-    let chatExists = false;
+    const { messages, chatId, model } = parseResult.data;
+    const coreMessages = messages as CoreMessage[];
+    // ★★★ query の内容をログ出力 ★★★ -> messages をログ出力
+    // console.log('[API Deep Research DEBUG] req.json result:', { query, clarificationResponse, chatId });
+    console.log('[API Deep Research] Parsed request body:', { messagesCount: coreMessages.length, chatId, model });
+
+    // ... (入力チェックコード) ... -> スキーマ検証でカバー
+
+    // ★★★ Chat レコード存在確認 & 必要なら作成 (maybeSingle を使用) ★★★
     try {
-      const { data: existingChat, error: checkError } = await supabase
+      console.log(`[API Deep Research] Checking if chat exists using maybeSingle: ${chatId}`);
+      // maybeSingle() を使ってチャットを取得 (見つからなくてもエラーにならない)
+      const { data: existingChat, error: getChatError } = await supabase
         .from('Chat')
-        .select('id')
+        .select('id') // 必要なカラムのみ取得 (idだけで十分)
         .eq('id', chatId)
+        // .eq('userId', userId) // 必要であればユーザーIDでの絞り込みも追加
         .maybeSingle();
 
-      if (checkError) {
-        console.error('[API Deep Research ERROR] Failed to check chat existence:', checkError);
-        throw new Error('チャット情報の確認中にエラーが発生しました。'); // エラーとして投げる
+      // getChatError が発生し、かつそれが「見つからない」以外のエラーの場合
+      if (getChatError && getChatError.code !== 'PGRST116') {
+        console.error(`[API Deep Research] Error checking for chat ${chatId}:`, getChatError);
+        throw getChatError; // エラーを再スローして上位のcatchで処理
       }
 
-      if (existingChat) {
-        chatExists = true;
-        console.log(`[API Deep Research DEBUG] Chat already exists: ${chatId}`);
-      } else {
-        console.log(`[API Deep Research DEBUG] Chat not found, creating new chat: ${chatId}`);
-        // タイトルを最初のメッセージから生成 (簡易版)
-        const title = query.substring(0, 100) || 'New Deep Research Chat'; 
-        const { error: createError } = await supabase
+      // existingChat が null (または undefined) ならチャットが存在しない
+      if (!existingChat) {
+        console.log(`[API Deep Research] Chat ${chatId} not found. Creating new chat...`);
+        const firstUserMessageContent = coreMessages.find(m => m.role === 'user')?.content;
+        const chatTitle = typeof firstUserMessageContent === 'string'
+          ? firstUserMessageContent.substring(0, 100)
+          : 'Deep Research Chat';
+
+        // supabase.from('Chat').insert() を直接使用してチャットを作成
+        const { error: insertError } = await supabase
           .from('Chat')
-          .insert({ 
-            id: chatId, 
-            userId: userId, 
-            title: title, 
-            createdAt: new Date(),
-            // visibility はデフォルト値に任せるか、必要なら指定 
+          .insert({
+            id: chatId,
+            userId,
+            title: chatTitle,
+            createdAt: new Date().toISOString(), // createdAt を設定
+            updatedAt: new Date().toISOString(), // updatedAt も設定 (任意)
+            // 他に必要なフィールドがあればここに追加 (例: visibility)
           });
 
-        if (createError) {
-          console.error('[API Deep Research ERROR] Failed to create chat:', createError);
-          throw new Error('新しいチャットの作成に失敗しました。'); // エラーとして投げる
+        if (insertError) {
+          console.error(`[API Deep Research] Failed to create chat ${chatId}:`, insertError);
+          throw insertError; // エラーを再スロー
         }
-        chatExists = true; // 作成成功
-        console.log(`[API Deep Research DEBUG] Successfully created new chat: ${chatId}`);
+        console.log(`[API Deep Research] Created new chat: ${chatId}`);
+      } else {
+        console.log(`[API Deep Research] Chat ${chatId} found.`);
+        // 必要であれば既存チャットの更新処理などをここに追加
+        // 例: updated_at を更新
+        // const { error: updateError } = await supabase
+        //   .from('Chat')
+        //   .update({ updatedAt: new Date().toISOString() })
+        //   .eq('id', chatId);
+        // if (updateError) {
+        //   console.warn(`[API Deep Research] Failed to update chat ${chatId}:`, updateError);
+        // }
       }
-    } catch (error) {
-      // DB接続エラーなどもここで捕捉
-      console.error('[API Deep Research ERROR] Error during chat check/create:', error);
-      const errorMessage = error instanceof Error ? error.message : 'チャットの確認/作成中に不明なエラーが発生しました。';
-      return NextResponse.json({ error: errorMessage }, { status: 500 });
+    } catch (dbError) {
+      // ここで getChatError や insertError をキャッチ
+      console.error('[API Deep Research] Error during chat check/creation process:', dbError);
+      return NextResponse.json({ error: 'Failed to ensure chat session exists' }, { status: 500 });
     }
     // ★★★ ここまで修正 ★★★
 
     // 以降の処理 (Chatが存在する場合のみ実行される)
 
-    // ユーザーメッセージをDBに保存する準備
-    const userMessageObject: Omit<DBMessage, 'userId'> = {
-        id: randomUUID(), 
-        chatId: chatId,
-        role: 'user',
-        content: clarificationResponse ? `${query}\n\nClarification: ${clarificationResponse}` : query,
-        createdAt: new Date(),
-    };
+    // ユーザーメッセージをDBに保存する準備 -> onCompletion に移動
+    // const userMessageObject: Omit<DBMessage, 'userId'> = { ... };
+    // console.log('[API Deep Research DEBUG] User message object prepared:', userMessageObject);
+    // try {
+    //     await saveMessages({ messages: [userMessageObject] });
+    //     console.log('[API Deep Research DEBUG] User message supposedly saved successfully.');
+    // } catch (error) { ... }
 
-    console.log('[API Deep Research DEBUG] User message object prepared:', userMessageObject);
+    // ★ Deep Research 関連処理 ★★★ -> streamText に置き換え
+    // console.log('[API] Deep Research Agent実行開始:', { query, chatId, userId });
+    // // ★ new Mastra({}) の行を削除 ★
+    // const options: any = { ... };
+    // try {
+    //     // ★ エージェントを取得 (インポートした mastra インスタンスから)
+    //     const agent = mastra.getAgent('deepResearchAgent');
+    //     // ★ generate の引数を修正 ★
+    //     const messagesForAgent: CoreMessage[] = [ ... ];
+    //     // Deep Researchエージェントの実行
+    //     const agentResult = await agent.generate(messagesForAgent, options);
+    //     console.log('[API] Deep Research Agent実行完了:', agentResult);
+    //     // ★ 修正: agentResult の内容に基づいて明確化が必要か判断
+    //     const needsClarification = ...;
+    //     const clarificationMessage = ...;
+    //     // ★ StreamData を初期化
+    //     const data = new StreamData();
+    //     // ★ 修正: ストリーミングレスポンスを正しく返す
+    //     if (needsClarification) { ... } else { ... }
+    // } catch (error) {
+    //   console.error('[API Deep Research] Error executing agent:', error);
+    //   return new Response(JSON.stringify({ error: 'Failed to execute deep research agent' }), { status: 500 });
+    // }
 
-    // saveMessages には配列で渡す
-    try {
-        await saveMessages({ messages: [userMessageObject] });
-        console.log('[API Deep Research DEBUG] User message supposedly saved successfully.');
-    } catch (error) {
-      // エラー発生時のログ出力改善
-      const dbError = error as Error;
-      console.error('[API Deep Research ERROR] Database operation failed:', {
-          message: dbError.message,
-          stack: dbError.stack,
-          cause: (dbError as any).cause, // PostgreSQLエラーコードなどを含む可能性
-      });
-      return NextResponse.json({ error: 'データベースへのメッセージ保存に失敗しました。' }, { status: 500 });
-    }
+    // ★ Vercel AI SDK のストリーミングレスポンスに変更 ★
+    const streamData = new StreamData();
 
-    // ★ Deep Research 関連処理 ★★★
-    console.log('[API] Deep Research Agent実行開始:', { query, chatId, userId });
+    // ★ streamText を使用して応答を生成 ★
+    const result = createDataStreamResponse({
+      execute: async (dataStreamWriter: DataStreamWriter) => {
+        let fullCompletionText = '';
+        let agentError: Error | null = null;
+        let needsClarification = false; // 明確化が必要かのフラグ
+        const agentRunStartTime = Date.now();
 
-    // ★ new Mastra({}) の行を削除 ★
-    // const mastra = new Mastra({}); 
-
-    // ActionOptions 型がないため、一旦 any で回避
-    const options: any = {
-        maxIterations: 5, 
-        callbacks: {
-            onActionStart: (action: any) => console.log(`[Agent Callback] Action Start: ${action.name}`),
-            onActionEnd: (action: any, observation: any) => console.log(`[Agent Callback] Action End: ${action.name}`, observation),
-            onToolStart: (tool: any) => console.log(`[Agent Callback] Tool Start: ${tool.name}`),
-            onToolEnd: (tool: any, observation: any) => console.log(`[Agent Callback] Tool End: ${tool.name}`, observation),
-        },
-    };
-
-    try {
-        // ★ エージェントを取得 (インポートした mastra インスタンスから)
-        const agent = mastra.getAgent('deepResearchAgent'); 
-        
-        // ★ generate の引数を修正 ★
-        // input オブジェクトを CoreMessage 配列に変換 (簡易的な例)
-        const messages: CoreMessage[] = [
-          { role: 'user', content: query }, // ユーザーのクエリ
-          ...(clarificationResponse ? [{ role: 'user' as const, content: clarificationResponse }] : []), // ★ 明確化回答を追加
-        ];
-        
-        // Deep Researchエージェントの実行
-        // AgentResponse 型がないため、一旦 any で回避
-        const agentResult = await agent.generate(
-          messages, // ← メッセージ配列を第一引数に
-          options   // ← options オブジェクトを直接第二引数に
-        );
-        
-        console.log('[API] Deep Research Agent実行完了:', agentResult);
-        
-        // ★ 修正: agentResult の内容に基づいて明確化が必要か判断
-        const needsClarification = agentResult.toolCalls?.some((tc) => 
-          tc.toolName === 'queryClarifier' || // toolNameを使用
-          (tc.type === 'tool-call' && tc.toolName === 'queryClarifier') // 別の形式の可能性
-        );
-        const clarificationMessage = needsClarification ? agentResult.text : null; // toolCallsがある場合、textに明確化質問が入ると仮定
-
-        // ★ StreamData を初期化
-        const data = new StreamData();
-
-        // ★ 修正: ストリーミングレスポンスを正しく返す
-        if (needsClarification) {
-          // 明確化が必要な場合
-          console.log('[API] 明確化が必要です:', clarificationMessage);
-          const assistantMessage = {
-            chatId,
-            role: 'assistant',
-            content: typeof clarificationMessage === 'string' ? clarificationMessage : undefined,
-            createdAt: Date.now(),
-          };
-
-          try {
-            await saveMessages({ messages: [assistantMessage] });
-            console.log('[API] 明確化メッセージを保存しました');
-          } catch (error) {
-            console.error('[API] 明確化メッセージの保存に失敗しました:', error);
+        try {
+          console.log('[API Deep Research] Getting Mastra agent...');
+          const agent = mastra.getAgent('deepResearchAgent');
+          if (!agent) {
+            throw new Error('Deep Research Agent not found.');
           }
 
-          // Vercel AI SDKのストリーミングを使用
-          return createDataStreamResponse({
-            execute: (dataStream) => {
-              const result = streamText({
-                model: myProvider.languageModel('gpt-4-turbo'),
-                messages: [{ role: 'assistant', content: clarificationMessage || '' }],
-                experimental_transform: smoothStream({ chunking: 'word' }),
-              });
-              result.mergeIntoDataStream(dataStream);
-            },
-            onError: () => {
-              return '明確化メッセージの送信に失敗しました。もう一度お試しください。';
-            },
-          });
-        } else {
-          // 最終結果の場合
-          console.log('[API] 最終結果を返します');
-          const content = agentResult.text || '';
-          
-          // アシスタントメッセージを保存
-          const assistantMessage = {
-            chatId,
-            role: 'assistant',
-            content,
-            createdAt: Date.now(),
-          };
+          console.log('[API Deep Research] Generating response with agent...');
+          console.log('[API Deep Research DEBUG] Calling agent.generate with messages:', coreMessages);
+          const agentResult = await agent.generate(
+            coreMessages,
+            {} // オプション
+          ) as AgentResult;
 
-          try {
-            await saveMessages({ messages: [assistantMessage] });
-            console.log('[API] アシスタントメッセージを保存しました');
-          } catch (error) {
-            console.error('[API] アシスタントメッセージの保存に失敗しました:', error);
+          const agentRunEndTime = Date.now();
+          console.log(`[API Deep Research] Agent finished in ${agentRunEndTime - agentRunStartTime}ms.`);
+          console.log('[API Deep Research DEBUG] Agent Result received:', JSON.stringify(agentResult, null, 2));
+
+          // --- agentResult の解析 --- ★
+          // 1. 明確化が必要かチェック
+          console.log('[API Deep Research DEBUG] Checking for clarification...');
+          if (agentResult.steps && Array.isArray(agentResult.steps)) {
+            const clarificationStep = agentResult.steps.find(step =>
+              step.toolCalls?.some(tc => tc.name === 'queryClarifier')
+            );
+            if (clarificationStep && clarificationStep.toolCalls) {
+              const clarifierResult = clarificationStep.toolCalls.find(tc => tc.name === 'queryClarifier')?.result;
+              if (clarifierResult?.needsClarification === true) {
+                needsClarification = true;
+                console.log('[API Deep Research DEBUG] Clarification needed.');
+                // 明確化メッセージ自体は agentResult.text に含まれると仮定
+              }
+            }
+          } else {
+            console.log('[API Deep Research DEBUG] No steps found or invalid format for clarification check.');
           }
 
-          // Vercel AI SDKのストリーミングを使用
-          return createDataStreamResponse({
-            execute: (dataStream) => {
-              const result = streamText({
-                model: myProvider.languageModel('gpt-4-turbo'),
-                messages: [{ role: 'assistant', content: content }],
-                experimental_transform: smoothStream({ chunking: 'word' }),
-              });
-              result.mergeIntoDataStream(dataStream);
-            },
-            onError: () => {
-              return 'メッセージの送信に失敗しました。もう一度お試しください。';
-            },
-          });
+          // 2. 最終的なテキストを取得
+          fullCompletionText = agentResult.text || '';
+          console.log('[API Deep Research DEBUG] Final text:', fullCompletionText ? fullCompletionText.substring(0, 100) + '...' : '(empty)');
+
+          // 3. ステップ情報などを data としてストリームに追加 (任意)
+          if (agentResult.steps) {
+            streamData.append({ type: 'agent_steps', steps: agentResult.steps });
+            console.log('[API Deep Research DEBUG] Appended steps to stream data.');
+          }
+          // --- 解析ここまで --- ★
+
+          // --- ストリームへの書き込み --- ★
+          if (fullCompletionText) {
+            // テキストを直接ストリームに書き込む (Vercel AI SDK の内部形式に合わせる)
+            // `0:` はテキストパートを示すID
+            dataStreamWriter.write(`0:"${JSON.stringify(fullCompletionText).slice(1, -1)}"\n`);
+            console.log('[API Deep Research DEBUG] Wrote text to stream.');
+          }
+
+          // 明確化が必要な場合はアノテーションを追加
+          if (needsClarification) {
+            dataStreamWriter.writeMessageAnnotation({ type: 'clarification' });
+            console.log('[API Deep Research DEBUG] Wrote clarification annotation to stream.');
+          }
+          // --- 書き込みここまで --- ★
+
+        } catch (error) {
+          console.error('[API Deep Research] Error during agent execution:', error);
+          agentError = error instanceof Error ? error : new Error(String(error));
+          try {
+            // エラー情報をストリームに書き込む
+            dataStreamWriter.writeData({ type: 'error', message: agentError.message });
+            console.log('[API Deep Research DEBUG] Wrote execution error to stream data.');
+          } catch (writeErrorError) {
+            console.error('[API Deep Research] Failed to write execution error to stream:', writeErrorError);
+          }
+        } finally {
+          // --- DB保存 --- (変更なし、fullCompletionText を使う)
+          const lastUserMessage = coreMessages[coreMessages.length - 1];
+          const userMessageToSave: Omit<DBMessage, 'userId'> | null = lastUserMessage?.role === 'user' ? {
+            id: randomUUID(),
+            chatId: chatId,
+            role: 'user',
+            content: typeof lastUserMessage.content === 'string' ? lastUserMessage.content : JSON.stringify(lastUserMessage.content),
+            createdAt: new Date(),
+          } : null;
+
+          const assistantMessageToSave: Omit<DBMessage, 'userId'> | null = !agentError && fullCompletionText ? {
+            id: randomUUID(), // assistant の ID はここで生成 (必要に応じて変更)
+            chatId: chatId,
+            role: 'assistant',
+            content: fullCompletionText,
+            // ★ アノテーションも保存する場合 (DBスキーマによる) ★
+            // annotations: needsClarification ? JSON.stringify([{ type: 'clarification' }]) : null,
+            createdAt: new Date(),
+          } : null;
+
+          const messagesToSave = [userMessageToSave, assistantMessageToSave].filter(Boolean) as Omit<DBMessage, 'userId'>[];
+
+          if (messagesToSave.length > 0) {
+            try {
+              console.log(`[API Deep Research] Saving ${messagesToSave.length} messages to DB...`);
+              // userId を付与して保存
+              await saveMessages({ messages: messagesToSave.map(m => ({ ...m, userId })) });
+              console.log('[API Deep Research] Successfully saved messages to DB.');
+            } catch (dbSaveError) {
+              console.error('[API Deep Research] Failed to save messages to DB:', dbSaveError);
+              // DB保存エラーはストリームに書き込めない場合があるため、ログのみ
+            }
+          }
+          // streamData を閉じる
+          streamData.close();
+          console.log('[API Deep Research DEBUG] Closed stream data.');
         }
+      },
+      // ★ streamData をレスポンスオブジェクトから削除 ★
+      // data: streamData,
+      onError: (error: unknown) => {
+        console.error('[API Deep Research] Error in createDataStreamResponse:', error);
+        // クライアントには汎用的なエラーメッセージを返す
+        return 'An error occurred while processing your request.';
+      },
+    });
 
-    } catch (agentError: unknown) {
-        console.error('[API] Error running Deep Research Agent:', agentError);
-        // getAgent が失敗した場合もここで捕捉される
-        const errorMessage = agentError instanceof Error ? agentError.message : String(agentError);
-        return NextResponse.json({ error: 'Error during Deep Research execution', details: errorMessage }, { status: 500 });
-    }
-    // ★★★ ここまで ★★★
+    // ★ ストリーミング応答を返す ★
+    return result;
 
   } catch (error) {
-    console.error('[API Deep Research TEST 4] Unexpected error:', error);
-    return NextResponse.json(
-          { error: 'Test 4 failed', details: error instanceof Error ? error.message : String(error) },
-      { status: 500 }
-    );
+    // ★ エラー応答も NextResponse.json を使用 ★
+    console.error('[API Deep Research] An unexpected error occurred in POST handler:', error);
+    // return new Response(JSON.stringify({ error: 'Internal Server Error' }), { status: 500 });
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: 'Internal Server Error', details: errorMessage }, { status: 500 });
   }
 }
 
