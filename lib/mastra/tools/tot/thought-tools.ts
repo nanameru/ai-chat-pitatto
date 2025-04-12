@@ -8,6 +8,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { Thought, EvaluatedThought } from "../../types/tot";
+import { openai } from "@ai-sdk/openai";
+import { Agent } from "@mastra/core/agent";
 
 /**
  * 思考生成ツール
@@ -74,24 +76,37 @@ JSONではなく、自然な文章形式で返してください。各洞察は�
     }
     
     try {
-      // 思考生成のモック実装
-      // 実際の実装では、LLMを使用して思考を生成します
-      // この部分は後でMastraのエージェントを使って実装します
-      console.log(`[ToT] 思考生成プロンプト: ${prompt.substring(0, 100)}...`);
+      // Create the thought generation agent
+      const thoughtAgent = new Agent({
+        name: `${stage.charAt(0).toUpperCase() + stage.slice(1)} Thought Generator`,
+        instructions: `あなたは複数の思考経路を提案する思考生成の専門家です。
+与えられたクエリやコンテキストに基づいて、多様で創造的な思考を生成してください。
+各思考は明確に区切り、指定された形式に従ってください。`,
+        model: openai("gpt-4o-mini"),
+      });
       
-      // モック思考を生成
-      const thoughts: Thought[] = [];
-      for (let i = 0; i < maxThoughts; i++) {
-        thoughts.push({
-          id: nanoid(),
-          content: `${thoughtType} ${i+1}: これはモックの思考内容です。実際の実装では、LLMが生成した思考が入ります。`,
-          parentId: undefined,
-          score: undefined,
-          confidence: undefined,
-          evidence: [],
-          metadata: { stage, index: i }
-        });
-      }
+      // Generate thoughts using the agent
+      console.log(`[ToT] 思考生成プロンプト: ${prompt.substring(0, 100)}...`);
+      const thoughtResult = await thoughtAgent.generate(prompt);
+      
+      // Parse the generated thoughts
+      const responseText = thoughtResult.text;
+      
+      // Simple parsing based on line breaks and numbers/separators
+      const thoughtBlocks = responseText.split(/\n\s*\n|(?=\d+[\.\)]\s*[A-Z])/g)
+        .filter(block => block.trim().length > 0)
+        .slice(0, maxThoughts);
+      
+      // Create thought objects
+      const thoughts: Thought[] = thoughtBlocks.map((content, index) => ({
+        id: nanoid(),
+        content: content.trim(),
+        parentId: undefined,
+        score: undefined,
+        confidence: undefined,
+        evidence: [],
+        metadata: { stage, index }
+      }));
       
       return {
         thoughts,
@@ -100,9 +115,9 @@ JSONではなく、自然な文章形式で返してください。各洞察は�
         prompt,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[ToT] 思考生成エラー:`, error);
-      throw new Error(`思考生成中にエラーが発生しました: ${error.message}`);
+      throw new Error(`思考生成中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 });
@@ -138,30 +153,64 @@ export const thoughtEvaluator = createTool({
     const criteria = evaluationCriteria || defaultCriteria[stage] || ["有用性", "正確性"];
     
     try {
-      // 思考評価のモック実装
-      // 実際の実装では、LLMを使用して思考を評価します
-      console.log(`[ToT] 評価基準: ${criteria.join(', ')}`);
+      // Create the evaluation agent
+      const evaluationAgent = new Agent({
+        name: "Thought Evaluator Agent",
+        instructions: `あなたは思考を評価する専門家です。与えられた思考を指定された評価基準に基づいて評価し、スコア付けしてください。
+各基準について0〜10の数値スコアを提供し、評価理由を説明してください。
+最終的に、すべての基準の平均値として総合スコアを計算してください。`,
+        model: openai("gpt-4o-mini"),
+      });
       
-      // モック評価を生成
-      const evaluatedThoughts: EvaluatedThought[] = thoughts.map((thought, index) => {
-        // モックスコアを生成（実際の実装ではLLMが評価）
+      // Evaluate each thought
+      const evaluatedThoughts: EvaluatedThought[] = [];
+      
+      for (const thought of thoughts) {
+        // Create prompt for evaluation
+        const evaluationPrompt = `以下の思考を評価してください：
+
+思考内容:
+"""
+${thought.content}
+"""
+
+評価基準:
+${criteria.map((criterion, index) => `${index + 1}. ${criterion}`).join('\n')}
+
+各基準について0〜10のスコアを付け、評価理由を簡潔に説明してください。
+最後に、すべての基準の平均値として総合スコアを計算してください。`;
+
+        // Get evaluation from the agent
+        const evaluationResult = await evaluationAgent.generate(evaluationPrompt);
+        const evaluationText = evaluationResult.text;
+        
+        // Parse the evaluation results
         const criteriaScores: { [key: string]: number } = {};
+        
+        // Extract scores for each criterion
         criteria.forEach(criterion => {
-          criteriaScores[criterion] = Math.random() * 10; // 0-10のランダムスコア
+          const regex = new RegExp(`${criterion}[：:]\\s*(\\d+(?:\\.\\d+)?)`, 'i');
+          const match = evaluationText.match(regex);
+          if (match && match[1]) {
+            criteriaScores[criterion] = parseFloat(match[1]);
+          } else {
+            criteriaScores[criterion] = 5; // Default score
+          }
         });
         
-        // 総合スコアを計算
+        // Calculate the total score
         const totalScore = Object.values(criteriaScores).reduce((sum, score) => sum + score, 0) / criteria.length;
         
-        return {
+        // Add evaluated thought
+        evaluatedThoughts.push({
           ...thought,
           score: totalScore,
           evaluationCriteria: criteriaScores,
-          reasoning: `これはモックの評価理由です。実際の実装では、LLMが各基準に基づいて詳細な評価理由を提供します。`
-        };
-      });
+          reasoning: evaluationText
+        });
+      }
       
-      // スコアでソート
+      // Sort by score
       const sortedThoughts = [...evaluatedThoughts].sort((a, b) => b.score - a.score);
       
       return {
@@ -171,9 +220,9 @@ export const thoughtEvaluator = createTool({
         stage,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[ToT] 思考評価エラー:`, error);
-      throw new Error(`思考評価中にエラーが発生しました: ${error.message}`);
+      throw new Error(`思考評価中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 });
@@ -205,20 +254,43 @@ export const pathSelector = createTool({
       let selectedPath;
       let reasoningForSelection;
       
-      // 選択戦略に基づいて経路を選択
       if (selectionStrategy === "best") {
         // 最高スコアの思考を選択
         selectedPath = evaluatedThoughts[0]; // 既にスコア順にソート済みと仮定
         reasoningForSelection = `最高スコア（${selectedPath.score.toFixed(2)}）の思考を選択しました。`;
       } 
       else if (selectionStrategy === "hybrid") {
-        // 上位2つの思考を組み合わせる（モック実装）
+        // Create hybrid thought using an AI agent
+        const pathSelectionAgent = new Agent({
+          name: "Path Selection Agent",
+          instructions: `あなたは思考経路を統合する専門家です。複数の思考の強みを組み合わせて、新しい統合的な思考を生成してください。`,
+          model: openai("gpt-4o-mini"),
+        });
+        
         if (evaluatedThoughts.length >= 2) {
           const top1 = evaluatedThoughts[0];
           const top2 = evaluatedThoughts[1];
+          
+          const hybridPrompt = `以下の2つの思考を組み合わせて、新しい統合的な思考を生成してください：
+
+思考1 (スコア: ${top1.score.toFixed(2)}):
+"""
+${top1.content}
+"""
+
+思考2 (スコア: ${top2.score.toFixed(2)}):
+"""
+${top2.content}
+"""
+
+これらの思考の強みを統合した新しい思考を生成してください。`;
+
+          const hybridResult = await pathSelectionAgent.generate(hybridPrompt);
+          const hybridContent = hybridResult.text;
+          
           selectedPath = {
             id: nanoid(),
-            content: `【ハイブリッド】\n${top1.content}\n\n【組み合わせ要素】\n${top2.content}`,
+            content: hybridContent,
             score: (top1.score + top2.score) / 2,
             evaluationCriteria: top1.evaluationCriteria,
             reasoning: `上位2つの思考の強みを組み合わせました。`
@@ -230,11 +302,32 @@ export const pathSelector = createTool({
         }
       }
       else if (selectionStrategy === "diverse") {
-        // 多様性を考慮した選択（モック実装）
-        // 実際の実装では、思考の多様性を考慮して選択します
-        const randomIndex = Math.floor(Math.random() * Math.min(3, evaluatedThoughts.length));
-        selectedPath = evaluatedThoughts[randomIndex];
-        reasoningForSelection = `多様性を考慮して、上位3つの中からランダムに選択しました。`;
+        // Create diverse selection using an AI agent
+        const pathSelectionAgent = new Agent({
+          name: "Path Selection Agent",
+          instructions: `あなたは思考経路を選択する専門家です。多様性を考慮して、高スコアだけでなくユニークな視点も持つ思考を選択してください。`,
+          model: openai("gpt-4o-mini"),
+        });
+        
+        // Create prompt for diverse selection
+        let selectionPrompt = `以下の思考から、多様性を考慮して最適な思考を1つ選択してください：\n\n`;
+        
+        evaluatedThoughts.slice(0, Math.min(3, evaluatedThoughts.length)).forEach((thought, index) => {
+          selectionPrompt += `思考 ${index + 1} (スコア: ${thought.score.toFixed(2)}):\n"""${thought.content}"""\n\n`;
+        });
+        
+        selectionPrompt += `上記の思考から、スコアだけでなく多様性や独自の視点も考慮して1つを選択し、その理由を説明してください。
+回答は「思考X」のように選択する思考の番号を明示してください。`;
+
+        const selectionResult = await pathSelectionAgent.generate(selectionPrompt);
+        const selectionText = selectionResult.text;
+        
+        // Extract selected thought number
+        const match = selectionText.match(/思考\s*(\d+)/i);
+        const selectedIndex = match && match[1] ? Math.min(parseInt(match[1]) - 1, 2) : 0;
+        
+        selectedPath = evaluatedThoughts[selectedIndex];
+        reasoningForSelection = `多様性を考慮して、上位3つの中から思考${selectedIndex + 1}を選択しました。理由: ${selectionText.replace(/^思考\s*\d+[：:]\s*/i, '')}`;
       }
       
       return {
@@ -245,9 +338,9 @@ export const pathSelector = createTool({
         selectionStrategy,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[ToT] 経路選択エラー:`, error);
-      throw new Error(`経路選択中にエラーが発生しました: ${error.message}`);
+      throw new Error(`経路選択中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 });

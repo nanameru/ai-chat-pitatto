@@ -7,6 +7,11 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { ResearchPlan, ResearchQuery } from "../../types/tot";
+// Add imports for AI Agent
+import { openai } from "@ai-sdk/openai";
+import { Agent } from "@mastra/core/agent";
+// Fix the import path
+import { searchTool as webSearchTool } from "../search-tool";
 
 /**
  * リサーチ計画生成ツール
@@ -24,70 +29,111 @@ export const researchPlanGenerator = createTool({
     query: z.string().describe("元のクエリ"),
     maxSubtopics: z.number().min(1).max(10).default(5).describe("生成するサブトピックの最大数"),
     maxQueries: z.number().min(1).max(20).default(10).describe("生成する検索クエリの最大数"),
+    selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
   }),
   description: "選択された思考経路からリサーチ計画を生成します",
-  execute: async ({ context: { selectedThought, query, maxSubtopics, maxQueries } }) => {
+  execute: async ({ context: { selectedThought, query, maxSubtopics, maxQueries, selectedModelId } }) => {
     console.log(`[ToT] リサーチ計画生成: クエリ=${query.substring(0, 50)}...`);
     
     try {
-      // リサーチ計画生成のモック実装
-      // 実際の実装では、LLMを使用してリサーチ計画を生成します
+      // Determine the model to use
+      const modelIdToUse = selectedModelId || "gpt-4o-mini"; // Default to gpt-4o-mini if not provided
       
-      // モックのサブトピックを生成
-      const subtopics = [
-        "歴史的背景と発展",
-        "主要な技術的特徴",
-        "実用的応用例",
-        "将来の展望と課題",
-        "関連する法的・倫理的問題"
-      ].slice(0, maxSubtopics);
-      
-      // モックの検索クエリを生成
-      const queries: ResearchQuery[] = [
+      // Create the planning agent
+      const planningAgent = new Agent({
+        name: "Research Plan Generator Agent",
+        instructions: `あなたはリサーチ計画を作成する専門家です。ユーザーの選択した思考経路と元のクエリに基づいて、効果的なリサーチ計画を作成してください。
+        1. サブトピック: ユーザーのクエリを詳しく調査するための具体的なサブトピックを生成してください。（最大${maxSubtopics}個）
+        2. 検索クエリ: それぞれのサブトピックと全体の調査に効果的な検索クエリを生成してください。（最大${maxQueries}個）
+        3. クエリ属性: 各検索クエリに目的(purpose)、種類(queryType: "general", "specific", "technical")、優先度(priority)を設定してください。
+        4. アプローチ: 全体的な調査アプローチを1文で簡潔に説明してください。
+        
+        結果は以下のJSON形式で返してください:
         {
-          query: query,
-          purpose: "基本情報収集",
-          queryType: "general",
-          priority: 1
-        }
-      ];
-      
-      // サブトピックごとにクエリを追加
-      subtopics.forEach((subtopic, index) => {
-        queries.push({
-          query: `${query} ${subtopic}`,
-          purpose: `サブトピック「${subtopic}」の調査`,
-          queryType: "specific",
-          priority: index + 2
-        });
+          "approach": "簡潔な調査アプローチの説明",
+          "subtopics": ["サブトピック1", "サブトピック2", ...],
+          "queries": [
+            {
+              "query": "検索クエリ1",
+              "purpose": "このクエリの目的",
+              "queryType": "general/specific/technical",
+              "priority": 1
+            },
+            ...
+          ]
+        }`,
+        model: openai(modelIdToUse),
       });
       
-      // 技術的詳細のクエリを追加
-      queries.push({
-        query: `${query} technical details documentation`,
-        purpose: "技術的詳細の収集",
-        queryType: "technical",
-        priority: subtopics.length + 2
-      });
+      // Generate research plan using the agent
+      const prompt = `元のクエリ: "${query}"
+選択された思考経路:
+${selectedThought.content}
+
+以上の情報に基づいて、効果的なリサーチ計画を作成してください。サブトピック数は最大${maxSubtopics}個、検索クエリ数は最大${maxQueries}個としてください。`;
+
+      const planResult = await planningAgent.generate(prompt);
+      let researchPlan: ResearchPlan;
       
-      // 最新情報のクエリを追加
-      queries.push({
-        query: `${query} latest developments news`,
-        purpose: "最新の動向調査",
-        queryType: "specific",
-        priority: subtopics.length + 3
-      });
-      
-      // クエリ数を制限
-      const limitedQueries = queries.slice(0, maxQueries);
-      
-      // リサーチ計画を構築
-      const researchPlan: ResearchPlan = {
-        approach: selectedThought.content.split('\n')[0] || "総合的調査アプローチ",
-        description: selectedThought.content,
-        subtopics,
-        queries: limitedQueries
-      };
+      try {
+        // Try to parse the JSON response
+        const parsedPlan = JSON.parse(planResult.text);
+        
+        // Validate and ensure all required fields are present
+        researchPlan = {
+          approach: parsedPlan.approach || selectedThought.content.split('\n')[0] || "総合的調査アプローチ",
+          description: selectedThought.content,
+          subtopics: Array.isArray(parsedPlan.subtopics) ? parsedPlan.subtopics.slice(0, maxSubtopics) : [],
+          queries: Array.isArray(parsedPlan.queries) ? 
+            parsedPlan.queries
+              .slice(0, maxQueries)
+              .map((q: any) => {
+                // queryTypeを正しい型に制限する
+                let typedQueryType: "general" | "specific" | "technical" = "general";
+                if (q.queryType === "general" || q.queryType === "specific" || q.queryType === "technical") {
+                  typedQueryType = q.queryType;
+                }
+                
+                const result: ResearchQuery = {
+                  query: q.query || query,
+                  purpose: q.purpose || "情報収集",
+                  queryType: typedQueryType,
+                  priority: typeof q.priority === 'number' ? q.priority : 1
+                };
+                return result;
+              }) as ResearchQuery[] : []
+        };
+      } catch (parseError) {
+        console.error(`[ToT] リサーチ計画JSON解析エラー:`, parseError);
+        
+        // Fallback to a minimal default plan if parsing fails
+        // This ensures the tool doesn't fail completely
+        researchPlan = {
+          approach: selectedThought.content.split('\n')[0] || "総合的調査アプローチ",
+          description: selectedThought.content,
+          subtopics: [`${query}の基本概念`, `${query}の実用例`, `${query}の最新動向`].slice(0, maxSubtopics),
+          queries: [
+            {
+              query: query,
+              purpose: "基本情報収集",
+              queryType: "general" as const,
+              priority: 1
+            },
+            {
+              query: `${query} 実用例`,
+              purpose: "実用例の調査",
+              queryType: "specific" as const,
+              priority: 2
+            },
+            {
+              query: `${query} 最新動向`,
+              purpose: "最新情報の収集",
+              queryType: "specific" as const,
+              priority: 3
+            }
+          ].slice(0, maxQueries)
+        };
+      }
       
       return {
         researchPlan,
@@ -123,7 +169,7 @@ export const queryOptimizer = createTool({
     
     try {
       // ツールごとの最適化ルールを定義
-      const optimizationRules: { [key: string]: (query: string, queryType: string) => string } = {
+      const optimizationRules: { [key: string]: (query: string, queryType: ResearchQuery["queryType"]) => string } = {
         "web_search": (query, queryType) => {
           // Web検索向けの最適化
           if (queryType === "general") {
@@ -146,7 +192,7 @@ export const queryOptimizer = createTool({
       };
       
       // デフォルトの最適化ルール
-      const defaultOptimizer = (query: string, queryType: string) => query;
+      const defaultOptimizer = (query: string, queryType: ResearchQuery["queryType"]) => query;
       
       // 対象ツールの最適化ルールを取得
       const optimizer = optimizationRules[targetTool] || defaultOptimizer;
@@ -196,36 +242,76 @@ export const parallelSearchExecutor = createTool({
     console.log(`[ToT] 並列検索実行: クエリ数=${queries.length}, 最大並列数=${maxParallel}`);
     
     try {
-      // 並列検索実行のモック実装
-      // 実際の実装では、指定された検索ツールを並列実行します
-      
-      // モック検索結果を生成
-      const searchResults = queries.map(queryItem => {
-        return {
-          query: queryItem.query,
-          purpose: queryItem.purpose,
-          results: [
-            {
-              title: `${queryItem.query}に関する情報1`,
-              url: `https://example.com/result1?q=${encodeURIComponent(queryItem.query)}`,
-              snippet: `これは${queryItem.query}に関するモック検索結果1です。実際の実装では、検索ツールからの実際の結果が返されます。`,
-              date: new Date().toISOString().split('T')[0]
-            },
-            {
-              title: `${queryItem.query}に関する情報2`,
-              url: `https://example.com/result2?q=${encodeURIComponent(queryItem.query)}`,
-              snippet: `これは${queryItem.query}に関するモック検索結果2です。実際の実装では、検索ツールからの実際の結果が返されます。`,
-              date: new Date().toISOString().split('T')[0]
-            }
-          ],
-          timestamp: new Date().toISOString()
-        };
+      // クエリを優先度順にソート
+      const sortedQueries = [...queries].sort((a, b) => {
+        const aPriority = a.priority ?? Number.MAX_SAFE_INTEGER;
+        const bPriority = b.priority ?? Number.MAX_SAFE_INTEGER;
+        return aPriority - bPriority;
       });
+      
+      // バッチサイズを決定（最大並列数）
+      const batchSize = Math.min(maxParallel, sortedQueries.length);
+      
+      // 検索結果のコンテナ
+      const searchResults = [];
+      
+      // バッチ処理で並列検索を実行
+      for (let i = 0; i < sortedQueries.length; i += batchSize) {
+        const batch = sortedQueries.slice(i, i + batchSize);
+        
+        // 各バッチのクエリを並列実行
+        const batchPromises = batch.map(async (queryItem) => {
+          try {
+            // 検索を実行
+            // webSearchTool が未定義の場合はエラーをスローする
+            if (!webSearchTool || typeof webSearchTool.execute !== 'function') {
+              throw new Error("検索ツールが見つかりません");
+            }
+            
+            // searchTool を使って検索を実行
+            const searchResult = await webSearchTool.execute({
+              context: { query: queryItem.query }
+            });
+            
+            // 型アサーションを使用して結果の型を明示
+            const result = searchResult as { results: Array<{ title: string; url: string; snippet: string; date?: string }> };
+            
+            // 結果を整形
+            return {
+              query: queryItem.query,
+              purpose: queryItem.purpose,
+              results: result.results,
+              timestamp: new Date().toISOString()
+            };
+          } catch (error) {
+            console.error(`[ToT] クエリ実行エラー (${queryItem.query}):`, error);
+            
+            // エラー時はフォールバックの結果を返す
+            return {
+              query: queryItem.query,
+              purpose: queryItem.purpose,
+              results: [
+                {
+                  title: `${queryItem.query}に関する情報（検索エラー）`,
+                  url: `https://example.com/error?q=${encodeURIComponent(queryItem.query)}`,
+                  snippet: `検索中にエラーが発生しました。後でもう一度試してください。`,
+                  date: new Date().toISOString().split('T')[0]
+                }
+              ],
+              timestamp: new Date().toISOString()
+            };
+          }
+        });
+        
+        // バッチの実行を待機して結果を収集
+        const batchResults = await Promise.all(batchPromises);
+        searchResults.push(...batchResults);
+      }
       
       return {
         searchResults,
         totalQueries: queries.length,
-        executedQueries: queries.length,
+        executedQueries: searchResults.length,
         searchTool,
         timestamp: new Date().toISOString()
       };

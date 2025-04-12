@@ -7,6 +7,8 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { FinalReport, ReportSection, ReportSource, IntegratedInsights } from "../../types/tot";
+import { openai } from "@ai-sdk/openai";
+import { Agent } from "@mastra/core/agent";
 
 /**
  * レポート生成ツール
@@ -49,100 +51,68 @@ export const reportGenerator = createTool({
     console.log(`[ToT] レポート生成: クエリ=${originalQuery.substring(0, 50)}..., フォーマット=${formatType}`);
     
     try {
-      // レポート生成のモック実装
-      // 実際の実装では、LLMを使用してレポートを生成します
+      // Create the report generation agent
+      const reportAgent = new Agent({
+        name: "Report Generator Agent",
+        instructions: `あなたはプロフェッショナルなレポート生成の専門家です。与えられた洞察と情報源に基づいて、包括的で構造化されたレポートを作成してください。
+        レポートは以下の構造に従ってください：
+        1. タイトル：クエリに基づいた明確で具体的なタイトル
+        2. 要約：主要な発見と結論を簡潔にまとめた要約
+        3. セクション：各セクションは適切な見出しを持ち、関連する洞察を論理的に整理して含む
+        4. 情報源：使用した情報源の詳細リスト
+        
+        レポートの内容は事実に基づき、客観的であり、洞察の信頼性を反映したものにしてください。`,
+        model: openai("gpt-4o-mini"),
+      });
       
-      // レポートタイトルを生成
+      // Prepare input data
+      const insightsText = JSON.stringify(integratedInsights, null, 2);
+      const sourcesText = evaluatedSources 
+        ? JSON.stringify(evaluatedSources, null, 2) 
+        : "情報源は提供されていません。";
+      
+      // Generate report content
+      const prompt = `元のクエリ: "${originalQuery}"
+      
+統合された洞察:
+${insightsText}
+
+評価された情報源:
+${sourcesText}
+
+以上の情報を元に、包括的な構造化レポートを作成してください。`;
+
+      const reportResult = await reportAgent.generate(prompt);
+      
+      // Process the report content
       const title = `${originalQuery}に関する包括的分析`;
+      const summary = reportResult.text.substring(0, 300);
       
-      // 要約を生成
-      const summary = `このレポートでは、「${originalQuery}」に関する包括的な分析を提供します。主要な洞察、現在のトレンド、および将来の展望について詳細に検討しています。分析の結果、効率性とユーザー体験のバランス、業界標準化の進行、データ駆動型意思決定の重要性などの主要なポイントが明らかになりました。`;
-      
-      // セクションを生成
+      // Create sections from the report content
       const sections: ReportSection[] = [];
       
-      // 概要セクション
+      // Add overview section
       sections.push({
         title: "概要",
         content: summary
       });
       
-      // 主要な発見セクション
-      const keyFindingsSection: ReportSection = {
-        title: "主要な発見",
-        content: "",
-        subsections: integratedInsights.keyInsights.map(insight => ({
-          title: insight.title,
-          content: `${insight.description}\n\n**裏付けとなる事実:**\n${insight.supportingFacts.map(fact => `- ${fact}`).join('\n')}`
-        }))
-      };
-      sections.push(keyFindingsSection);
-      
-      // 詳細分析セクション
+      // Add main content section
       sections.push({
         title: "詳細分析",
-        content: "以下では、収集したデータに基づいて詳細な分析を提供します。",
-        subsections: [
-          {
-            title: "現状と背景",
-            content: "このセクションでは、現在の状況と歴史的背景について詳しく説明します。（実際の実装では、LLMが生成した詳細な内容が入ります）"
-          },
-          {
-            title: "主要なトレンドと動向",
-            content: "このセクションでは、業界の主要なトレンドと動向について分析します。（実際の実装では、LLMが生成した詳細な内容が入ります）"
-          },
-          {
-            title: "課題と機会",
-            content: "このセクションでは、現在の課題と将来の機会について検討します。（実際の実装では、LLMが生成した詳細な内容が入ります）"
-          }
-        ]
+        content: reportResult.text
       });
       
-      // 結論と推奨事項セクション
-      const conclusionsSection: ReportSection = {
-        title: "結論と推奨事項",
-        content: "分析に基づいて、以下の結論と推奨事項を提示します。",
-        subsections: integratedInsights.conclusions.map(conclusion => ({
-          title: conclusion.statement,
-          content: `**確信度:** ${conclusion.confidenceLevel === 'high' ? '高' : conclusion.confidenceLevel === 'medium' ? '中' : '低'}\n\n**裏付けとなる証拠:**\n${conclusion.supportingEvidence.map(evidence => `- ${evidence}`).join('\n')}\n\n**制限事項:**\n${conclusion.limitations.map(limitation => `- ${limitation}`).join('\n')}`
-        }))
-      };
-      sections.push(conclusionsSection);
-      
-      // 情報ソースセクション
+      // Add sources section
       const sources: ReportSource[] = evaluatedSources ? 
         evaluatedSources.map(source => ({
           title: source.title,
           url: source.url,
           accessedDate: source.date || new Date().toISOString().split('T')[0],
           reliability: source.reliability || 'medium'
-        })) : 
-        [
-          {
-            title: "モック情報ソース1",
-            url: "https://example.com/source1",
-            accessedDate: new Date().toISOString().split('T')[0],
-            reliability: 'high'
-          },
-          {
-            title: "モック情報ソース2",
-            url: "https://example.com/source2",
-            accessedDate: new Date().toISOString().split('T')[0],
-            reliability: 'medium'
-          }
-        ];
+        })) : [];
       
-      // 情報ソースセクションを追加
-      sections.push({
-        title: "情報ソース",
-        content: "このレポートは以下の情報ソースに基づいています。",
-        subsections: sources.map(source => ({
-          title: source.title,
-          content: `**URL:** ${source.url}\n**アクセス日:** ${source.accessedDate}\n**信頼性:** ${source.reliability === 'high' ? '高' : source.reliability === 'medium' ? '中' : '低'}`
-        }))
-      });
-      
-      // 最終レポートを構築
+      // Create the final report
       const finalReport: FinalReport = {
         title,
         summary,
@@ -151,9 +121,8 @@ export const reportGenerator = createTool({
         generatedAt: new Date().toISOString()
       };
       
-      // フォーマットに応じたレポートテキストを生成
+      // Format the report
       let reportText = "";
-      
       if (formatType === "markdown") {
         reportText = generateMarkdownReport(finalReport);
       } else if (formatType === "html") {
@@ -169,9 +138,9 @@ export const reportGenerator = createTool({
         originalQuery,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[ToT] レポート生成エラー:`, error);
-      throw new Error(`レポート生成中にエラーが発生しました: ${error.message}`);
+      throw new Error(`レポート生成中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 });
@@ -302,10 +271,39 @@ export const reportOptimizer = createTool({
     console.log(`[ToT] レポート最適化: フォーマット=${formatType}, 目標=${optimizationGoals.join(', ')}`);
     
     try {
-      // レポート最適化のモック実装
-      // 実際の実装では、LLMを使用してレポートを最適化します
+      // Create optimization agent
+      const optimizationAgent = new Agent({
+        name: "Report Optimization Agent",
+        instructions: `あなたはプロフェッショナルな文書編集者であり、レポートの最適化専門家です。与えられたレポートを指定された最適化目標に従って改善してください。
+        
+        以下の最適化目標を考慮してください：
+        - readability（読みやすさ）: 専門用語の説明追加、長文の分割、アクティブボイスの使用
+        - conciseness（簡潔さ）: 冗長な表現の削除、重複情報の統合、不要な修飾語の削除
+        - visual_structure（視覚構造）: 見出しレベルの最適化、箇条書きリストの追加、段落の調整
+        - citation_quality（引用品質）: 引用形式の統一、主張へのソース追加、信頼性の高いソースの優先`,
+        model: openai("gpt-4o-mini"),
+      });
       
-      // 最適化の変更点を追跡
+      // Generate optimization instructions
+      let optimizationInstructions = "レポートを最適化してください。";
+      if (optimizationGoals.includes("all")) {
+        optimizationInstructions += " すべての側面（読みやすさ、簡潔さ、視覚構造、引用品質）を最適化してください。";
+      } else {
+        optimizationInstructions += ` 以下の側面を最適化してください: ${optimizationGoals.join(', ')}。`;
+      }
+      
+      // Generate optimized report
+      const prompt = `${optimizationInstructions}
+      
+元のレポート:
+${reportText}
+
+最適化後のレポートを提供してください。`;
+
+      const optimizationResult = await optimizationAgent.generate(prompt);
+      const optimizedReportText = optimizationResult.text;
+      
+      // Track optimization changes
       const optimizationChanges: { [key: string]: string[] } = {
         readability: [],
         conciseness: [],
@@ -313,48 +311,22 @@ export const reportOptimizer = createTool({
         citation_quality: []
       };
       
-      // モックの最適化変更点
+      // Add default changes for each requested optimization goal
       if (optimizationGoals.includes("all") || optimizationGoals.includes("readability")) {
-        optimizationChanges.readability = [
-          "専門用語に説明を追加",
-          "長い文を短く分割",
-          "アクティブボイスを使用",
-          "読みやすさスコアを向上"
-        ];
+        optimizationChanges.readability = ["専門用語の説明を追加", "長文を短く分割", "アクティブボイスを使用"];
       }
       
       if (optimizationGoals.includes("all") || optimizationGoals.includes("conciseness")) {
-        optimizationChanges.conciseness = [
-          "冗長な表現を削除",
-          "重複する情報を統合",
-          "不要な修飾語を削除",
-          "簡潔な表現に置き換え"
-        ];
+        optimizationChanges.conciseness = ["冗長な表現を削除", "重複情報を統合", "不要な修飾語を削除"];
       }
       
       if (optimizationGoals.includes("all") || optimizationGoals.includes("visual_structure")) {
-        optimizationChanges.visual_structure = [
-          "見出しレベルを最適化",
-          "箇条書きリストを追加",
-          "段落の長さを調整",
-          "重要ポイントを強調"
-        ];
+        optimizationChanges.visual_structure = ["見出しレベルを最適化", "箇条書きリストを追加", "段落の長さを調整"];
       }
       
       if (optimizationGoals.includes("all") || optimizationGoals.includes("citation_quality")) {
-        optimizationChanges.citation_quality = [
-          "引用形式を統一",
-          "すべての主張にソースを追加",
-          "信頼性の高いソースを優先",
-          "引用の詳細を充実"
-        ];
+        optimizationChanges.citation_quality = ["引用形式を統一", "主張にソースを追加", "信頼性の高いソースを優先"];
       }
-      
-      // モックの最適化されたレポート
-      // 実際の実装では、LLMが最適化したレポートを返します
-      let optimizedReportText = reportText;
-      
-      // 最適化のモック実装（実際には何も変更しない）
       
       return {
         originalReportText: reportText,
@@ -364,9 +336,9 @@ export const reportOptimizer = createTool({
         optimizationGoals,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) {
       console.error(`[ToT] レポート最適化エラー:`, error);
-      throw new Error(`レポート最適化中にエラーが発生しました: ${error.message}`);
+      throw new Error(`レポート最適化中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 });
