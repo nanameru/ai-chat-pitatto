@@ -7,6 +7,7 @@ import { useRouter, usePathname, useParams } from 'next/navigation';
 import { memo, useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import useSWR from 'swr';
+import { useArtifact } from '@/hooks/use-artifact';
 
 import {
   CheckCircleFillIcon,
@@ -75,13 +76,24 @@ const PureChatItem = ({
   
   const router = useRouter();
   
-  // シンプルなハンドラーに戻す - 常にrouter.pushを使用
+  // Artifactの状態を取得
+  const { setArtifact } = useArtifact();
+  
+  // ハンドラーを拡張してArtifactの状態を初期化する処理を追加
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault(); // デフォルトのLinkの動作を防止
     console.log(`[PureChatItem] チャットアイテムがクリックされました: ${chat.id}`);
     
     // モバイルメニューを閉じる
     setOpenMobile(false);
+    
+    // Artifactの状態を初期化し、表示状態に設定
+    console.log(`[PureChatItem] Artifactの状態を初期化します`);
+    setArtifact(current => ({
+      ...current,
+      isVisible: true, // 明示的に表示状態にする
+      status: 'idle'
+    }));
     
     // 強制的にルーターを使用してナビゲーション - タイムスタンプを追加して強制的に再レンダリング
     const timestamp = Date.now();

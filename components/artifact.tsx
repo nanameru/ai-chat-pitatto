@@ -109,16 +109,65 @@ function PureArtifact({
   selectedModelId: string;
 }) {
   const { artifact, setArtifact, metadata, setMetadata } = useArtifact();
+  
+  // チャットIDが変更された時に明示的にArtifactの状態を初期化
+  useEffect(() => {
+    console.log(`[Artifact] チャットIDが読み込まれました: ${chatId}`);
+    
+    // チャットIDが有効な場合のみ処理
+    if (chatId && chatId !== 'new') {
+      // データが読み込まれるまで少し待つ
+      setTimeout(() => {
+        console.log(`[Artifact] チャットID ${chatId} のArtifact状態を確認します:`, {
+          isVisible: artifact.isVisible,
+          documentId: artifact.documentId,
+          kind: artifact.kind
+        });
+        
+        // documentIdが存在する場合は表示状態にする
+        if (artifact.documentId && artifact.documentId !== 'init' && !artifact.isVisible) {
+          console.log(`[Artifact] documentIdが存在しますが表示されていないため、表示状態に設定します`);
+          setArtifact(current => ({
+            ...current,
+            isVisible: true,
+            status: 'idle'
+          }));
+        }
+      }, 1000); // 1秒待つ
+    }
+  }, [chatId, artifact.documentId, artifact.isVisible, setArtifact]);
 
   const {
     data: documents,
     isLoading: isDocumentsFetching,
     mutate: mutateDocuments,
   } = useSWR<Array<Document>>(
-    artifact.documentId !== 'init' && artifact.status !== 'streaming'
+    artifact.documentId !== 'init' 
       ? `/api/document?id=${artifact.documentId}`
       : null,
     fetcher,
+    {
+      // ドキュメント取得のリトライ設定
+      errorRetryCount: 3,
+      dedupingInterval: 2000,
+      revalidateOnFocus: true,
+      onSuccess: (data) => {
+        console.log('[Artifact] Document fetched successfully:', data);
+        
+        // ドキュメントが取得できた場合は表示状態にする
+        if (data && data.length > 0) {
+          console.log('[Artifact] ドキュメントが取得できたため、表示状態に設定します');
+          setArtifact(current => ({
+            ...current,
+            isVisible: true,
+            status: 'idle'
+          }));
+        }
+      },
+      onError: (error) => {
+        console.error('[Artifact] Error fetching document:', error);
+      }
+    }
   );
 
   const [mode, setMode] = useState<'edit' | 'diff'>('edit');
@@ -132,12 +181,22 @@ function PureArtifact({
       const mostRecentDocument = documents.at(-1);
 
       if (mostRecentDocument) {
+        console.log('[Artifact] Setting document and content:', mostRecentDocument);
         setDocument(mostRecentDocument);
         setCurrentVersionIndex(documents.length - 1);
-        setArtifact((currentArtifact) => ({
-          ...currentArtifact,
-          content: mostRecentDocument.content ?? '',
-        }));
+        
+        // コンテンツが空でない場合のみ設定する
+        const content = mostRecentDocument.content ?? '';
+        if (content.trim() !== '') {
+          setArtifact((currentArtifact) => ({
+            ...currentArtifact,
+            content: content,
+            isVisible: true, // コンテンツがある場合は必ず表示する
+            status: 'idle' as const,
+          }));
+        } else {
+          console.warn('[Artifact] Document content is empty');
+        }
       }
     }
   }, [documents, setArtifact]);
@@ -277,6 +336,17 @@ function PureArtifact({
     }
   }, [artifact.documentId, artifactDefinition, setMetadata]);
 
+  // Artifactの表示状態をログに出力
+  useEffect(() => {
+    console.log(`[Artifact] 表示状態が変更されました: isVisible=${artifact.isVisible}, chatId=${chatId}`);
+    
+    // 表示状態が変更された場合、ドキュメントを再取得
+    if (artifact.isVisible && artifact.documentId && artifact.documentId !== 'init') {
+      // ドキュメントを再取得
+      mutateDocuments();
+    }
+  }, [artifact.isVisible, artifact.documentId, chatId, mutateDocuments]);
+  
   return (
     <AnimatePresence>
       {artifact.isVisible && (
@@ -471,25 +541,93 @@ function PureArtifact({
             </div>
 
             <div className="dark:bg-muted bg-background h-full overflow-y-scroll !max-w-full items-center">
-              <artifactDefinition.content
-                title={artifact.title}
-                content={
-                  isCurrentVersion
-                    ? artifact.content
-                    : getDocumentContentById(currentVersionIndex)
-                }
-                mode={mode}
-                status={artifact.status}
-                currentVersionIndex={currentVersionIndex}
-                suggestions={[]}
-                onSaveContent={saveContent}
-                isInline={false}
-                isCurrentVersion={isCurrentVersion}
-                getDocumentContentById={getDocumentContentById}
-                isLoading={isDocumentsFetching && !artifact.content}
-                metadata={metadata}
-                setMetadata={setMetadata}
-              />
+              {/* デバッグ情報をコンソールに出力 */}
+              <>{(() => {
+                console.log('[Artifact] Rendering content:', {
+                  artifactDefinition,
+                  title: artifact.title,
+                  content: isCurrentVersion ? artifact.content : getDocumentContentById(currentVersionIndex),
+                  mode,
+                  status: artifact.status,
+                  documents,
+                  document
+                });
+                return null;
+              })()}</>
+              {artifactDefinition ? (
+                <>
+                  <artifactDefinition.content
+                    title={artifact.title}
+                    content={
+                      isCurrentVersion
+                        ? artifact.content
+                        : getDocumentContentById(currentVersionIndex)
+                    }
+                    mode={mode}
+                    status={artifact.status}
+                    currentVersionIndex={currentVersionIndex}
+                    suggestions={[]}
+                    onSaveContent={saveContent}
+                    isInline={false}
+                    isCurrentVersion={isCurrentVersion}
+                    getDocumentContentById={getDocumentContentById}
+                    isLoading={isDocumentsFetching && !artifact.content}
+                    metadata={metadata}
+                    setMetadata={setMetadata}
+                  />
+                </>
+              ) : (
+                <div className="p-4 border border-red-500 m-4">
+                  <h3 className="text-red-500">Artifact Definition Not Found</h3>
+                  <pre className="bg-gray-100 p-2 mt-2 text-xs overflow-auto">
+                    {JSON.stringify(artifact, null, 2)}
+                  </pre>
+                </div>
+              )}
+              
+              {/* コンテンツが空の場合のフォールバック表示 */}
+              {artifactDefinition && (!artifact.content || artifact.content.trim() === '') && (
+                <div className="p-4 border border-yellow-500 m-4">
+                  <h3 className="text-yellow-500">Content is Empty</h3>
+                  <p className="mt-2">コンテンツが空です。データが正しく取得されていない可能性があります。</p>
+                  <p className="mt-2">チャットID: {chatId}</p>
+                  <pre className="bg-gray-100 p-2 mt-2 text-xs overflow-auto">
+                    {JSON.stringify({
+                      title: artifact.title,
+                      kind: artifact.kind,
+                      documentId: artifact.documentId,
+                      status: artifact.status,
+                      isVisible: artifact.isVisible,
+                      chatId: chatId,
+                      documentsLoaded: documents ? documents.length : 0
+                    }, null, 2)}
+                  </pre>
+                  <div className="flex flex-col gap-2 mt-2">
+                    <button 
+                      className="px-3 py-1 bg-blue-500 text-white rounded hover:bg-blue-600"
+                      onClick={() => {
+                        console.log('[Artifact] 強制的に表示状態を設定します');
+                        setArtifact(current => ({
+                          ...current,
+                          isVisible: true
+                        }));
+                      }}
+                    >
+                      表示状態を強制的に設定
+                    </button>
+                    
+                    <button 
+                      className="px-3 py-1 bg-green-500 text-white rounded hover:bg-green-600"
+                      onClick={() => {
+                        console.log('[Artifact] ドキュメントを再取得します');
+                        mutateDocuments();
+                      }}
+                    >
+                      ドキュメントを再取得
+                    </button>
+                  </div>
+                </div>
+              )}
 
               <AnimatePresence>
                 {isCurrentVersion && (
@@ -523,6 +661,11 @@ function PureArtifact({
 }
 
 export const Artifact = memo(PureArtifact, (prevProps, nextProps) => {
+  // チャットIDが変更された場合は必ず再レンダリング
+  if (prevProps.chatId !== nextProps.chatId) {
+    console.log('[Artifact] チャットIDが変更されたため再レンダリングします');
+    return false;
+  }
   if (prevProps.isLoading !== nextProps.isLoading) return false;
   if (!equal(prevProps.votes, nextProps.votes)) return false;
   if (prevProps.input !== nextProps.input) return false;
