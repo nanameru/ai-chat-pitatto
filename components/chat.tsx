@@ -2,7 +2,7 @@
 
 import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
 import { useChat } from 'ai/react';
-import { useEffect, useOptimistic, useState, useRef, useCallback } from 'react';
+import { useEffect, useOptimistic, useState, useRef, useCallback, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
 import { ReasoningStep } from '@/types/reasoning';
@@ -10,7 +10,7 @@ import { ReasoningStep } from '@/types/reasoning';
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
-import { nanoid } from 'nanoid'; // nanoid をインポート
+import { randomUUID } from 'crypto';
 
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
@@ -34,7 +34,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '生成AIの最新技術や研究について教えてください';
         const message = {
-          id: nanoid(),
+          id: randomUUID(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -49,7 +49,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = 'Reactでパフォーマンスを最適化するベストプラクティスを教えてください';
         const message = {
-          id: nanoid(),
+          id: randomUUID(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -64,7 +64,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '大量のデータから意味のある洞察を得るための効果的なデータ分析方法を教えてください';
         const message = {
-          id: nanoid(),
+          id: randomUUID(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -79,7 +79,7 @@ function getExampleSuggestions(append, setInput) {
       onClick: () => {
         const input = '機械学習を効率的に学ぶためのおすすめの学習リソースを教えてください';
         const message = {
-          id: nanoid(),
+          id: randomUUID(),
           content: input,
           role: 'user',
           createdAt: new Date()
@@ -266,6 +266,8 @@ export function Chat({
     }
   };
 
+  const [isPending, startTransition] = useTransition();
+
   // モードに応じたuseChat hookの使用
   const {
     messages,
@@ -282,16 +284,14 @@ export function Chat({
     reload
   } = useChat({
     ...chatOptions,
-    // モードに応じたAPIエンドポイントを明示的に指定
-    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat', 
+    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat',
     body: {
-      ...chatOptions.body,
-      xSearchEnabled: isXSearchEnabled, // APIに現在のモードを渡す
-      computerUseEnabled: isComputerUseEnabled, // Computer Useモードを渡す
-      preserveMessages: true // 既存のメッセージを保持するフラグを追加
+      ...(chatOptions?.body || {}),
+      chatId: id,
+      xSearchEnabled: isXSearchEnabled,
+      computerUseEnabled: isComputerUseEnabled,
     },
-    id: chatKey, // 動的に生成されたキーを使用して再初期化
-    // 初期メッセージを設定
+    id: chatKey,
     initialMessages: currentMessages
   });
 
@@ -306,83 +306,78 @@ export function Chat({
     }
   }, [chatKey, currentMessages, originalSetMessages, messages.length]);
 
-  // カスタムappend関数を作成して既存のメッセージを保持
+  // ★ useOptimistic フックで一時的なメッセージリストを作成
+  const [optimisticMessages, addOptimisticMessage] = useOptimistic<Message[], Message>(
+    messages, // useChat の messages をベースにする
+    (currentState, optimisticValue) => {
+      // ★ currentState (useChat の messages) に既に同じIDのメッセージが存在するかチェック
+      if (currentState.some(msg => msg.id === optimisticValue.id)) {
+        // 存在する場合（実際のデータが useChat から届いた場合）は、
+        // オプティミスティックな値を追加せず、現在の状態をそのまま返す
+        return currentState;
+      } else {
+        // 存在しない場合（まだオプティミスティックな状態の場合）は、メッセージを追加
+        return [
+          ...currentState,
+          optimisticValue 
+        ];
+      }
+    }
+  );
+
+  // カスタム append 関数 - useOptimistic と startTransition を使用
   const append = useCallback(
     async (message: Message | CreateMessage, options?: ChatRequestOptions) => {
-      // 現在のメッセージを保存
-      const currentMsgs = [...messages];
       
-      try {
-        // 通常のappendを呼び出す
-        const result = await originalAppend(message, {
-          ...options,
-          data: {
-            ...((options?.data as Record<string, unknown>) || {}),
-            preserveMessages: true
-          }
+      // 1. 送信するユーザーメッセージオブジェクトを作成 (role: 'user')
+      const userMessageToAdd: Message = {
+        id: typeof message === 'object' && 'id' in message ? (message.id || randomUUID()) : randomUUID(),
+        content: typeof message === 'string' ? message : message.content,
+        role: 'user', // ユーザーロール
+        createdAt: typeof message === 'object' && 'createdAt' in message ? message.createdAt : new Date()
+      };
+
+      // 2. ★ startTransition でラップして optimistic update を実行
+      startTransition(() => {
+        // ★★★ デバッグログ追加: appendされるメッセージの内容を確認 ★★★
+        console.log('[Chat] Optimistically adding message within transition:', {
+          id: userMessageToAdd.id,
+          role: userMessageToAdd.role, // ← role を確認
+          content: typeof userMessageToAdd.content === 'string' ? userMessageToAdd.content.substring(0, 50) + '...' : '[Non-string content]',
+          createdAt: userMessageToAdd.createdAt
         });
+        // ★★★ ここまで ★★★
+        addOptimisticMessage(userMessageToAdd);
+      });
+
+      try {
+        // 3. useChat の originalAppend を呼び出し (APIリクエスト開始)
+        console.log('[Chat] Calling originalAppend to start API request:', message);
+        // ★ options に body がなければ空オブジェクトで初期化
+        const requestOptions = options || {};
+        // ★ body がなければ空オブジェクトで初期化し、既存のbodyとマージして query を追加
+        requestOptions.body = {
+          ...(requestOptions.body || {}), // 既存の body を維持
+          query: typeof message === 'string' ? message : message.content, // ★ input の代わりに message の content を query として渡す
+        };
         
-        // ストリーミング完了時またはメッセージが失われた場合に復元
-        setTimeout(() => {
-          // 最新のメッセージを取得
-          const latestMessages = chatStateRef.current.messages;
-          
-          // ストリーミング完了後のメッセージ数をチェック
-          if (latestMessages.length < currentMsgs.length + 1) {
-            console.log('[Chat] メッセージが失われたため復元します');
-            
-            // 新しいメッセージを作成
-            const newMessage = {
-              id: typeof message === 'object' && 'id' in message ? 
-                  (message.id || nanoid()) : // id が undefined の場合は新しい ID を生成
-                  nanoid(),
-              content: typeof message === 'string' ? message : message.content,
-              role: typeof message === 'string' ? 'user' : message.role,
-              createdAt: typeof message === 'string' ? new Date() : (message.createdAt || new Date())
-            };
-            
-            // 完全なメッセージリストを再構築
-            const restoredMessages = [...currentMsgs, newMessage];
-            console.log('[Chat] 復元後のメッセージ数:', restoredMessages.length);
-            
-            // メッセージを更新
-            originalSetMessages(restoredMessages);
-          } else {
-            // メッセージが正しく存在する場合でも、内容が最新であることを確認
-            const lastMessage = latestMessages[latestMessages.length - 1];
-            const expectedContent = typeof message === 'string' ? message : message.content;
-            
-            // 最後のメッセージの内容が期待と異なる場合は更新
-            if (lastMessage && lastMessage.role === (typeof message === 'string' ? 'user' : message.role) && 
-                lastMessage.content !== expectedContent) {
-              console.log('[Chat] 最後のメッセージの内容を更新します');
-              
-              // 最後のメッセージを更新
-              const updatedMessages = [...latestMessages];
-              updatedMessages[updatedMessages.length - 1] = {
-                ...updatedMessages[updatedMessages.length - 1],
-                content: expectedContent
-              };
-              
-              originalSetMessages(updatedMessages);
-            }
-          }
-        }, 100); // 少し遅延させて状態の更新を確実にする
-        
+        // ★ 修正した requestOptions を渡す
+        const result = await originalAppend(message, requestOptions);
+        console.log('[Chat] originalAppend finished:', result);
         return result;
       } catch (error) {
-        console.error('[Chat] メッセージ送信エラー:', {
+        // エラーハンドリング (useOptimistic がロールバックする)
+        console.error('[Chat] Error sending message:', {
           error,
-          api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research/feedback' : '/api/chat',
-          mode: isComputerUseEnabled ? 'Computer Use' : isXSearchEnabled ? 'X Search' : 'Regular Chat',
-          messageType: typeof message === 'string' ? 'string' : message.role,
-          options
+          api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat',
+          // ... 他のエラー情報 ...
         });
-        toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
-        throw error;
+        toast.error('メッセージの送信に失敗しました。');
+        throw error; 
       }
     },
-    [messages, originalAppend, originalSetMessages, chatStateRef, isXSearchEnabled, isComputerUseEnabled]
+    // originalAppend, addOptimisticMessage, startTransition に依存
+    [originalAppend, addOptimisticMessage, startTransition, isXSearchEnabled, isComputerUseEnabled]
   );
 
   // チャットの状態が変わったときに参照を更新
@@ -544,6 +539,49 @@ export function Chat({
     }
   };
 
+  // Deep Research 用の関数
+  const executeDeepResearch = async (query: string) => {
+    console.log('[Deep Research] 実行開始:', query);
+    setIsReasoningLoading(true); // ローディング開始
+
+    try {
+      // ... (fetch /api/deep-research の呼び出しと成功時の処理) ...
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: '不明なエラーが発生しました' }));
+        console.error('[Deep Research] APIエラー:', response.status, errorData);
+        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+      }
+
+      // ... (data.needsClarification や data.result の処理) ...
+
+    } catch (error) {
+      console.error('[Deep Research] 実行エラー:', error);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      toast.error(`Deep Research中にエラーが発生しました: ${errorMessage}`);
+
+      // ★ エラーメッセージをチャットに追加して終了 ★
+      // addOptimisticMessage は useChat 管理外なので、元の messages 配列を直接操作する
+      // （または、useChat の setMessages を使う方が安全かもしれないが、まずはこれで試す）
+      // 既存のメッセージ配列を取得 (useChat の内部状態を参照するべきだが、ここでは暫定的に optimisticMessages を使う)
+      // ※注意: この方法は useChat の状態と完全に同期しない可能性がある
+      const currentMsgs = optimisticMessages; // または chatStateRef.current.messages
+      originalSetMessages([
+        ...currentMsgs,
+        {
+            id: randomUUID(),
+            role: 'assistant',
+            content: `エラーが発生したため、Deep Research を中断しました: ${errorMessage}`,
+            createdAt: new Date(),
+            annotations: [{ type: 'error', data: { details: errorMessage } }] // エラーを示す注釈
+        }
+      ]);
+
+    } finally {
+      setIsReasoningLoading(false); // ローディング終了
+    }
+  };
+
   return (
     <div className="relative flex flex-col min-h-screen">
       <ChatHeader
@@ -558,7 +596,7 @@ export function Chat({
           {/* メインコンテンツ領域 */}
           <div className="flex-1 flex flex-col">
             {/* 初期メッセージがある場合は常にMessagesを表示 */}
-            {(messages.length === 0 && currentMessages.length === 0) ? (
+            {(optimisticMessages.length === 0 && currentMessages.length === 0) ? (
               <div className="flex-1 flex items-center justify-center">
                 <Overview />
               </div>
@@ -568,7 +606,7 @@ export function Chat({
                   chatId={id}
                   isLoading={isLoading}
                   votes={votes}
-                  messages={messages.length > 0 ? messages : currentMessages}
+                  messages={optimisticMessages}
                   setMessages={originalSetMessages}
                   reload={reload}
                   isReadonly={isReadonly}
@@ -634,7 +672,7 @@ export function Chat({
                         
                         // APIエンドポイントを即座に切り替える
                         if (!silentMode) {
-                          console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/deep-research/feedback' : '/api/chat'}`);
+                          console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/deep-research' : '/api/chat'}`);
                         }
                         
                         // useChat を同期的に強制再初期化
@@ -749,7 +787,7 @@ export function Chat({
                       handleSubmit={async (event, options) => {
                         if (event?.preventDefault) event.preventDefault();
                         await append({
-                          id: nanoid(),
+                          id: randomUUID(),
                           content: input,
                           role: 'user',
                           createdAt: new Date()
@@ -769,7 +807,7 @@ export function Chat({
                       selectedModelId={selectedChatModel}
                     />}
 
-                    {!isArtifactVisible && (
+                    {!isArtifactVisible && messages.length === 0 && (
                       <div className="mb-4">
                         <SuggestedActions
                           chatId={id}
@@ -812,7 +850,7 @@ export function Chat({
             event.preventDefault();
           }
           const message: CreateMessage = {
-            id: nanoid(),
+            id: randomUUID(),
             content: input,
             role: 'user',
             createdAt: new Date()

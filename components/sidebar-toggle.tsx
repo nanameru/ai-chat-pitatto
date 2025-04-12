@@ -13,20 +13,6 @@ import { Button } from './ui/button';
 export function SidebarToggle({
   className,
 }: ComponentProps<typeof SidebarTrigger>) {
-  const { toggleSidebar } = useSidebar();
-
-  return (
-    <Tooltip>
-      <TooltipTrigger asChild>
-        <Button
-          onClick={toggleSidebar}
-          variant="outline"
-          className="md:px-2 md:h-fit"
-        >
-          <SidebarToggleIcon size={16} />
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent align="start">サイドバーの切り替え</TooltipContent>
-    </Tooltip>
-  );
+  // ボタンを完全に削除し、常にnullを返す
+  return null;
 }

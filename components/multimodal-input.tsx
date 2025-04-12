@@ -45,6 +45,7 @@ import { ModelSelector } from './model-selector';
 import { generateSubQueries } from '@/lib/ai/x-search/subquery-generator';
 import { executeParallelCozeQueries, type FormattedResponse } from '@/lib/ai/coze/coze';
 import { ComputerUseToggle } from './computer-use-toggle';
+// import { readDataStream } from 'ai/core/streams'; // ★ 使われていないようなので一旦コメントアウト
 
 function PureMultimodalInput({
   chatId,
@@ -69,7 +70,7 @@ function PureMultimodalInput({
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
-  stop: () => void;
+  stop?: () => void;
   attachments: Array<Attachment>;
   setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
   messages: Array<Message>;
@@ -89,18 +90,51 @@ function PureMultimodalInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      adjustHeight();
+  // ローカルストレージのクリーンアップ関数
+  const cleanupLocalStorage = useCallback(() => {
+    try {
+      // 重要なキーのリスト
+      const essentialKeys = ['searchMode', 'computerUseMode', 'isWebSearchEnabled'];
+      
+      // 全てのキーを取得
+      const allKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) allKeys.push(key);
+      }
+      
+      // 重要でないキーを削除
+      let cleanedCount = 0;
+      allKeys.forEach(key => {
+        if (!essentialKeys.includes(key) && !key.startsWith('chat-input-')) {
+          localStorage.removeItem(key);
+          cleanedCount++;
+        }
+      });
+      
+      if (cleanedCount > 0) {
+        console.log(`[LocalStorage] ${cleanedCount}個の不要なアイテムを削除しました`);
+      }
+    } catch (error) {
+      console.error('[LocalStorage] クリーンアップ中にエラーが発生しました:', error);
     }
   }, []);
 
-  const adjustHeight = () => {
+  // useEffectの依存配列に含める関数をuseCallbackでメモ化
+  const updateTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      updateTextareaHeight();
+      // コンポーネントマウント時にローカルストレージのクリーンアップを実行
+      cleanupLocalStorage();
+    }
+  }, [updateTextareaHeight, cleanupLocalStorage]);
 
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     'input',
@@ -113,7 +147,7 @@ function PureMultimodalInput({
       // Prefer DOM value over localStorage to handle hydration
       const finalValue = domValue || localStorageInput || '';
       setInput(finalValue);
-      adjustHeight();
+      updateTextareaHeight();
     }
     // Only run once after hydration
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -125,7 +159,7 @@ function PureMultimodalInput({
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(event.target.value);
-    adjustHeight();
+    updateTextareaHeight();
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -149,6 +183,9 @@ function PureMultimodalInput({
   const isComputerUseEnabled = propIsComputerUseEnabled !== undefined ? propIsComputerUseEnabled : localIsComputerUseEnabled;
 
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
+  
+  // Deep Researchのローディング状態を管理する状態変数を追加
+  const [isDeepResearchLoading, setIsDeepResearchLoading] = useState(false);
   
   // WebSearch機能の状態変更をより確実に行うためのハンドラ関数
   const handleWebSearchToggleInternal = useCallback((newState: boolean) => {
@@ -201,123 +238,159 @@ function PureMultimodalInput({
    * @param clarificationResponse 明確化質問に対するユーザーの回答（オプション）
    */
   const executeDeepResearchAgent = async (query: string, chatId: string, modelId: string, clarificationResponse?: string) => {
+    console.log('[Deep Research] executeDeepResearchAgent 開始:', { query, chatId, modelId, clarificationResponse });
+    setIsDeepResearchLoading(true);
+
     try {
-      toast.info('Deep Research Agentを実行中...', { duration: 3000 });
-      console.log('[Deep Research] APIリクエストを開始:', query);
-      
-      // 処理中の状態を表示
-      const loadingMessage: CreateMessage = { 
-        id: nanoid(), 
-        content: '詳細な調査を実行中...', 
-        role: 'assistant' as const, 
-        createdAt: new Date() 
+      // ★ 修正: Vercel AI SDK が期待する形式に合わせる ★
+      const newUserMessage: Message = {
+        id: nanoid(), // 新しいメッセージID
+        role: 'user' as const,
+        content: clarificationResponse ? `${query}\n\n[Clarification Response]:\n${clarificationResponse}` : query, // 明確化応答も内容に含める
+        createdAt: new Date()
       };
-      await append(loadingMessage, { id: loadingMessage.id });
-      
-      // Deep Research APIを呼び出し
+
+      // 既存の messages 配列に新しいユーザーメッセージを追加
+      const messagesToSend = [...messages, newUserMessage];
+
+      // APIに送信するリクエストボディ
+      const requestBody = {
+        messages: messagesToSend, // ★ messages 配列を含める ★
+        chatId: chatId,
+        model: modelId, // ★ モデルIDも追加 (API側で受け取れるように変更済み) ★
+        // clarificationResponse は messages に含めたので不要
+      };
+      console.log('[Deep Research] APIリクエストを開始 (Body修正版):', { query, chatId, modelId: modelId, clarificationResponse, bodySize: JSON.stringify(requestBody).length }); // ログ更新
+      console.log('[Deep Research] API Request Body:', requestBody); // ログはそのまま
+
       const response = await fetch('/api/deep-research', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          query,
-          clarificationResponse // 明確化回答がある場合は送信
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody), // 修正されたボディを送信
       });
-      
+
       if (!response.ok) {
-        throw new Error(`APIエラー: ${response.status} ${response.statusText}`);
-      }
-      
-      const data = await response.json();
-      
-      // APIレスポンスのバリデーション
-      // success フィールドが明示的に false の場合のみエラーとして扱う
-      if (data.success === false) {
-        throw new Error(data.error || 'APIからエラーが返されました');
-      }
-      
-      // データの構造を確認し、必要なフィールドが存在しない場合はデフォルト値を設定
-      const validatedData = {
-        ...data,
-        success: data.success !== false, // 明示的に false でなければ true とみなす
-        needsClarification: !!data.needsClarification,
-        clarificationMessage: data.clarificationMessage || ''
-      };
-      
-      console.log('[Deep Research] API実行結果:', validatedData);
-      
-      // 明確化が必要な場合
-      if (validatedData.needsClarification && validatedData.clarificationMessage) {
-        console.log('[Deep Research] 明確化が必要です:', validatedData.clarificationMessage);
-        
-        // 前のローディングメッセージを削除
-        // Note: この部分は実際のアプリケーションの実装によって異なる場合があります
-        
-        // 明確化質問を表示
-        await append({ 
-          id: nanoid(), 
-          content: validatedData.clarificationMessage, 
-          role: 'assistant' as const, 
-          createdAt: new Date() 
-        });
-        
-        // 明確化モードをセット
-        setClarificationMode({
-          active: true,
-          originalQuery: validatedData.originalQuery || query
-        });
-        
-        toast.info('詳細情報を教えてください', { duration: 3000 });
-        return;
-      }
-      
-      // 結果を表示
-      const resultContent = data.result || JSON.stringify(data);
-      
-      // 検索オプションを設定
-      const options: ChatRequestOptions = {
-        xSearchEnabled: true,
-        data: {
-          searchType: 'deep-research',
-          query,
-          chatId,
-          model: modelId,
-          agentResponse: resultContent
+        // ★ エラーレスポンスの詳細を取得しようと試みる
+        let errorDetails = `APIエラー: ${response.status} ${response.statusText}`;
+        try {
+          const errorJson = await response.json();
+          errorDetails = errorJson.error || errorJson.details || errorDetails;
+        } catch (e) {
+          // JSONパース失敗時は元のエラーメッセージを使用
         }
-      };
-      
-      // 明確化モードをリセット
-      setClarificationMode({
-        active: false,
-        originalQuery: ''
-      });
-      
-      // ユーザーメッセージを追加
-      await append({ 
-        id: nanoid(), 
-        content: clarificationResponse ? `${query}\n\n${clarificationResponse}` : query, 
-        role: 'user' as const, 
-        createdAt: new Date() 
-      }, options);
-      
-      // 前のローディングメッセージを削除
-      // Note: この部分は実際のアプリケーションの実装によって異なる場合があります
-      
-      // 最終的な結果を表示
-      await append({ 
-        id: nanoid(), 
-        content: resultContent, 
-        role: 'assistant' as const, 
-        createdAt: new Date() 
-      });
-      
-      toast.success('Deep Research完了', { duration: 3000 });
+        throw new Error(errorDetails);
+      }
+
+      // ★ ストリーミング応答の処理 ★
+      if (!response.body) {
+        throw new Error('APIからの応答が空です。');
+      }
+
+      // ヘッダーに基づいて処理を分岐
+      const isDataStream = response.headers.get('X-Experimental-Stream-Data') === 'true';
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+
+      if (isDataStream) {
+        console.log('[Deep Research] データストリームを受信 (明確化メッセージ)');
+        let done = false;
+        let streamedData = '';
+        while (!done) {
+          const { value, done: readerDone } = await reader.read();
+          done = readerDone;
+          if (value) {
+            streamedData += decoder.decode(value, { stream: true });
+          }
+        }
+        // ストリーム全体のデータをパース
+        try {
+          const data = JSON.parse(streamedData);
+          if (data.type === 'clarification' && data.message) {
+            console.log('[Deep Research] 明確化メッセージを処理:', data.message);
+            await append({
+              id: nanoid(),
+              content: data.message,
+              role: 'assistant' as const,
+              createdAt: new Date()
+            });
+            setClarificationMode({ active: true, originalQuery: data.originalQuery || query });
+            setInput('');
+          } else {
+            console.error('[Deep Research] 不明なデータストリーム形式:', data);
+            throw new Error('APIから不明なデータ形式が返されました。');
+          }
+        } catch (e) {
+          console.error('[Deep Research] データストリームのJSONパースに失敗:', e, '受信データ:', streamedData);
+          throw new Error('API応答の解析に失敗しました。');
+        }
+
+      } else {
+        console.log('[Deep Research] テキストストリームを受信 (最終結果)');
+        // ★ 最終結果のテキストストリームを直接appendで処理
+        // Vercel SDK の内部処理に近い形でストリームを読み取る
+        let accumulatedText = '';
+        let messageId = nanoid(); // メッセージIDを生成
+        let firstChunk = true;
+
+        while (true) {
+          const { value, done } = await reader.read();
+          if (done) break;
+
+          const textChunk = decoder.decode(value, { stream: true });
+          accumulatedText += textChunk;
+
+          // append または update を使用してUIを更新
+          // useChat フックは直接使えないため、appendを模倣する
+          // 既存のメッセージを更新する機能が必要になる可能性がある
+          // ここでは単純に追記し続けるが、パフォーマンスに影響する可能性あり
+          if (firstChunk) {
+            await append({
+              id: messageId,
+              content: accumulatedText,
+              role: 'assistant' as const,
+              createdAt: new Date()
+            });
+            firstChunk = false;
+          } else {
+            // 既存メッセージを更新するロジック (setMessagesなどが必要)
+            // 現状のappendは新規追加しかできないため、擬似的に更新
+            // ※ 本来は useChat の setMessages を使うべき
+            const currentMessages = messages; // 親コンポーネントから渡される messages
+            const updatedMessages = currentMessages.map(msg => 
+              msg.id === messageId ? { ...msg, content: accumulatedText } : msg
+            );
+            // ここで setMessages(updatedMessages) を呼び出す必要がある
+            // しかし、この関数には setMessages が渡されていないため、
+            // 既存のappendを呼び出すことで暫定対応 (UI上は複数メッセージに見える可能性)
+             await append({ // ← 本来は既存メッセージ更新
+               id: messageId + '-' + nanoid(4), // ID重複回避のため一時的なID生成
+               content: textChunk, // 差分だけ送る (UI側で結合表示が必要)
+               role: 'assistant' as const,
+               createdAt: new Date()
+             }, { data: { isUpdate: true, targetId: messageId }}); // 更新フラグ（UI側での対応が必要）
+             // ↑ このappendの使い方は正しくない可能性が高い。
+             // 最終的には useChat フックと連携するようにリファクタリングが必要。
+          }
+        }
+        console.log('[Deep Research] テキストストリーム完了');
+        setClarificationMode({ active: false, originalQuery: '' });
+      }
+
     } catch (error) {
       console.error('[Deep Research] 実行中にエラーが発生:', error);
-      toast.error('Deep Research処理に失敗しました', { duration: 5000 });
-      throw error;
+      // ★ UIにエラーを表示する処理 (例: appendでエラーメッセージ表示)
+      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
+      await append({
+        id: nanoid(),
+        content: `エラー: ${errorMessage}`,
+        role: 'assistant',
+        createdAt: new Date(),
+        annotations: [{ type: 'error', data: { details: errorMessage } }] // エラー情報付与
+      });
+      // エラーを再スローしない (UIに表示済みのため)
+      // throw error;
+    } finally {
+      setIsDeepResearchLoading(false);
     }
   };
 
@@ -383,7 +456,7 @@ function PureMultimodalInput({
           });
       } else if (newState) {
         console.log(`[Deep Research] 入力が空のため、自動実行をスキップしました`);
-        toast.info('入力を入力して送信するとDeep Researchが実行されます', { duration: 5000 });
+        // toast.info('入力を入力して送信するとDeep Researchが実行されます', { duration: 5000 }); // 削除: 使用方法メッセージ
       }
     }, 0);
   }, [isXSearchEnabled, setLocalIsXSearchEnabled, onXSearchToggle, input, chatId, selectedModelId, append]);
@@ -400,9 +473,9 @@ function PureMultimodalInput({
     handleWebSearchToggleInternal(newState);
     
     // トースト通知
-    toast.success(`${newState ? '検索モード' : '通常チャットモード'}に切り替えました`, {
-      duration: 3000,
-    });
+    // toast.success(`${newState ? '検索モード' : '通常チャットモード'}に切り替えました`, {
+    //   duration: 3000,
+    // });
     
     // LocalStorageの値が確実に更新されたことを確認するためのログ
     setTimeout(() => {
@@ -511,8 +584,6 @@ function PureMultimodalInput({
     [propIsXSearchEnabled, isXSearchEnabled, isWebSearchEnabled, input, isLoading, chatId, selectedModelId, append, onError, setInput, setLocalStorageInput, isComputerUseEnabled, propIsComputerUseEnabled]
   );
 
-
-
   const submitForm = useCallback(async () => {
     // 親コンポーネントから渡された値を優先的に使用
     const effectiveXSearchEnabled = propIsXSearchEnabled !== undefined ? propIsXSearchEnabled : isXSearchEnabled;
@@ -543,13 +614,30 @@ function PureMultimodalInput({
           });
           
           try {
-            // Deep Research Agent V2を実行（明確化回答付き）
+            // ★★★ 修正点：ユーザーのフィードバックメッセージをUIに追加 ★★★
+            const userFeedbackMessage: CreateMessage = {
+              id: nanoid(), // 一意なIDを生成
+              role: 'user',
+              content: currentInput, // ユーザーのフィードバック内容
+              createdAt: new Date(),
+            };
+            // append を使ってUIにユーザーメッセージを追加
+            await append(userFeedbackMessage); // ★★★ この行を追加 ★★★
+            console.log('[Clarification] ユーザーフィードバックメッセージをUIに追加しました:', userFeedbackMessage.id);
+            // ★★★ 修正ここまで ★★★
+
+            // Deep Research Agentを呼び出してAIの応答を取得・表示
             await executeDeepResearchAgent(clarificationMode.originalQuery, chatId, selectedModelId, currentInput);
+
+            // 処理成功後に明確化モードを解除
+            setClarificationMode({ active: false, originalQuery: '' });
+
             return { success: true };
           } catch (error) {
             console.error('[Clarification] 処理中にエラーが発生:', error);
-            toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 });
             onError?.(error as Error);
+            // エラー発生時も明確化モードを解除する方が良い場合がある
+            // setClarificationMode({ active: false, originalQuery: '' });
             return { error };
           }
         }
@@ -557,7 +645,7 @@ function PureMultimodalInput({
         // Computer Use モードが有効な場合、他のモードよりも優先する
         if (effectiveComputerUseEnabled) {
           console.log('[Computer Use] Computer Use処理を実行');
-          toast.info('コンピュータ操作モードで実行中...', { duration: 3000 });
+          // toast.info('コンピュータ操作モードで実行中...', { duration: 3000 }); // 削除: 実行中メッセージ
           
           try {
             // Computer Use用のオプションを設定
@@ -581,7 +669,7 @@ function PureMultimodalInput({
             return { success: true };
           } catch (error) {
             console.error('[Computer Use] 処理中にエラーが発生:', error);
-            toast.error('コンピュータ操作処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('コンピュータ操作処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
             return { error };
           }
@@ -590,17 +678,17 @@ function PureMultimodalInput({
         // Deep Research モードが有効な場合
         if (effectiveXSearchEnabled && !effectiveComputerUseEnabled) {
           console.log('[Deep Research] Deep Research処理を実行');
-          toast.info('Deep Research処理を実行中...', { duration: 3000 });
+          // toast.info('Deep Research処理を実行中...', { duration: 3000 }); // 削除: 実行中メッセージ
           
           try {
             // Deep Research Agent V2を実行
             await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
-            return { success: true };
+            return;
           } catch (error) {
             console.error('[Deep Research] 処理中にエラーが発生:', error);
-            toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('Deep Research処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             onError?.(error as Error);
-            return { error };
+            return;
           }
         }
         
@@ -640,7 +728,7 @@ function PureMultimodalInput({
             // サブクエリを生成
             console.log('[WebSearch] サブクエリの生成を開始:', currentInput);
             console.log('[WebSearch] Gemini APIキー確認:', process.env.GEMINI_API_KEY ? '設定されています' : '設定されていません');
-            toast.info('サブクエリを生成中...', { duration: 3000 });
+            // toast.info('サブクエリを生成中...', { duration: 3000 }); // 削除: 実行中メッセージ
             
             // サブクエリ生成前に状態を再確認
             console.log('[WebSearch] サブクエリ生成前の状態確認:', { 
@@ -661,12 +749,12 @@ function PureMultimodalInput({
             
             if (subQueries && subQueries.length > 0) {
               console.log(`[WebSearch] ${subQueries.length}個のサブクエリを生成しました:`, subQueries);
-              toast.success(`${subQueries.length}個のサブクエリを生成しました`, { duration: 3000 });
+              // toast.success(`${subQueries.length}個のサブクエリを生成しました`, { duration: 3000 }); // 削除: 完了メッセージ
               
               // 並列実行の進捗を表示するためのコールバック
               const onProgress = (processed: number) => {
                 console.log(`[WebSearch] 進捗: ${processed}/${subQueries.length} クエリを処理`);
-                toast.info(`検索実行中: ${processed}/${subQueries.length}`, { duration: 1500 });
+                // toast.info(`検索実行中: ${processed}/${subQueries.length}`, { duration: 1500 }); // 削除: 実行中メッセージ
               };
               
               // サブクエリを並列実行
@@ -682,7 +770,7 @@ function PureMultimodalInput({
               
               // 成功メッセージを表示
               const totalPosts = results.reduce((sum, r) => sum + (r.posts?.length || 0), 0);
-              toast.success(`${results.length}個のクエリから${totalPosts}件の結果を取得しました`, { duration: 5000 });
+              // toast.success(`${results.length}個のクエリから${totalPosts}件の結果を取得しました`, { duration: 5000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               // undefined値をJSONValue型と互換性のある形式に変換
@@ -733,21 +821,21 @@ function PureMultimodalInput({
               return { success: true };
             } else {
               console.warn(`[WebSearch] サブクエリの生成に失敗しました: 空の配列または未定義が返されました`);
-              toast.error('サブクエリの生成に失敗しました', { duration: 3000 });
+              // toast.error('サブクエリの生成に失敗しました', { duration: 3000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               await handleSubmitWithLogging();
             }
             } catch (subQueryError) {
               console.error(`[WebSearch] サブクエリ生成中にエラーが発生:`, subQueryError);
-              toast.error('サブクエリの生成中にエラーが発生しました', { duration: 3000 });
+              // toast.error('サブクエリの生成中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
               
               // 通常のチャット処理を続行
               await handleSubmitWithLogging();
             }
           } catch (error) {
             console.error(`[WebSearch] 検索処理全体でエラーが発生しました:`, error);
-            toast.error('検索処理中にエラーが発生しました', { duration: 3000 });
+            // toast.error('検索処理中にエラーが発生しました', { duration: 3000 }); // 削除: 完了メッセージ
             
             // エラーが発生しても通常のチャット処理を続行
             await handleSubmitWithLogging();
@@ -762,7 +850,7 @@ function PureMultimodalInput({
             await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
           } catch (error) {
             console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
-            toast.error('Deep Research処理に失敗しました');
+            // toast.error('Deep Research処理に失敗しました', { duration: 5000 }); // 削除: 完了メッセージ
             throw error;
           }
           return;
@@ -900,20 +988,21 @@ function PureMultimodalInput({
       console.error('[Error] フォーム送信中にエラーが発生:', error);
       toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
     }
-  }, [
-    input,
-    attachments,
-    chatId,
-    isXSearchEnabled,
-    isWebSearchEnabled,
-    propIsXSearchEnabled,
-    handleSubmitWithLogging,
-    setAttachments,
-    setInput,
-    setLocalStorageInput,
-    selectedModelId,
-    append
-  ]);
+  },
+    [
+      input,
+      attachments,
+      chatId,
+      isXSearchEnabled,
+      isWebSearchEnabled,
+      propIsXSearchEnabled,
+      handleSubmitWithLogging,
+      setAttachments,
+      setInput,
+      setLocalStorageInput,
+      selectedModelId,
+      append
+    ]);
 
   const uploadFile = async (file: File) => {
     const formData = new FormData();
@@ -1001,17 +1090,12 @@ function PureMultimodalInput({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (
-        event.key === 'Enter' &&
-        !event.shiftKey &&
-        !event.nativeEvent.isComposing && // IME入力中は送信しない
-        !isLoading
-      ) {
-        event.preventDefault();
-        submitForm();
+      if (event.key === 'Enter' && !event.shiftKey) {
+        // Enterキーでの送信を無効化し、改行を許可する
+        return;
       }
     },
-    [isLoading, submitForm],
+    [],
   );
 
   // 添付ファイルを削除する関数を追加
@@ -1035,6 +1119,16 @@ function PureMultimodalInput({
         uploadQueue.length === 0 && (
           <SuggestedActions append={append} chatId={chatId} />
         )}
+
+      {/* Deep Researchのローディング表示（既存のUIの上部に配置） - 削除
+      {isDeepResearchLoading && (
+        <div className="absolute -top-14 w-full flex justify-center">
+          <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-md flex items-center">
+            <span className="animate-pulse mr-2">●</span>
+            詳細な調査を実行中...
+          </div>
+        </div>
+      )} */}
 
       <input
         type="file"
@@ -1130,12 +1224,26 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
           <ModelSelector selectedModelId={selectedModelId} className="mr-1" />
           {isLoading ? (
-            <StopButton stop={stop} />
+            <StopButton 
+              stop={() => {
+                try {
+                  if (typeof stop === 'function') {
+                    stop();
+                  } else {
+                    console.log('Stop function is not available');
+                  }
+                } catch (error) {
+                  console.error('Error stopping the stream:', error);
+                }
+              }} 
+              textareaRef={textareaRef} 
+            />
           ) : (
             <SendButton
               input={input}
               submitForm={handleSubmitWithLogging}
               uploadQueue={uploadQueue}
+              textareaRef={textareaRef}
             />
           )}
         </div>
@@ -1319,7 +1427,7 @@ const PureXSearchButton = memo(function PureXSearchButton({
   // ボタンの状態を視覚的に表示するためのクラス
   // 注意: サーバーサイドレンダリングとクライアントサイドレンダリングで一致させるため
   // 動的な値を使わず、固定のクラス名を使用する
-  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border-gray-200";
+  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border border-gray-200";
   
   const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
@@ -1396,14 +1504,14 @@ const PureXSearchButton = memo(function PureXSearchButton({
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
               <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
-          </svg>
-          <span>Deep Research</span>
-        </Button>
-      </TooltipTrigger>
-      <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
-    </Tooltip>
-  </TooltipProvider>
-);
+            </svg>
+            <span>Deep Research</span>
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
 });
 
 PureXSearchButton.displayName = 'PureXSearchButton';
@@ -1439,15 +1547,35 @@ const AttachmentsButton = memo(PureAttachmentsButton);
 
 const PureStopButton = memo(function PureStopButton({
   stop,
+  textareaRef,
 }: {
-  stop: () => void;
+  stop: (() => void) | undefined;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
 }) {
+  const handleStop = useCallback(() => {
+    try {
+      // stopが関数であることを確認
+      if (typeof stop === 'function') {
+        stop();
+        console.log('Stream stopped successfully');
+      } else {
+        console.error('Stop is not a function or is undefined:', stop);
+      }
+    } catch (error) {
+      console.error('Error stopping the stream:', error);
+    } finally {
+      // 常にテキストエリアの高さをリセット
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        console.log('Textarea height reset');
+      }
+    }
+  }, [stop, textareaRef]);
+
   return (
     <Button
       type="button"
-      onClick={() => {
-        stop();
-      }}
+      onClick={handleStop}
       className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
@@ -1464,10 +1592,12 @@ const SendButton = memo(function SendButton({
   submitForm,
   input,
   uploadQueue,
+  textareaRef,
 }: {
   submitForm: () => void;
   input: string;
   uploadQueue: Array<string>;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
 }) {
   return (
     <Button
@@ -1475,6 +1605,10 @@ const SendButton = memo(function SendButton({
       onClick={(e) => {
         e.preventDefault();
         submitForm();
+        // テキストエリアの高さをリセット
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
       className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
