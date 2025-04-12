@@ -70,7 +70,7 @@ function PureMultimodalInput({
   input: string;
   setInput: (value: string) => void;
   isLoading: boolean;
-  stop: () => void;
+  stop?: () => void;
   attachments: Array<Attachment>;
   setAttachments: Dispatch<SetStateAction<Array<Attachment>>>;
   messages: Array<Message>;
@@ -90,18 +90,51 @@ function PureMultimodalInput({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
 
-  useEffect(() => {
-    if (textareaRef.current) {
-      adjustHeight();
+  // ローカルストレージのクリーンアップ関数
+  const cleanupLocalStorage = useCallback(() => {
+    try {
+      // 重要なキーのリスト
+      const essentialKeys = ['searchMode', 'computerUseMode', 'isWebSearchEnabled'];
+      
+      // 全てのキーを取得
+      const allKeys = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key) allKeys.push(key);
+      }
+      
+      // 重要でないキーを削除
+      let cleanedCount = 0;
+      allKeys.forEach(key => {
+        if (!essentialKeys.includes(key) && !key.startsWith('chat-input-')) {
+          localStorage.removeItem(key);
+          cleanedCount++;
+        }
+      });
+      
+      if (cleanedCount > 0) {
+        console.log(`[LocalStorage] ${cleanedCount}個の不要なアイテムを削除しました`);
+      }
+    } catch (error) {
+      console.error('[LocalStorage] クリーンアップ中にエラーが発生しました:', error);
     }
   }, []);
 
-  const adjustHeight = () => {
+  // useEffectの依存配列に含める関数をuseCallbackでメモ化
+  const updateTextareaHeight = useCallback(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight + 2}px`;
+      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (textareaRef.current) {
+      updateTextareaHeight();
+      // コンポーネントマウント時にローカルストレージのクリーンアップを実行
+      cleanupLocalStorage();
+    }
+  }, [updateTextareaHeight, cleanupLocalStorage]);
 
   const [localStorageInput, setLocalStorageInput] = useLocalStorage(
     'input',
@@ -114,7 +147,7 @@ function PureMultimodalInput({
       // Prefer DOM value over localStorage to handle hydration
       const finalValue = domValue || localStorageInput || '';
       setInput(finalValue);
-      adjustHeight();
+      updateTextareaHeight();
     }
     // Only run once after hydration
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -126,7 +159,7 @@ function PureMultimodalInput({
 
   const handleInput = (event: React.ChangeEvent<HTMLTextAreaElement>) => {
     setInput(event.target.value);
-    adjustHeight();
+    updateTextareaHeight();
   };
 
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1057,17 +1090,12 @@ function PureMultimodalInput({
 
   const handleKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (
-        event.key === 'Enter' &&
-        !event.shiftKey &&
-        !event.nativeEvent.isComposing && // IME入力中は送信しない
-        !isLoading
-      ) {
-        event.preventDefault();
-        submitForm();
+      if (event.key === 'Enter' && !event.shiftKey) {
+        // Enterキーでの送信を無効化し、改行を許可する
+        return;
       }
     },
-    [isLoading, submitForm],
+    [],
   );
 
   // 添付ファイルを削除する関数を追加
@@ -1196,12 +1224,26 @@ function PureMultimodalInput({
         <div className="absolute bottom-0 right-0 p-4 w-fit flex flex-row justify-end items-center gap-2">
           <ModelSelector selectedModelId={selectedModelId} className="mr-1" />
           {isLoading ? (
-            <StopButton stop={stop} />
+            <StopButton 
+              stop={() => {
+                try {
+                  if (typeof stop === 'function') {
+                    stop();
+                  } else {
+                    console.log('Stop function is not available');
+                  }
+                } catch (error) {
+                  console.error('Error stopping the stream:', error);
+                }
+              }} 
+              textareaRef={textareaRef} 
+            />
           ) : (
             <SendButton
               input={input}
               submitForm={handleSubmitWithLogging}
               uploadQueue={uploadQueue}
+              textareaRef={textareaRef}
             />
           )}
         </div>
@@ -1505,15 +1547,35 @@ const AttachmentsButton = memo(PureAttachmentsButton);
 
 const PureStopButton = memo(function PureStopButton({
   stop,
+  textareaRef,
 }: {
-  stop: () => void;
+  stop: (() => void) | undefined;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
 }) {
+  const handleStop = useCallback(() => {
+    try {
+      // stopが関数であることを確認
+      if (typeof stop === 'function') {
+        stop();
+        console.log('Stream stopped successfully');
+      } else {
+        console.error('Stop is not a function or is undefined:', stop);
+      }
+    } catch (error) {
+      console.error('Error stopping the stream:', error);
+    } finally {
+      // 常にテキストエリアの高さをリセット
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto';
+        console.log('Textarea height reset');
+      }
+    }
+  }, [stop, textareaRef]);
+
   return (
     <Button
       type="button"
-      onClick={() => {
-        stop();
-      }}
+      onClick={handleStop}
       className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
       aria-label="送信を停止"
     >
@@ -1530,10 +1592,12 @@ const SendButton = memo(function SendButton({
   submitForm,
   input,
   uploadQueue,
+  textareaRef,
 }: {
   submitForm: () => void;
   input: string;
   uploadQueue: Array<string>;
+  textareaRef: React.RefObject<HTMLTextAreaElement>;
 }) {
   return (
     <Button
@@ -1541,6 +1605,10 @@ const SendButton = memo(function SendButton({
       onClick={(e) => {
         e.preventDefault();
         submitForm();
+        // テキストエリアの高さをリセット
+        if (textareaRef.current) {
+          textareaRef.current.style.height = 'auto';
+        }
       }}
       disabled={input.length === 0 || uploadQueue.length > 0}
       className="size-8 rounded-full bg-black p-0 text-white hover:bg-gray-800"
