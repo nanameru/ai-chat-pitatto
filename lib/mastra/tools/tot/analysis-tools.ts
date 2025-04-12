@@ -7,6 +7,9 @@
 import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { InformationAnalysis, Hypothesis, InformationGap } from "../../types/tot";
+// Add imports for AI Agent
+import { openai } from "@ai-sdk/openai";
+import { Agent } from "@mastra/core/agent";
 
 /**
  * 情報評価ツール
@@ -27,50 +30,73 @@ export const informationEvaluator = createTool({
       }))
     })).describe("評価する収集情報"),
     originalQuery: z.string().describe("元のクエリ"),
+    selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
   }),
   description: "収集された情報の信頼性と関連性を評価します",
-  execute: async ({ context: { collectedInformation, originalQuery } }) => {
-    console.log(`[ToT] 情報評価: クエリ=${originalQuery.substring(0, 50)}..., 情報セット数=${collectedInformation.length}`);
+  execute: async ({ context: { collectedInformation, originalQuery, selectedModelId } }) => {
+    console.log(`[ToT] 情報評価: クエリ=${originalQuery.substring(0, 50)}..., 情報セット数=${collectedInformation.length}, モデルID=${selectedModelId || 'default (gpt-4o-mini)'}`);
     
+    // Determine the model to use
+    const modelIdToUse = selectedModelId || "gpt-4o-mini"; // Default to gpt-4o-mini if not provided
+    
+    // Create the evaluation agent dynamically within the execute function
+    const dynamicEvaluationAgent = new Agent({
+      name: "Information Evaluator Agent",
+      instructions: `あなたは情報源の信頼性と関連性を評価する専門家です。与えられた情報源（タイトル、スニペット、URL）と元のクエリに基づいて、その情報源の信頼性（high, medium, lowのいずれか）と、元のクエリとの関連性スコア（0.0から1.0の数値）を評価してください。評価結果はJSON形式で{"reliability": "...", "relevanceScore": ...}のように返してください。`,
+      model: openai(modelIdToUse), // Use the determined model ID
+      // response_format is not supported, rely on prompt instruction and parsing
+    });
+
     try {
-      // 情報評価のモック実装
-      // 実際の実装では、LLMを使用して情報を評価します
-      
-      // 情報ソースをカテゴリ分け
-      const sourceCategories = {
-        highReliability: ["official", "documentation", "academic", "research", "gov", "edu"],
-        mediumReliability: ["news", "blog", "review", "tech", "company"],
-        lowReliability: ["forum", "social", "anonymous", "personal"]
-      };
-      
-      // 各情報ソースを評価
-      const evaluatedSources = collectedInformation.flatMap(infoSet => 
-        infoSet.results.map(result => {
-          // URLからドメインを抽出
-          const domain = new URL(result.url).hostname;
+      // Use AI to evaluate information sources in parallel
+      const evaluationPromises = collectedInformation.flatMap(infoSet => 
+        infoSet.results.map(async (result) => {
+          const prompt = `元のクエリ: "${originalQuery}"\n\n情報源:\nタイトル: ${result.title}\nスニペット: ${result.snippet}\nURL: ${result.url}\n\nこの情報源の信頼性（high, medium, low）と元のクエリとの関連性スコア（0.0-1.0）をJSONで評価してください。`;
           
-          // 信頼性を評価（モック実装）
-          let reliability: 'high' | 'medium' | 'low' = 'medium';
-          if (sourceCategories.highReliability.some(term => domain.includes(term))) {
-            reliability = 'high';
-          } else if (sourceCategories.lowReliability.some(term => domain.includes(term))) {
-            reliability = 'low';
+          let reliability: 'high' | 'medium' | 'low' = 'medium'; // Default reliability
+          let relevanceScore = 0.5; // Default relevance score
+
+          try {
+            // Use the dynamically created agent
+            const evaluationResult = await dynamicEvaluationAgent.generate(prompt);
+            
+            // Try parsing the result as JSON, with fallback
+            try {
+              const parsedResult = JSON.parse(evaluationResult.text);
+              // Validate parsed result (basic validation)
+              if (['high', 'medium', 'low'].includes(parsedResult.reliability)) {
+                  reliability = parsedResult.reliability;
+              }
+              if (typeof parsedResult.relevanceScore === 'number' && parsedResult.relevanceScore >= 0 && parsedResult.relevanceScore <= 1) {
+                  relevanceScore = parsedResult.relevanceScore;
+              }
+            } catch (parseError) {
+              console.warn(`[ToT] JSONパースエラー (URL: ${result.url}): ${parseError instanceof Error ? parseError.message : String(parseError)}, Response: ${evaluationResult.text}`);
+              // Keep default values if JSON parsing fails
+            }
+
+            return {
+              ...result,
+              reliability,
+              relevance: relevanceScore, // Use 'relevance' field as before, mapping from relevanceScore
+              purpose: infoSet.purpose
+            };
+          } catch (evalError: unknown) {
+            console.error(`[ToT] 個別評価エラー (URL: ${result.url}):`, evalError);
+            // Return a default evaluation on error for this specific source
+            return {
+              ...result,
+              reliability, // Use default reliability
+              relevance: relevanceScore, // Use default relevance
+              purpose: infoSet.purpose
+            };
           }
-          
-          // 関連性を評価（モック実装）
-          // 実際の実装では、クエリと内容の意味的な関連性を評価します
-          const relevance = Math.random() * 10; // 0-10のランダムスコア
-          
-          return {
-            ...result,
-            reliability,
-            relevance,
-            purpose: infoSet.purpose
-          };
         })
       );
-      
-      // 信頼性カテゴリごとにソースを分類
+
+      const evaluatedSources = await Promise.all(evaluationPromises);
+
+      // Categorize sources based on AI evaluation
       const highReliabilitySources = evaluatedSources
         .filter(source => source.reliability === 'high')
         .map(source => source.title);
@@ -93,9 +119,11 @@ export const informationEvaluator = createTool({
         originalQuery,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) { // Fix linter error: catch error as unknown
       console.error(`[ToT] 情報評価エラー:`, error);
-      throw new Error(`情報評価中にエラーが発生しました: ${error.message}`);
+      // Fix linter error: check if error is an Error instance before accessing message
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`情報評価中にエラーが発生しました: ${errorMessage}`);
     }
   }
 });
@@ -113,7 +141,7 @@ export const hypothesisGenerator = createTool({
       url: z.string(),
       snippet: z.string(),
       reliability: z.enum(["high", "medium", "low"]),
-      relevance: z.number().optional(),
+      relevance: z.number().optional(), // Keep relevance optional for now as score might not always be needed here
       purpose: z.string().optional()
     })).describe("評価済みの情報ソース"),
     originalQuery: z.string().describe("元のクエリ"),
@@ -125,7 +153,7 @@ export const hypothesisGenerator = createTool({
     
     try {
       // 仮説生成のモック実装
-      // 実際の実装では、LLMを使用して仮説を生成します
+      // 実際の実装では、LLMを使用して仮説を生成します (This part remains mock for now)
       
       // モック仮説を生成
       const hypotheses: Hypothesis[] = [
@@ -175,9 +203,11 @@ export const hypothesisGenerator = createTool({
         originalQuery,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) { // Fix linter error: catch error as unknown
       console.error(`[ToT] 仮説生成エラー:`, error);
-      throw new Error(`仮説生成中にエラーが発生しました: ${error.message}`);
+      // Fix linter error: check if error is an Error instance before accessing message
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`仮説生成中にエラーが発生しました: ${errorMessage}`);
     }
   }
 });
@@ -201,7 +231,7 @@ export const gapAnalyzer = createTool({
       url: z.string(),
       snippet: z.string(),
       reliability: z.enum(["high", "medium", "low"]),
-      relevance: z.number().optional(),
+      relevance: z.number().optional(), // Keep relevance optional
       purpose: z.string().optional()
     })).optional().describe("評価済みの情報ソース（オプション）"),
     originalQuery: z.string().describe("元のクエリ"),
@@ -215,7 +245,7 @@ export const gapAnalyzer = createTool({
     
     try {
       // ギャップ分析のモック実装
-      // 実際の実装では、LLMを使用してギャップを分析します
+      // 実際の実装では、LLMを使用してギャップを分析します (This part remains mock for now)
       
       // 情報ギャップを特定
       const informationGaps: InformationGap[] = [];
@@ -293,9 +323,11 @@ export const gapAnalyzer = createTool({
         originalQuery,
         timestamp: new Date().toISOString()
       };
-    } catch (error) {
+    } catch (error: unknown) { // Fix linter error: catch error as unknown
       console.error(`[ToT] ギャップ分析エラー:`, error);
-      throw new Error(`ギャップ分析中にエラーが発生しました: ${error.message}`);
+      // Fix linter error: check if error is an Error instance before accessing message
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      throw new Error(`ギャップ分析中にエラーが発生しました: ${errorMessage}`);
     }
   }
 });

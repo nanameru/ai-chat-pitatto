@@ -8,6 +8,8 @@ import { createTool } from "@mastra/core/tools";
 import { z } from "zod";
 import { nanoid } from "nanoid";
 import { Insight, NarrativeStructure, Conclusion, IntegratedInsights } from "../../types/tot";
+import { openai } from "@ai-sdk/openai";
+import { Agent } from "@mastra/core/agent";
 
 /**
  * 洞察生成ツール
@@ -32,88 +34,49 @@ export const insightGenerator = createTool({
     }).describe("情報分析結果"),
     originalQuery: z.string().describe("元のクエリ"),
     maxInsights: z.number().min(1).max(10).default(5).describe("生成する洞察の最大数"),
+    selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
   }),
   description: "分析結果に基づいて重要な洞察を生成します",
-  execute: async ({ context: { informationAnalysis, originalQuery, maxInsights } }) => {
-    console.log(`[ToT] 洞察生成: クエリ=${originalQuery.substring(0, 50)}..., 解釈数=${informationAnalysis.interpretations.length}`);
+  execute: async ({ context: { informationAnalysis, originalQuery, maxInsights, selectedModelId } }) => {
+    console.log(`[ToT] 洞察生成: クエリ=${originalQuery.substring(0, 50)}..., 解釈数=${informationAnalysis.interpretations.length}, モデルID=${selectedModelId || 'default (gpt-4o-mini)'}`);
     
+    // Determine the model to use for insight generation
+    const insightModelId = selectedModelId || "gpt-4o-mini";
+
+    // Create the insight generation agent dynamically
+    const insightGenerationAgent = new Agent({
+      name: "Insight Generation Agent",
+      instructions: `あなたは情報分析結果から重要な洞察を抽出・生成する専門家です。与えられた分析結果（解釈仮説、情報ギャップ）と元のクエリに基づいて、最大${maxInsights}個の重要な洞察を生成してください。各洞察にはタイトル、説明、証拠の強さ（strong, moderate, weak）、裏付けとなる事実、考えられる影響を含めてください。結果はJSON形式の配列 [{"title": "...", "description": "...", "evidenceStrength": "...", "supportingFacts": [...], "implications": [...]}, ...] で返してください。`,
+      model: openai(insightModelId),
+    });
+
     try {
-      // 洞察生成のモック実装
-      // 実際の実装では、LLMを使用して洞察を生成します
-      
-      // モック洞察を生成
-      const insights: Insight[] = [
-        {
-          title: "効率性と使いやすさのバランスが成功の鍵",
-          description: "技術的効率性とユーザー体験の両方に焦点を当てた製品が市場で最も成功している。どちらか一方だけに偏った製品は特定のニッチ市場でのみ成功している。",
-          evidenceStrength: "strong" as const,
-          supportingFacts: [
-            "効率性を強調する製品と使いやすさを強調する製品の両方に関する分析",
-            "市場リーダーの製品は両方の側面でバランスが取れている",
-            "ユーザーレビューは両方の側面を評価している"
-          ],
-          implications: [
-            "製品開発では両方の側面のバランスを考慮すべき",
-            "マーケティングでも両方の側面を強調すべき"
-          ]
-        },
-        {
-          title: "業界標準化が加速しつつある",
-          description: "過去2年間で業界標準化の動きが加速しており、主要プレーヤーが共通規格の採用を進めている。これにより相互運用性が向上し、エコシステム全体の成長が促進されている。",
-          evidenceStrength: "moderate" as const,
-          supportingFacts: [
-            "主要企業による共通規格の採用発表",
-            "クロスプラットフォーム互換性の向上",
-            "業界団体による標準化イニシアチブの増加"
-          ],
-          implications: [
-            "標準に準拠した製品開発が重要になる",
-            "独自規格の維持は長期的にはリスクとなる可能性がある"
-          ]
-        },
-        {
-          title: "ユーザーデータの活用が競争優位性の源泉に",
-          description: "収集したユーザーデータを効果的に活用している企業が、製品改善と新機能開発で競争優位性を獲得している。データ駆動型の意思決定が標準になりつつある。",
-          evidenceStrength: "strong" as const,
-          supportingFacts: [
-            "データ駆動型アプローチを採用している企業の成功事例",
-            "ユーザーフィードバックの収集と分析に投資している企業の成長率",
-            "データプライバシー規制への対応が競争要因になっている"
-          ],
-          implications: [
-            "データ収集と分析能力への投資が重要",
-            "プライバシーに配慮したデータ活用戦略の必要性"
-          ]
-        },
-        {
-          title: "サブスクリプションモデルへの移行が進行中",
-          description: "業界全体で従来の一時払いモデルからサブスクリプションベースのモデルへの移行が進んでいる。これにより収益の予測可能性が向上し、継続的な製品改善が促進されている。",
-          evidenceStrength: "moderate" as const,
-          supportingFacts: [
-            "主要プレーヤーのビジネスモデル変更の発表",
-            "サブスクリプション収益の成長率データ",
-            "投資家がサブスクリプション収益を重視する傾向"
-          ],
-          implications: [
-            "継続的な価値提供の重要性が増している",
-            "顧客維持戦略がより重要になっている"
-          ]
-        },
-        {
-          title: "新興市場が成長の主要ドライバーに",
-          description: "成熟市場の飽和に伴い、新興市場が成長の主要ドライバーになっている。これらの市場特有のニーズに対応した製品開発と戦略が成功の鍵となっている。",
-          evidenceStrength: "weak" as const,
-          supportingFacts: [
-            "新興市場での成長率データ",
-            "主要企業の新興市場戦略の発表",
-            "新興市場向け製品の発売増加"
-          ],
-          implications: [
-            "地域固有のニーズへの対応が重要",
-            "価格戦略の見直しが必要になる可能性"
-          ]
+      const analysisContext = JSON.stringify(informationAnalysis, null, 2);
+      const prompt = `元のクエリ: "${originalQuery}"\n\n情報分析結果:\n${analysisContext}\n\n上記の情報分析結果に基づいて、最大${maxInsights}個の重要な洞察を生成してください。結果は指定されたJSON形式の配列で返してください。`;
+
+      let insights: Insight[] = []; // Default empty array
+
+      try {
+        const generationResult = await insightGenerationAgent.generate(prompt);
+        try {
+          const parsedInsights = JSON.parse(generationResult.text);
+          // Basic validation of the parsed structure
+          if (Array.isArray(parsedInsights) && parsedInsights.every(item => item.title && item.description && item.evidenceStrength)) {
+            insights = parsedInsights.slice(0, maxInsights).map(item => ({
+              ...item,
+              supportingFacts: item.supportingFacts || [], // Ensure array exists
+              implications: item.implications || [],   // Ensure array exists
+            }));
+          } else {
+             console.warn(`[ToT] 洞察生成JSON形式エラー: 予期しない形式です。 Response: ${generationResult.text}`);
+          }
+        } catch (parseError: unknown) {
+          console.warn(`[ToT] 洞察生成JSONパースエラー: ${parseError instanceof Error ? parseError.message : String(parseError)}, Response: ${generationResult.text}`);
         }
-      ].slice(0, maxInsights);
+      } catch (genError: unknown) {
+        console.error(`[ToT] 洞察生成AI呼び出しエラー:`, genError);
+        // Keep insights as empty array on generation error
+      }
       
       return {
         insights,
@@ -143,47 +106,54 @@ export const storyBuilder = createTool({
     })).describe("生成された洞察"),
     originalQuery: z.string().describe("元のクエリ"),
     narrativeApproaches: z.array(z.string()).optional().describe("検討するナラティブアプローチ（オプション）"),
+    selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
   }),
   description: "洞察を中心に全体ストーリーを構築します",
-  execute: async ({ context: { insights, originalQuery, narrativeApproaches } }) => {
-    console.log(`[ToT] ストーリー構築: クエリ=${originalQuery.substring(0, 50)}..., 洞察数=${insights.length}`);
+  execute: async ({ context: { insights, originalQuery, narrativeApproaches, selectedModelId } }) => {
+    console.log(`[ToT] ストーリー構築: クエリ=${originalQuery.substring(0, 50)}..., 洞察数=${insights.length}, モデルID=${selectedModelId || 'default (gpt-4o-mini)'}`);
     
+    // Determine the model to use for story building
+    const storyModelId = selectedModelId || "gpt-4o-mini";
+
+    // Create the story building agent dynamically
+    const storyBuildingAgent = new Agent({
+      name: "Story Building Agent",
+      instructions: `あなたは複数の洞察を論理的で説得力のあるストーリーにまとめる専門家です。与えられた洞察リストと元のクエリに基づいて、最適なナラティブ構造（アプローチ、主要セクション、流れの説明）を提案してください。検討可能なアプローチ: ${narrativeApproaches?.join(', ') || 'デフォルトのアプローチ'}。結果はJSON形式のオブジェクト {"approach": "...", "mainSections": [...], "flowDescription": "..."} で返してください。`,
+      model: openai(storyModelId),
+    });
+
     try {
-      // ストーリー構築のモック実装
-      // 実際の実装では、LLMを使用してストーリーを構築します
-      
-      // デフォルトのナラティブアプローチ
-      const defaultApproaches = [
-        "時系列展開（過去→現在→未来）",
-        "トピック別構成（主要テーマごとに整理）",
-        "比較分析構造（対比と類似点）",
-        "問題解決フレームワーク（課題→解決策→結果）",
-        "重要度ベース（最重要→補足情報）"
-      ];
-      
-      const approaches = narrativeApproaches || defaultApproaches;
-      
-      // 洞察の重要度に基づいてソート
-      const sortedInsights = [...insights].sort((a, b) => {
-        const strengthOrder = { 'strong': 0, 'moderate': 1, 'weak': 2 };
-        return strengthOrder[a.evidenceStrength] - strengthOrder[b.evidenceStrength];
-      });
-      
-      // モックのナラティブ構造を生成
-      const narrativeStructure: NarrativeStructure = {
-        approach: "トピック別構成と重要度の組み合わせ",
-        mainSections: [
-          "概要: 主要な発見と背景",
-          ...sortedInsights.map(insight => `${insight.title}`),
-          "今後の展望と推奨事項"
-        ],
-        flowDescription: "最も重要な洞察から始め、関連する洞察をグループ化し、最後に将来の展望で締めくくる構成。各セクションは具体的な証拠と実例で裏付ける。"
-      };
+      const insightsContext = JSON.stringify(insights, null, 2);
+      const prompt = `元のクエリ: "${originalQuery}"\n\n生成された洞察:\n${insightsContext}\n\n上記洞察に基づいて、最適なナラティブ構造をJSON形式で提案してください。`;
+
+      let narrativeStructure: NarrativeStructure = {
+          approach: "不明",
+          mainSections: ["概要", "洞察", "結論"], // Default structure
+          flowDescription: "不明"
+      }; // Default structure
+
+      try {
+        const generationResult = await storyBuildingAgent.generate(prompt);
+        try {
+          const parsedStructure = JSON.parse(generationResult.text);
+          // Basic validation
+          if (parsedStructure.approach && Array.isArray(parsedStructure.mainSections) && parsedStructure.flowDescription) {
+            narrativeStructure = parsedStructure;
+          } else {
+            console.warn(`[ToT] ストーリー構造JSON形式エラー: 予期しない形式です。 Response: ${generationResult.text}`);
+          }
+        } catch (parseError: unknown) {
+          console.warn(`[ToT] ストーリー構造JSONパースエラー: ${parseError instanceof Error ? parseError.message : String(parseError)}, Response: ${generationResult.text}`);
+        }
+      } catch (genError: unknown) {
+        console.error(`[ToT] ストーリー構築AI呼び出しエラー:`, genError);
+        // Keep default structure on generation error
+      }
       
       return {
         narrativeStructure,
         originalQuery,
-        approaches,
+        approaches: narrativeApproaches || [],
         selectedApproach: narrativeStructure.approach,
         timestamp: new Date().toISOString()
       };
@@ -214,84 +184,50 @@ export const conclusionFormer = createTool({
     }).describe("ナラティブ構造"),
     originalQuery: z.string().describe("元のクエリ"),
     maxConclusions: z.number().min(1).max(10).default(3).describe("生成する結論の最大数"),
+    selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
   }),
   description: "証拠に基づく結論を形成します",
-  execute: async ({ context: { insights, narrativeStructure, originalQuery, maxConclusions } }) => {
-    console.log(`[ToT] 結論形成: クエリ=${originalQuery.substring(0, 50)}..., 洞察数=${insights.length}`);
+  execute: async ({ context: { insights, narrativeStructure, originalQuery, maxConclusions, selectedModelId } }) => {
+    console.log(`[ToT] 結論形成: クエリ=${originalQuery.substring(0, 50)}..., 洞察数=${insights.length}, モデルID=${selectedModelId || 'default (gpt-4o)'}`);
     
+    // Determine the model to use for conclusion forming (using gpt-4o as default for higher reasoning)
+    const conclusionModelId = selectedModelId || "gpt-4o";
+
+    // Create the conclusion forming agent dynamically
+    const conclusionFormingAgent = new Agent({
+      name: "Conclusion Forming Agent",
+      instructions: `あなたは洞察とナラティブ構造に基づいて、証拠に裏打ちされた結論を形成する専門家です。与えられた洞察リスト、ナラティブ構造、元のクエリに基づいて、最大${maxConclusions}個の主要な結論を生成してください。各結論には、結論の記述、確信度（high, medium, low）、裏付けとなる証拠、および制限事項を含めてください。結果はJSON形式の配列 [{"statement": "...", "confidenceLevel": "...", "supportingEvidence": [...], "limitations": [...]}, ...] で返してください。`,
+      model: openai(conclusionModelId),
+    });
+
     try {
-      // 結論形成のモック実装
-      // 実際の実装では、LLMを使用して結論を形成します
-      
-      // モック結論を生成
-      const conclusions: Conclusion[] = [
-        {
-          statement: "効率性とユーザー体験のバランスが市場成功の決定的要因である",
-          confidenceLevel: "high" as const,
-          supportingEvidence: [
-            "効率性を強調する製品と使いやすさを強調する製品の両方に関する分析",
-            "市場リーダーの製品は両方の側面でバランスが取れている",
-            "ユーザーレビューは両方の側面を評価している"
-          ],
-          limitations: [
-            "特定のニッチ市場では一方の側面が特に重視される場合がある",
-            "技術の進化により、このバランスの最適点は変化する可能性がある"
-          ]
-        },
-        {
-          statement: "業界標準化の進行により、相互運用性が競争優位性の源泉になりつつある",
-          confidenceLevel: "medium" as const,
-          supportingEvidence: [
-            "主要企業による共通規格の採用発表",
-            "クロスプラットフォーム互換性の向上",
-            "業界団体による標準化イニシアチブの増加"
-          ],
-          limitations: [
-            "一部の企業は依然として独自規格を推進している",
-            "標準化の進行速度は地域や製品カテゴリによって異なる"
-          ]
-        },
-        {
-          statement: "データ駆動型の意思決定と製品開発が今後5年間の成功の鍵となる",
-          confidenceLevel: "high" as const,
-          supportingEvidence: [
-            "データ駆動型アプローチを採用している企業の成功事例",
-            "ユーザーフィードバックの収集と分析に投資している企業の成長率",
-            "データプライバシー規制への対応が競争要因になっている"
-          ],
-          limitations: [
-            "データ収集と分析には専門知識と投資が必要",
-            "プライバシー規制の変化によりデータ活用が制限される可能性がある"
-          ]
-        },
-        {
-          statement: "サブスクリプションモデルへの移行が収益の安定性と予測可能性を向上させる",
-          confidenceLevel: "medium" as const,
-          supportingEvidence: [
-            "主要プレーヤーのビジネスモデル変更の発表",
-            "サブスクリプション収益の成長率データ",
-            "投資家がサブスクリプション収益を重視する傾向"
-          ],
-          limitations: [
-            "すべての製品カテゴリがサブスクリプションモデルに適しているわけではない",
-            "顧客獲得コストの上昇がモデルの収益性に影響する可能性がある"
-          ]
-        },
-        {
-          statement: "新興市場向けの特化戦略が長期的な成長を促進する",
-          confidenceLevel: "low" as const,
-          supportingEvidence: [
-            "新興市場での成長率データ",
-            "主要企業の新興市場戦略の発表",
-            "新興市場向け製品の発売増加"
-          ],
-          limitations: [
-            "新興市場は政治的・経済的不安定性のリスクがある",
-            "文化的・地域的な違いへの対応には追加コストがかかる",
-            "データが限られており、より詳細な調査が必要"
-          ]
+      const insightsContext = JSON.stringify(insights, null, 2);
+      const structureContext = JSON.stringify(narrativeStructure, null, 2);
+      const prompt = `元のクエリ: "${originalQuery}"\n\n洞察リスト:\n${insightsContext}\n\nナラティブ構造:\n${structureContext}\n\n上記の情報に基づいて、最大${maxConclusions}個の主要な結論をJSON形式の配列で生成してください。`;
+
+      let conclusions: Conclusion[] = []; // Default empty array
+
+      try {
+        const generationResult = await conclusionFormingAgent.generate(prompt);
+        try {
+          const parsedConclusions = JSON.parse(generationResult.text);
+          // Basic validation
+          if (Array.isArray(parsedConclusions) && parsedConclusions.every(item => item.statement && item.confidenceLevel)) {
+            conclusions = parsedConclusions.slice(0, maxConclusions).map(item => ({
+              ...item,
+              supportingEvidence: item.supportingEvidence || [], // Ensure array exists
+              limitations: item.limitations || [],       // Ensure array exists
+            }));
+          } else {
+            console.warn(`[ToT] 結論生成JSON形式エラー: 予期しない形式です。 Response: ${generationResult.text}`);
+          }
+        } catch (parseError: unknown) {
+          console.warn(`[ToT] 結論生成JSONパースエラー: ${parseError instanceof Error ? parseError.message : String(parseError)}, Response: ${generationResult.text}`);
         }
-      ].slice(0, maxConclusions);
+      } catch (genError: unknown) {
+        console.error(`[ToT] 結論生成AI呼び出しエラー:`, genError);
+        // Keep conclusions as empty array on generation error
+      }
       
       // 統合された洞察を構築
       const integratedInsights: IntegratedInsights = {
