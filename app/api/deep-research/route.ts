@@ -265,10 +265,10 @@ export async function POST(req: NextRequest) {
         const agentRunStartTime = Date.now();
 
         try {
-          console.log('[API Deep Research] Getting Mastra agent...');
-          const agent = mastra.getAgent('deepResearchAgent');
+          console.log('[API Deep Research] Getting ToT Research agent...');
+          const agent = mastra.getAgent('totResearchAgent');
           if (!agent) {
-            throw new Error('Deep Research Agent not found.');
+            throw new Error('ToT Research Agent not found.');
           }
 
           console.log('[API Deep Research] Generating response with agent...');
