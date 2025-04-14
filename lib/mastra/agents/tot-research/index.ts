@@ -7,6 +7,7 @@
 
 import { Agent } from "@mastra/core/agent";
 import { openai } from "@ai-sdk/openai";
+import { nanoid } from "nanoid";
 
 // ToT ツールのインポート
 import * as thoughtTools from "../../tools/tot/thought-tools";
@@ -256,13 +257,126 @@ export async function executePlanningPhase(query: string) {
 5. queryOptimizer ツールを使用して効果的な検索クエリを最適化してください
 
 研究計画のみを返してください。実際の検索や分析は行わないでください。`;
+
+    // 推論ステップを記録
+    const reasoningSteps = [
+      {
+        id: nanoid(),
+        timestamp: new Date().toISOString(),
+        type: 'planning',
+        title: '研究計画フェーズを開始',
+        content: `クエリ「${query}」について研究計画を生成します。複数の調査アプローチを検討し、最適な戦略を選定します。`,
+        metadata: {
+          phase: 'planning',
+          currentStep: 1,
+          totalSteps: 5
+        }
+      }
+    ];
     
     // エージェントを実行
     const result = await totResearchAgent.generate(planningPrompt);
     
+    // 思考過程を推論ステップとして追加
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      result.toolCalls.forEach((call, index) => {
+        // ツール開始ステップ
+        reasoningSteps.push({
+          id: nanoid(),
+          timestamp: new Date().toISOString(),
+          type: call.tool === 'thoughtGenerator' ? 'thought_generation' :
+                call.tool === 'thoughtEvaluator' ? 'thought_evaluation' :
+                call.tool === 'pathSelector' ? 'path_selection' :
+                call.tool === 'researchPlanGenerator' ? 'research_plan' :
+                call.tool === 'queryOptimizer' ? 'query_optimization' : 'tool_start',
+          title: `${call.tool} を実行`,
+          content: `ツール入力: ${JSON.stringify(call.input, null, 2)}`,
+          metadata: {
+            toolName: call.tool,
+            phase: 'planning',
+            currentStep: index + 2,
+            totalSteps: result.toolCalls.length + 1
+          }
+        });
+        
+        // ツール出力ステップ
+        if (call.output) {
+          let outputContent = '';
+          
+          try {
+            // 特定のツールの出力を人間が読みやすい形式に整形
+            if (call.tool === 'thoughtGenerator') {
+              const thoughts = call.output.thoughts || [];
+              outputContent = thoughts.map((t: any, i: number) => 
+                `思考 ${i+1}:\n${t.content}`
+              ).join('\n\n');
+            } else if (call.tool === 'thoughtEvaluator') {
+              const evaluatedThoughts = call.output.evaluatedThoughts || [];
+              outputContent = evaluatedThoughts.map((t: any, i: number) => 
+                `思考 ${i+1} (スコア: ${t.score?.toFixed(2) || 'N/A'}):\n${t.content}`
+              ).join('\n\n');
+            } else if (call.tool === 'pathSelector' && call.output.selectedPath) {
+              outputContent = `選択された思考: (スコア: ${call.output.selectedPath.score?.toFixed(2) || 'N/A'})\n${call.output.selectedPath.content}\n\n選択理由: ${call.output.reasoning || '最高スコアの思考を選択'}`;
+            } else if (call.tool === 'researchPlanGenerator' && call.output.researchPlan) {
+              const plan = call.output.researchPlan;
+              outputContent = `アプローチ: ${plan.approach || 'N/A'}\n\nサブトピック:\n${(plan.subtopics || []).map((s: string) => `- ${s}`).join('\n')}\n\n検索クエリ:\n${(plan.queries || []).map((q: any) => `- ${q.query} (目的: ${q.purpose})`).join('\n')}`;
+            } else if (call.tool === 'queryOptimizer') {
+              const optimizedQueries = call.output.optimizedQueries || [];
+              outputContent = optimizedQueries.map((q: any) => 
+                `最適化クエリ: ${q.query}\n元のクエリ: ${q.originalQuery || 'N/A'}\n目的: ${q.purpose || 'N/A'}`
+              ).join('\n\n');
+            } else {
+              // その他のツールはJSON出力をそのまま表示
+              outputContent = JSON.stringify(call.output, null, 2);
+            }
+          } catch (formatError) {
+            // 変換エラー時はそのまま表示
+            outputContent = typeof call.output === 'string' ? call.output : JSON.stringify(call.output, null, 2);
+          }
+          
+          reasoningSteps.push({
+            id: nanoid(),
+            timestamp: new Date().toISOString(),
+            type: 'tool_end',
+            title: `${call.tool} の結果`,
+            content: outputContent,
+            metadata: {
+              toolName: call.tool,
+              phase: 'planning',
+              currentStep: index + 2,
+              totalSteps: result.toolCalls.length + 1
+            }
+          });
+        }
+      });
+    }
+    
+    // 最終統合ステップを追加
+    reasoningSteps.push({
+      id: nanoid(),
+      timestamp: new Date().toISOString(),
+      type: 'integration',
+      title: '研究計画フェーズ完了',
+      content: '複数の思考経路を評価し、最適な調査戦略を選定しました。検索クエリの最適化も完了しました。',
+      metadata: {
+        phase: 'planning',
+        currentStep: result.toolCalls?.length ? result.toolCalls.length + 2 : 3,
+        totalSteps: result.toolCalls?.length ? result.toolCalls.length + 2 : 3
+      }
+    });
+    
     console.log(`[ToT Research] 計画フェーズ完了: クエリ=${query.substring(0, 50)}...`);
     
-    return result;
+    // 推論ステップをメタデータとして追加
+    const resultWithSteps = {
+      ...result,
+      reasoningSteps: reasoningSteps
+    };
+    
+    // reasoningStepsが返されていることを確認するログ
+    console.log(`[ToT Research] Sending back ${reasoningSteps.length} reasoning steps with the result`);
+    
+    return resultWithSteps;
   } catch (error: unknown) {
     console.error(`[ToT Research] 研究計画フェーズエラー:`, error);
     throw new Error(`研究計画フェーズ実行中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);

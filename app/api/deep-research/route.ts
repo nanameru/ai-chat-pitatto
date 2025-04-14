@@ -63,6 +63,14 @@ type AgentResult = {
     text?: string; // ステップごとのテキスト (最終応答と同じ場合あり)
   }>;
   error?: any; // エラー情報
+  reasoningSteps?: Array<{
+    id: string;
+    timestamp: string;
+    type: string;
+    title: string;
+    content: string;
+    metadata?: any;
+  }>; // ToT思考ステップ情報
   // 他にもプロパティがある可能性
 };
 
@@ -273,9 +281,16 @@ export async function POST(req: NextRequest) {
 
           console.log('[API Deep Research] Generating response with agent...');
           console.log('[API Deep Research DEBUG] Calling agent.generate with messages:', coreMessages);
+          
+          // ★ 修正: agentOptions の定義とログ出力を削除
+          // const agentOptions = {
+          //   excludedTools: ['queryOptimizer'] 
+          // };
+          // console.log('[API Deep Research DEBUG] Executing agent with options:', agentOptions); 
+
           const agentResult = await agent.generate(
-            coreMessages,
-            {} // オプション
+            coreMessages
+            // agentOptions as any // ★ 修正: オプションの引数を削除
           ) as AgentResult;
 
           const agentRunEndTime = Date.now();
@@ -310,6 +325,16 @@ export async function POST(req: NextRequest) {
             streamData.append({ type: 'agent_steps', steps: agentResult.steps });
             console.log('[API Deep Research DEBUG] Appended steps to stream data.');
           }
+
+          // ToTの推論ステップがあれば追加
+          if (agentResult.reasoningSteps) {
+            console.log('[API Deep Research DEBUG] Found ToT reasoning steps:', agentResult.reasoningSteps.length);
+            streamData.append({ 
+              type: 'reasoning_steps', 
+              reasoningSteps: agentResult.reasoningSteps 
+            });
+            console.log('[API Deep Research DEBUG] Appended ToT reasoning steps to stream data.');
+          }
           // --- 解析ここまで --- ★
 
           // --- ストリームへの書き込み --- ★
@@ -318,6 +343,34 @@ export async function POST(req: NextRequest) {
             // `0:` はテキストパートを示すID
             dataStreamWriter.write(`0:"${JSON.stringify(fullCompletionText).slice(1, -1)}"\n`);
             console.log('[API Deep Research DEBUG] Wrote text to stream.');
+          }
+
+          // ToTの思考ステップが存在する場合、メタデータとして送信（ブロッキング方式）
+          if (agentResult.reasoningSteps && agentResult.reasoningSteps.length > 0) {
+            try {
+              // reasoningStepsをログ出力して確認
+              console.log('[API Deep Research] ReasoningSteps data structure:', 
+                JSON.stringify(agentResult.reasoningSteps.slice(0, 1), null, 2)); // 最初の1件だけ詳細表示
+              
+              // reasoningStepsをアノテーションとしてだけでなく、データとしても送信
+              streamData.append({
+                type: 'reasoning_data',
+                reasoningSteps: agentResult.reasoningSteps
+              });
+              
+              // reasoningStepsをストリームに書き込み（メタデータとして）
+              dataStreamWriter.writeMessageAnnotation({
+                type: 'tot_reasoning',
+                reasoningSteps: agentResult.reasoningSteps
+              });
+              
+              console.log('[API Deep Research DEBUG] Wrote reasoning steps as metadata:', 
+                agentResult.reasoningSteps.length, 'steps');
+            } catch (annotationError) {
+              console.error('[API Deep Research] Error writing reasoning steps annotation:', annotationError);
+            }
+          } else {
+            console.log('[API Deep Research DEBUG] No reasoning steps found to write');
           }
 
           // 明確化が必要な場合はアノテーションを追加

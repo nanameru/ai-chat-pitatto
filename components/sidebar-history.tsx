@@ -321,7 +321,7 @@ export function SidebarHistory() {
           className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
           onClick={() => {
             setOpenMobile(false);
-            // ニュースページへのリンク（実装時に適切なURLに変更してください）
+            // ニュースページへリダイレクト
             router.push('/news');
           }}
         >
@@ -334,7 +334,7 @@ export function SidebarHistory() {
               className="rounded-md" 
             />
             <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
-              Pitatto Me
+              ピタットニュース
             </span>
           </div>
         </button>

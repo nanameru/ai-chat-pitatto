@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
-import { useChat } from 'ai/react';
+import { useChat } from '@ai-sdk/react';
 import { useEffect, useOptimistic, useState, useRef, useCallback, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
@@ -25,8 +25,11 @@ import { useLocalStorage } from '../hooks/use-local-storage';
 import { useComputerUse } from '../lib/hooks/use-computer-use';
 import { useSearchParams } from 'next/navigation';
 
-// サンプル提案を生成する関数
-function getExampleSuggestions(append, setInput) {
+// サンプル提案を生成する関数 (Re-add the function)
+function getExampleSuggestions(
+  append: (message: Message | CreateMessage, options?: ChatRequestOptions) => Promise<string | null | undefined>,
+  setInput: (value: string) => void
+) {
   return [
     {
       title: 'AIの最新トレンド',
@@ -36,7 +39,7 @@ function getExampleSuggestions(append, setInput) {
         const message = {
           id: randomUUID(),
           content: input,
-          role: 'user',
+          role: 'user' as const,
           createdAt: new Date()
         };
         append(message);
@@ -51,7 +54,7 @@ function getExampleSuggestions(append, setInput) {
         const message = {
           id: randomUUID(),
           content: input,
-          role: 'user',
+          role: 'user' as const,
           createdAt: new Date()
         };
         append(message);
@@ -66,7 +69,7 @@ function getExampleSuggestions(append, setInput) {
         const message = {
           id: randomUUID(),
           content: input,
-          role: 'user',
+          role: 'user' as const,
           createdAt: new Date()
         };
         append(message);
@@ -81,7 +84,7 @@ function getExampleSuggestions(append, setInput) {
         const message = {
           id: randomUUID(),
           content: input,
-          role: 'user',
+          role: 'user' as const,
           createdAt: new Date()
         };
         append(message);
@@ -89,6 +92,108 @@ function getExampleSuggestions(append, setInput) {
       }
     }
   ];
+}
+
+// ToTツール名と対応するReasoningStepタイプ、タイトルプレフィックスのマッピング
+const totToolMapping: Record<string, { type: ReasoningStep['type'], titlePrefix: string }> = {
+  thoughtGenerator: { type: 'thinking', titlePrefix: '思考生成' },
+  thoughtEvaluator: { type: 'thinking', titlePrefix: '思考評価' },
+  pathSelector: { type: 'planning', titlePrefix: 'パス選択' },
+  researchPlanGenerator: { type: 'planning', titlePrefix: 'リサーチ計画生成' },
+  queryOptimizer: { type: 'planning', titlePrefix: 'クエリ最適化' },
+  informationEvaluator: { type: 'research', titlePrefix: '情報評価' },
+  hypothesisGenerator: { type: 'integration', titlePrefix: '仮説生成' },
+  gapAnalyzer: { type: 'research', titlePrefix: 'ギャップ分析' },
+  insightExtractor: { type: 'integration', titlePrefix: '洞察抽出' },
+  reportGenerator: { type: 'integration', titlePrefix: 'レポート生成' },
+  // 必要に応じて他のツールを追加
+};
+
+// 個別のToTツール結果をReasoningStepに変換する関数
+function convertSingleTotResultToStep(toolName: string, toolResult: any): ReasoningStep | null {
+  const mapping = totToolMapping[toolName];
+  if (!mapping) {
+    console.warn(`[ToT] 未知のツール名: ${toolName}`);
+    // 未知のツールでも基本的な情報を表示する試み
+    return {
+      id: `unknown-${toolName}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      timestamp: new Date().toISOString(),
+      type: 'thinking', // デフォルトタイプ
+      title: `未知のツール実行: ${toolName}`,
+      content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult, null, 2).substring(0, 1000) + (JSON.stringify(toolResult).length > 1000 ? '...' : '')
+    };
+  }
+
+  let content = '';
+  try {
+    // ツールごとに内容を整形
+    if (typeof toolResult === 'string') {
+      content = toolResult;
+    } else if (typeof toolResult === 'object' && toolResult !== null) {
+      // 特定のツールの結果をより分かりやすく整形
+      switch (toolName) {
+        case 'thoughtGenerator':
+          content = (toolResult.thoughts || []).map((t: any, i: number) => `案${i+1}: ${t.approach || t.idea || JSON.stringify(t)}`).join('\n');
+          break;
+        case 'thoughtEvaluator':
+          content = (toolResult.evaluatedThoughts || []).map((t: any) => 
+            `案「${t.approach || t.id}」: ${t.evaluation?.score || '評価なし'}点 (${t.evaluation?.reason || '理由なし'})`
+          ).join('\n');
+          break;
+        case 'pathSelector':
+          content = `選択されたパス: ${toolResult.selectedPath?.approach || toolResult.selectedPath?.id || '不明'}\n理由: ${toolResult.reason || '記載なし'}`;
+          break;
+        case 'researchPlanGenerator':
+          content = `トピック: ${toolResult.topic || '未指定'}\nサブトピック:\n${(toolResult.subtopics || []).map((s: string) => `- ${s}`).join('\n')}\nクエリ:\n${(toolResult.queries || []).map((q: string) => `- ${q}`).join('\n')}`;
+          break;
+        case 'queryOptimizer':
+          content = `最適化されたクエリ:\n${(toolResult.optimizedQueries || []).map((q: string) => `- ${q}`).join('\n')}`;
+          break;
+        case 'informationEvaluator':
+          content = `評価ソース数: ${toolResult.evaluatedSources?.length || 0}\n` +
+                    `高信頼性: ${toolResult.informationEvaluation?.highReliabilitySources?.length || 0}件\n` +
+                    `中信頼性: ${toolResult.informationEvaluation?.mediumReliabilitySources?.length || 0}件\n` +
+                    `低信頼性: ${toolResult.informationEvaluation?.lowReliabilitySources?.length || 0}件`;
+          break;
+        case 'hypothesisGenerator':
+          content = (toolResult.hypotheses || []).map((h: any, i: number) => 
+            `仮説${i+1}: ${h.statement} (信頼度: ${Math.round((h.confidenceScore || 0) * 100)}%)`
+          ).join('\n');
+          break;
+        case 'gapAnalyzer':
+          content = `検出されたギャップ: ${toolResult.informationAnalysis?.informationGaps?.length || 0}件\n` +
+                    (toolResult.informationAnalysis?.informationGaps || []).map((g: any) => 
+                      `${g.importance === 'high' ? '🔴' : '🟠'} ${g.area}`
+                    ).join('\n');
+          break;
+        case 'insightExtractor':
+           content = (toolResult.insights || []).map((ins: any, i: number) => 
+            `洞察${i+1}: ${ins.insight} (重要度: ${ins.importance || '中'})`
+          ).join('\n');
+          break;
+        case 'reportGenerator':
+          content = (toolResult.finalReport || 'レポート内容なし').substring(0, 500) + ( (toolResult.finalReport?.length || 0) > 500 ? '...' : '');
+          break;
+        default:
+          // その他のツールはJSONをそのまま表示（短縮）
+          content = JSON.stringify(toolResult, null, 2).substring(0, 1000) + (JSON.stringify(toolResult).length > 1000 ? '...' : '');
+      }
+    } else {
+      // その他の型はそのまま文字列化
+      content = String(toolResult);
+    }
+  } catch (e) {
+    console.error(`[ToT] ステップ内容の整形エラー (${toolName}):`, e);
+    content = `結果の表示中にエラー: ${e instanceof Error ? e.message : String(e)}`;
+  }
+
+  return {
+    id: `${mapping.type}-${toolName}-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+    timestamp: new Date().toISOString(),
+    type: mapping.type,
+    title: `${mapping.titlePrefix}: ${toolName.replace(/([A-Z])/g, ' $1').trim()}`, // CamelCaseをスペース区切りに
+    content: content || '結果なし' // contentが空の場合のフォールバック
+  };
 }
 
 export function Chat({
@@ -116,7 +221,7 @@ export function Chat({
   
   // URLからクエリパラメータを取得
   const searchParams = useSearchParams();
-  const refreshParam = searchParams.get('refresh');
+  const refreshParam = searchParams?.get('refresh');
 
   // 推論ステップの状態管理
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
@@ -333,7 +438,7 @@ export function Chat({
       const userMessageToAdd: Message = {
         id: typeof message === 'object' && 'id' in message ? (message.id || randomUUID()) : randomUUID(),
         content: typeof message === 'string' ? message : message.content,
-        role: 'user', // ユーザーロール
+        role: 'user' as const,
         createdAt: typeof message === 'object' && 'createdAt' in message ? message.createdAt : new Date()
       };
 
@@ -545,7 +650,18 @@ export function Chat({
     setIsReasoningLoading(true); // ローディング開始
 
     try {
-      // ... (fetch /api/deep-research の呼び出しと成功時の処理) ...
+      // APIを呼び出し
+      const response = await fetch('/api/deep-research', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          chatId: id,
+          model: selectedChatModel
+        }),
+      });
 
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({ error: '不明なエラーが発生しました' }));
@@ -581,6 +697,118 @@ export function Chat({
       setIsReasoningLoading(false); // ローディング終了
     }
   };
+
+  /* // ★ コメントアウト開始: テスト用ダミーデータ設定部分
+  // テスト用: 初期読み込み時にダミーの思考ステップを設定
+  useEffect(() => {
+    if (isXSearchEnabled) {
+      // デバッグ: テスト用の思考ステップを追加
+      const testReasoningSteps: ReasoningStep[] = [
+        {
+          id: 'test-1',
+          timestamp: new Date().toISOString(),
+          type: 'planning',
+          title: 'テスト: 研究計画フェーズを開始',
+          content: 'テスト用のダミーデータです。実際の思考プロセスではありません。'
+        },
+        {
+          id: 'test-2',
+          timestamp: new Date().toISOString(),
+          type: 'thought_generation',
+          title: 'テスト: 思考生成を実行',
+          content: 'テスト用の思考生成ステップです。'
+        }
+      ];
+      console.log('Setting test reasoning steps for debugging - COMMENTED OUT'); // ログ変更
+      // setReasoningSteps(testReasoningSteps); // ★ 状態更新をコメントアウト
+      // setIsReasoningLoading(false); // ★ 状態更新をコメントアウト
+    }
+  }, [isXSearchEnabled]);
+  */ // ★ コメントアウト終了
+
+  // データストリームからのToT結果処理
+  useEffect(() => {
+    // ローディングが終了し、メッセージが存在する場合のみ処理
+    if (isLoading || !messages || messages.length === 0) {
+        // console.log('[Chat DEBUG] Skipping step processing: Still loading or no messages.');
+        return;
+    }
+
+    const newSteps: ReasoningStep[] = [];
+    let updated = false;
+
+    // 最後のメッセージを解析
+    const lastMessage = messages[messages.length - 1];
+
+    // isLoading が false になった直後の最後のメッセージが tool ロールかチェック
+    // 注意: ストリーム完了直後に isLoading が false になるとは限らない場合があるため、
+    //       より確実な完了検知が必要な場合もある
+    if (lastMessage && (lastMessage as any).role === 'tool') {
+      console.log('[Chat DEBUG] Processing Tool message after loading finished:', lastMessage);
+      // ツール結果をステップに変換
+      if (Array.isArray(lastMessage.content)) {
+        lastMessage.content.forEach(toolResult => {
+          if (toolResult.type === 'tool-result' && toolResult.toolName && toolResult.result) {
+            const step = convertSingleTotResultToStep(toolResult.toolName, toolResult.result);
+            if (step) {
+              newSteps.push(step);
+              updated = true;
+            }
+          }
+        });
+      } else if (typeof lastMessage.content === 'string') {
+        try {
+          const parsedContent = JSON.parse(lastMessage.content);
+          if (parsedContent.type === 'tool-result' && parsedContent.toolName && parsedContent.result) {
+             const step = convertSingleTotResultToStep(parsedContent.toolName, parsedContent.result);
+             if (step) {
+               newSteps.push(step);
+               updated = true;
+             }
+          } else {
+            console.warn('[Chat DEBUG] Tool message content (string) is not a valid tool-result JSON:', lastMessage.content);
+          }
+        } catch (e) {
+           console.warn('[Chat DEBUG] Failed to parse tool message content (string) as JSON:', e);
+           newSteps.push({
+             id: `tool-parse-error-${Date.now()}`,
+             timestamp: new Date().toISOString(),
+             type: 'thinking',
+             title: 'ツール結果処理エラー',
+             content: `ツール結果(文字列)の解析に失敗しました:\n${lastMessage.content.substring(0,500)}...`
+           });
+           updated = true;
+        }
+      }
+    } else {
+        // console.log('[Chat DEBUG] Last message is not a tool result or processing skipped.');
+    }
+
+
+    // 既存のステップと比較して新しいステップのみを追加
+    if (updated) {
+      console.log('[Chat DEBUG] Generated new steps from tool results:', newSteps);
+      setReasoningSteps(prevSteps => {
+        const existingStepIds = new Set(prevSteps.map(s => s.id));
+        const uniqueNewSteps = newSteps.filter(ns => !existingStepIds.has(ns.id));
+        if (uniqueNewSteps.length > 0) {
+          console.log(`[Chat] 新しい思考ステップを追加: ${uniqueNewSteps.length}件`);
+          const combinedSteps = [...prevSteps, ...uniqueNewSteps];
+          combinedSteps.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+          console.log('[Chat DEBUG] Final combined steps being set:', combinedSteps);
+          setShowReasoningSidebar(true);
+          // setIsReasoningLoading(false); // isLoading は useChat から来るので不要
+          return combinedSteps;
+        }
+        // console.log('[Chat DEBUG] No unique new steps to add.');
+        return prevSteps;
+      });
+    }
+    // else {
+    //   console.log('[Chat DEBUG] No updates detected for reasoning steps.');
+    // }
+
+  }, [messages, isLoading]); // isLoading を依存配列に追加
 
   return (
     <div className="relative flex flex-col min-h-screen">
@@ -774,10 +1002,6 @@ export function Chat({
                         console.log(`[Chat] 検索結果の表示状態を変更`);
                         setShowReasoningSidebar(true);
                       }}
-                      reasoningSteps={reasoningSteps}
-                      setReasoningSteps={setReasoningSteps}
-                      isReasoningLoading={isReasoningLoading}
-                      setIsReasoningLoading={setIsReasoningLoading}
                     />
 
                     {isArtifactVisible && <Artifact 
@@ -808,7 +1032,7 @@ export function Chat({
                     />}
 
                     {!isArtifactVisible && messages.length === 0 && (
-                      <div className="mb-4">
+                      <div className="mb-2">
                         <SuggestedActions
                           chatId={id}
                           append={append}
