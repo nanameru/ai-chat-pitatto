@@ -7,7 +7,7 @@ export interface NewsItem {
   source: string;
   url: string;
   imageUrl?: string;
-  category: 'ChatGPT' | 'Gemini' | 'Claude' | 'Cursor' | 'Kamui' | 'その他'; // カテゴリーを型として定義
+  category: 'ChatGPT' | 'Gemini' | 'Claude' | 'Cursor' | 'Kamui' | '生成AI' | 'その他'; // カテゴリーを型として定義
   tags: string[];
 }
 
@@ -105,20 +105,67 @@ const mockNewsData: NewsItem[] = [
 ];
 
 // カテゴリーの型定義を流用して、カテゴリーリストを生成
-export const newsCategories: NewsItem['category'][] = ['ChatGPT', 'Gemini', 'Claude', 'Cursor', 'Kamui', 'その他']; // 型から生成
+export const newsCategories: NewsItem['category'][] = ['ChatGPT', 'Gemini', 'Claude', 'Cursor', 'Kamui', '生成AI', 'その他']; // 型から生成
 export const allCategories = ['すべて', ...newsCategories];
 
 // すべてのニュースを取得する関数 (ソート機能を考慮)
 export const getAllNews = async (sortBy: SortOption = 'newest'): Promise<NewsItem[]> => {
-  await new Promise(resolve => setTimeout(resolve, 100));
-  let sortedData = [...mockNewsData]; // 元の配列を変更しないようにコピー
-  return sortNews(sortedData, sortBy); // ソート関数を呼び出す
+  try {
+    // APIからデータを取得 - サーバーサイドとクライアントサイドの両方で動作するURLを構築
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 
+                   (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+    
+    // 絶対URLを構築して使用
+    const apiUrl = new URL('/api/news', baseUrl).toString();
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      console.error('ニュース記事の取得に失敗しました:', response.statusText);
+      // APIが失敗した場合はモックデータにフォールバック
+      return sortNews([...mockNewsData], sortBy);
+    }
+    
+    const data = await response.json();
+    
+    // データが正しい形式であることを確認
+    if (!Array.isArray(data)) {
+      console.warn('APIからの応答が配列ではありません。モックデータを使用します。');
+      return sortNews([...mockNewsData], sortBy);
+    }
+    
+    // サーバーサイドでソート済みだが、念のため再ソート
+    return sortNews(data, sortBy);
+  } catch (error) {
+    console.error('ニュースデータの取得中にエラーが発生しました:', error);
+    // エラーが発生した場合はモックデータにフォールバック
+    return sortNews([...mockNewsData], sortBy);
+  }
 };
 
-// IDを指定して単一のニュースを取得する関数 (非同期を模倣)
+// 特定IDのニュース記事を取得する関数
 export const getNewsById = async (id: string): Promise<NewsItem | undefined> => {
-  await new Promise(resolve => setTimeout(resolve, 50)); // 軽い遅延を模倣
-  return mockNewsData.find(item => item.id === id);
+  try {
+    // APIから単一記事を取得 - サーバーサイドとクライアントサイドの両方で動作するURLを構築
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 
+                   (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+    
+    // 絶対URLを構築して使用
+    const apiUrl = new URL(`/api/news/${id}`, baseUrl).toString();
+    const response = await fetch(apiUrl);
+    
+    if (!response.ok) {
+      console.error(`ID ${id} の記事取得に失敗しました:`, response.statusText);
+      // APIが失敗した場合はモックデータから検索
+      return mockNewsData.find(item => item.id === id);
+    }
+    
+    const data = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`ID ${id} の記事取得中にエラーが発生しました:`, error);
+    // エラーが発生した場合はモックデータから検索
+    return mockNewsData.find(item => item.id === id);
+  }
 };
 
 // カテゴリーでニュースをフィルタリングする関数（クライアントサイドでの利用を想定）
@@ -158,26 +205,42 @@ export const sortNews = (news: NewsItem[], sortBy: SortOption): NewsItem[] => {
   }
 };
 
-// 関連ニュースを取得する関数 (非同期を模倣)
+// 関連ニュースを取得する関数
 export const getRelatedNews = async (
   currentItem: NewsItem,
   limit: number = 3 // 取得する最大件数
 ): Promise<NewsItem[]> => {
-  await new Promise(resolve => setTimeout(resolve, 80)); // 軽い遅延
+  try {
+    // まずすべてのニュースを取得
+    const allNews = await getAllNews('newest');
+    
+    // 同じカテゴリの記事を取得し、現在の記事を除外
+    const related = allNews
+      .filter(item => item.category === currentItem.category && item.id !== currentItem.id)
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()); // 新しい順
 
-  // 同じカテゴリの記事を取得し、現在の記事を除外
-  const related = mockNewsData
-    .filter(item => item.category === currentItem.category && item.id !== currentItem.id)
-    .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime()); // 新しい順
-
-  return related.slice(0, limit);
+    return related.slice(0, limit);
+  } catch (error) {
+    console.error('関連ニュースの取得中にエラーが発生しました:', error);
+    // エラーが発生した場合はモックデータから検索
+    const related = mockNewsData
+      .filter(item => item.category === currentItem.category && item.id !== currentItem.id)
+      .sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
+    return related.slice(0, limit);
+  }
 };
 
-// 注目の記事を取得する関数 (非同期を模倣)
+// 注目の記事を取得する関数
 export const getFeaturedNews = async (limit: number = 2): Promise<NewsItem[]> => {
-  await new Promise(resolve => setTimeout(resolve, 60)); // 軽い遅延
-
-  // 最新の記事を取得 (getAllNewsがソートするのでそれを利用)
-  const allNews = await getAllNews('newest');
-  return allNews.slice(0, limit);
+  try {
+    // すべてのニュースを取得
+    const allNews = await getAllNews('newest');
+    
+    // 最新のニュースを「注目の記事」として返す
+    return allNews.slice(0, limit);
+  } catch (error) {
+    console.error('注目の記事の取得中にエラーが発生しました:', error);
+    // エラーが発生した場合はモックデータを使用
+    return mockNewsData.slice(0, limit);
+  }
 }; 

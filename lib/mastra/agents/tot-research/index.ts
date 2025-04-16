@@ -22,6 +22,44 @@ import { searchTool } from "../../tools/search-tool";
 // 明確化ツールのインポート
 import { queryClarifier, clarificationProcessor } from "./clarification";
 
+// Define interfaces (add these near the top of the file or import if defined elsewhere)
+interface ReasoningStepMetadata {
+  phase: string;
+  currentStep: number;
+  totalSteps: number;
+  toolName?: string; // Added toolName as optional
+}
+
+interface ReasoningStep {
+  id: string;
+  timestamp: string;
+  type: string;
+  title: string;
+  content: string;
+  metadata: ReasoningStepMetadata;
+}
+
+interface ToolCall {
+  type: 'tool-call';
+  toolCallId: string;
+  toolName: string;
+  args: any;
+}
+
+interface ToolResult {
+  type: 'tool-result';
+  toolCallId: string;
+  toolName: string; // Usually included
+  result: any;
+}
+
+interface GenerateResult {
+  text?: string; 
+  toolCalls?: ToolCall[];
+  toolResults?: ToolResult[];
+  // Add other potential properties based on Agent.generate's actual return type
+}
+
 /**
  * ToT Deep Research Agent
  * 
@@ -258,8 +296,8 @@ export async function executePlanningPhase(query: string) {
 
 研究計画のみを返してください。実際の検索や分析は行わないでください。`;
 
-    // 推論ステップを記録
-    const reasoningSteps = [
+    // 推論ステップを記録 (Use the defined interface)
+    const reasoningSteps: ReasoningStep[] = [
       {
         id: nanoid(),
         timestamp: new Date().toISOString(),
@@ -269,99 +307,129 @@ export async function executePlanningPhase(query: string) {
         metadata: {
           phase: 'planning',
           currentStep: 1,
-          totalSteps: 5
+          totalSteps: 5 // Initial estimate, will be updated
         }
       }
     ];
     
-    // エージェントを実行
-    const result = await totResearchAgent.generate(planningPrompt);
+    // エージェントを実行 (Assume GenerateResult type)
+    const result: GenerateResult = await totResearchAgent.generate(planningPrompt);
     
     // 思考過程を推論ステップとして追加
     if (result.toolCalls && result.toolCalls.length > 0) {
+      // Create a map for quick lookup of tool results by toolCallId
+      const toolResultsMap = new Map<string, ToolResult>();
+      if (result.toolResults) {
+        result.toolResults.forEach(res => toolResultsMap.set(res.toolCallId, res));
+      }
+
       result.toolCalls.forEach((call, index) => {
+        const currentStepIndex = index + 2; // Step 1 is initial, then calls start from 2
+        const totalStepsEstimate = (result.toolCalls?.length || 0) + 2; // Initial + calls + final integration
+
         // ツール開始ステップ
         reasoningSteps.push({
           id: nanoid(),
           timestamp: new Date().toISOString(),
-          type: call.tool === 'thoughtGenerator' ? 'thought_generation' :
-                call.tool === 'thoughtEvaluator' ? 'thought_evaluation' :
-                call.tool === 'pathSelector' ? 'path_selection' :
-                call.tool === 'researchPlanGenerator' ? 'research_plan' :
-                call.tool === 'queryOptimizer' ? 'query_optimization' : 'tool_start',
-          title: `${call.tool} を実行`,
-          content: `ツール入力: ${JSON.stringify(call.input, null, 2)}`,
+          type: call.toolName === 'thoughtGenerator' ? 'thought_generation' :
+                call.toolName === 'thoughtEvaluator' ? 'thought_evaluation' :
+                call.toolName === 'pathSelector' ? 'path_selection' :
+                call.toolName === 'researchPlanGenerator' ? 'research_plan' :
+                call.toolName === 'queryOptimizer' ? 'query_optimization' : 'tool_start',
+          title: `${call.toolName} を実行`,
+          content: `ツール入力: ${JSON.stringify(call.args, null, 2)}`,
           metadata: {
-            toolName: call.tool,
+            toolName: call.toolName, // Use the defined interface field
             phase: 'planning',
-            currentStep: index + 2,
-            totalSteps: result.toolCalls.length + 1
+            currentStep: currentStepIndex,
+            totalSteps: totalStepsEstimate
           }
         });
         
         // ツール出力ステップ
-        if (call.output) {
+        const toolResult = toolResultsMap.get(call.toolCallId);
+        if (toolResult) {
           let outputContent = '';
-          
+          const output = toolResult.result; // ** CORRECT: Access the result from toolResult **
+
           try {
             // 特定のツールの出力を人間が読みやすい形式に整形
-            if (call.tool === 'thoughtGenerator') {
-              const thoughts = call.output.thoughts || [];
+            if (call.toolName === 'thoughtGenerator') {
+              const thoughts = output.thoughts || []; // ** CORRECT: Use output variable **
               outputContent = thoughts.map((t: any, i: number) => 
                 `思考 ${i+1}:\n${t.content}`
               ).join('\n\n');
-            } else if (call.tool === 'thoughtEvaluator') {
-              const evaluatedThoughts = call.output.evaluatedThoughts || [];
+            } else if (call.toolName === 'thoughtEvaluator') {
+              const evaluatedThoughts = output.evaluatedThoughts || []; // ** CORRECT: Use output variable **
               outputContent = evaluatedThoughts.map((t: any, i: number) => 
                 `思考 ${i+1} (スコア: ${t.score?.toFixed(2) || 'N/A'}):\n${t.content}`
               ).join('\n\n');
-            } else if (call.tool === 'pathSelector' && call.output.selectedPath) {
-              outputContent = `選択された思考: (スコア: ${call.output.selectedPath.score?.toFixed(2) || 'N/A'})\n${call.output.selectedPath.content}\n\n選択理由: ${call.output.reasoning || '最高スコアの思考を選択'}`;
-            } else if (call.tool === 'researchPlanGenerator' && call.output.researchPlan) {
-              const plan = call.output.researchPlan;
+            } else if (call.toolName === 'pathSelector' && output.selectedPath) { // ** CORRECT: Use output variable **
+              outputContent = `選択された思考: (スコア: ${output.selectedPath.score?.toFixed(2) || 'N/A'})\n${output.selectedPath.content}\n\n選択理由: ${output.reasoning || '最高スコアの思考を選択'}`; // ** CORRECT: Use output variable **
+            } else if (call.toolName === 'researchPlanGenerator' && output.researchPlan) { // ** CORRECT: Use output variable **
+              const plan = output.researchPlan; // ** CORRECT: Use output variable **
               outputContent = `アプローチ: ${plan.approach || 'N/A'}\n\nサブトピック:\n${(plan.subtopics || []).map((s: string) => `- ${s}`).join('\n')}\n\n検索クエリ:\n${(plan.queries || []).map((q: any) => `- ${q.query} (目的: ${q.purpose})`).join('\n')}`;
-            } else if (call.tool === 'queryOptimizer') {
-              const optimizedQueries = call.output.optimizedQueries || [];
+            } else if (call.toolName === 'queryOptimizer') {
+              const optimizedQueries = output.optimizedQueries || []; // ** CORRECT: Use output variable **
               outputContent = optimizedQueries.map((q: any) => 
                 `最適化クエリ: ${q.query}\n元のクエリ: ${q.originalQuery || 'N/A'}\n目的: ${q.purpose || 'N/A'}`
               ).join('\n\n');
             } else {
               // その他のツールはJSON出力をそのまま表示
-              outputContent = JSON.stringify(call.output, null, 2);
+              outputContent = JSON.stringify(output, null, 2); // ** CORRECT: Use output variable **
             }
           } catch (formatError) {
             // 変換エラー時はそのまま表示
-            outputContent = typeof call.output === 'string' ? call.output : JSON.stringify(call.output, null, 2);
+            outputContent = typeof output === 'string' ? output : JSON.stringify(output, null, 2); // ** CORRECT: Use output variable **
           }
           
           reasoningSteps.push({
             id: nanoid(),
             timestamp: new Date().toISOString(),
             type: 'tool_end',
-            title: `${call.tool} の結果`,
+            title: `${call.toolName} の結果`,
             content: outputContent,
             metadata: {
-              toolName: call.tool,
+              toolName: call.toolName, // Use the defined interface field
               phase: 'planning',
-              currentStep: index + 2,
-              totalSteps: result.toolCalls.length + 1
+              currentStep: currentStepIndex,
+              totalSteps: totalStepsEstimate
             }
           });
-        }
+        } else {
+           // Handle case where toolResult is not found (optional)
+           console.warn(`[ToT Research] Tool result not found for callId: ${call.toolCallId}`);
+           reasoningSteps.push({
+            id: nanoid(),
+            timestamp: new Date().toISOString(),
+            type: 'tool_error',
+            title: `${call.toolName} の結果が見つかりません`,
+            content: `ツール実行結果 (ID: ${call.toolCallId}) を取得できませんでした。`,
+            metadata: {
+              toolName: call.toolName,
+              phase: 'planning',
+              currentStep: currentStepIndex,
+              totalSteps: totalStepsEstimate
+            }
+          });
+        } 
       });
     }
     
     // 最終統合ステップを追加
+    const finalStepIndex = (result.toolCalls?.length || 0) + 2;
+    // Adjust total steps for the initial step
+    reasoningSteps[0].metadata.totalSteps = finalStepIndex;
     reasoningSteps.push({
       id: nanoid(),
       timestamp: new Date().toISOString(),
       type: 'integration',
       title: '研究計画フェーズ完了',
-      content: '複数の思考経路を評価し、最適な調査戦略を選定しました。検索クエリの最適化も完了しました。',
+      content: '複数の思考経路を評価し、最適な調査戦略を選定しました。検索クエリの最適化も完了しました。' ,
       metadata: {
         phase: 'planning',
-        currentStep: result.toolCalls?.length ? result.toolCalls.length + 2 : 3,
-        totalSteps: result.toolCalls?.length ? result.toolCalls.length + 2 : 3
+        currentStep: finalStepIndex,
+        totalSteps: finalStepIndex
       }
     });
     

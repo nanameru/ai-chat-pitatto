@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ReasoningStep } from '@/types/reasoning';
-import { X, ChevronDown, ChevronUp, ArrowRight, ExternalLink } from 'lucide-react';
+import { X, ChevronDown, ChevronUp, ArrowRight, ExternalLink, Download, FileText, Info } from 'lucide-react';
 
 type ReasoningSidebarProps = {
   steps: ReasoningStep[];
@@ -8,12 +8,29 @@ type ReasoningSidebarProps = {
   onClose: () => void;
 };
 
+// セクションタイプの定義
+type SectionType = 'thoughts' | 'research' | 'analysis' | 'summary';
+
 /**
  * 推論過程を表示するサイドバーコンポーネント
  */
 export const ReasoningSidebar: React.FC<ReasoningSidebarProps> = ({ steps, isLoading, onClose }) => {
-  const [isThoughtsExpanded, setIsThoughtsExpanded] = useState(true);
+  // 各セクションの展開状態を管理
+  const [expandedSections, setExpandedSections] = useState<Record<SectionType, boolean>>({
+    thoughts: true,
+    research: true,
+    analysis: true,
+    summary: true
+  });
   const [expandedSteps, setExpandedSteps] = useState<Record<string, boolean>>({});
+
+  // セクションの展開/折りたたみを切り替える
+  const toggleSectionExpansion = (section: SectionType) => {
+    setExpandedSections(prev => ({
+      ...prev,
+      [section]: !prev[section]
+    }));
+  };
 
   // ステップの展開/折りたたみを切り替える
   const toggleStepExpansion = (stepId: string) => {
@@ -142,42 +159,140 @@ export const ReasoningSidebar: React.FC<ReasoningSidebarProps> = ({ steps, isLoa
   );
 
   return (
-    <div className="w-full h-full overflow-hidden flex flex-col bg-white border-l border-gray-200">
-      {/* ヘッダー */}
-      <div className="flex items-center justify-between p-4 border-b border-gray-200">
+    <div className="w-2/5 min-w-[450px] max-w-[800px] h-full overflow-hidden flex flex-col bg-white border-l border-gray-200">
+      {/* ヘッダー - 洗練されたデザイン */}
+      <div className="flex items-center justify-between p-4 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center">
-          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2ZM12 20C7.59 20 4 16.41 4 12C4 7.59 7.59 4 12 4C16.41 4 20 7.59 20 12C20 16.41 16.41 20 12 20Z" fill="#5F6368"/>
-            <path d="M12 17C14.7614 17 17 14.7614 17 12C17 9.23858 14.7614 7 12 7C9.23858 7 7 9.23858 7 12C7 14.7614 9.23858 17 12 17Z" fill="#5F6368"/>
-          </svg>
-          <h2 className="ml-2 text-lg font-medium text-gray-800">DeepResearch 思考プロセス</h2>
+          <FileText className="text-blue-600" size={24} />
+          <h2 className="ml-3 text-lg font-medium text-gray-800">最新AIツール情報調査</h2>
         </div>
-        <button 
-          onClick={onClose} 
-          className="text-gray-500 hover:text-gray-700 transition-colors"
-          aria-label="閉じる"
-        >
-          <X size={20} />
-        </button>
+        <div className="flex items-center space-x-3">
+          <button
+            className="flex items-center px-4 py-1.5 bg-blue-100 text-blue-700 rounded-full text-sm font-medium hover:bg-blue-200 transition-colors"
+          >
+            <Download size={16} className="mr-1.5" />
+            Export to Docs
+          </button>
+          <button className="text-gray-500 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100">
+            <Info size={20} />
+          </button>
+          <button className="text-gray-500 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100">
+            <FileText size={20} />
+          </button>
+          <button
+            onClick={onClose}
+            className="text-gray-500 hover:text-gray-700 p-1.5 rounded-full hover:bg-gray-100"
+            aria-label="閉じる"
+          >
+            <X size={20} />
+          </button>
+        </div>
       </div>
 
-      {/* コンテンツエリア */}
+      {/* メインコンテンツ - レポートスタイル */}
       <div className="flex-1 overflow-y-auto">
-        {/* Thoughts セクション */}
+        {/* レポートタイトル */}
+        <div className="px-8 py-6 border-b border-gray-200">
+          <h1 className="text-2xl font-bold text-gray-900">AIツールの最新動向と2025年の展望：包括的分析レポート</h1>
+        </div>
+
+        {/* エグゼクティブサマリー */}
         <div className="border-b border-gray-200">
-          <div 
-            className="flex items-center justify-between p-4 cursor-pointer hover:bg-gray-50"
-            onClick={() => setIsThoughtsExpanded(!isThoughtsExpanded)}
+          <div
+            className="flex items-center justify-between px-8 py-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => toggleSectionExpansion('summary')}
           >
-            <h3 className="text-lg font-medium text-gray-800">思考プロセス</h3>
-            {isThoughtsExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+            <h3 className="text-xl font-semibold text-gray-800">1. エグゼクティブサマリー</h3>
+            {expandedSections.summary ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
           </div>
           
-          {isThoughtsExpanded && (
-            <div className="p-4 pt-0">
+          {expandedSections.summary && (
+            <div className="px-8 py-4">
+              <p className="text-gray-700 mb-4">
+                2025年初頭現在、AIツール市場は急速な進化の只中にあります。特に大規模言語モデル（LLM）
+                の性能向上、自律的にタスクを遂行する「AIエージェント」の台頭、そしてテキスト、画像、音
+                声などを統合的に扱う「マルチモーダル」機能の普及が顕著です。OpenAI、Google、
+                Microsoft、Anthropicといった主要プレイヤー間の競争は激化しており、数週間から数ヶ月単位で
+                新たなモデルや機能が発表される状況が常態化しています。
+              </p>
+              <p className="text-gray-700 mb-4">
+                この技術革新の波は日本市場にも及んでおり、多くの企業が業務効率化や生産性向上を目的として
+                AIツールの導入を進めています。これに伴い、日本語処理能力の向上や日本市場に特化したツ
+                ールの開発も活発化しています。
+              </p>
+              <p className="text-gray-700">
+                本レポートでは、2025年初頭における最新AIツールの動向、主要カテゴリ別のツール分析、技術
+                トレンド、産業界の動き、そして日本市場の状況について、広範な調査に基づき詳細に解説します。
+                AIツールの進化はとどまることを知らず、その戦略的な選定と組織への統合は、今後の競争優
+                位性を左右する重要な要素となりつつあります。この急速な変化に対応するためには、継続的な
+                情報収集と柔軟な戦略が不可欠です。
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* イノベーションスポットライト */}
+        <div className="border-b border-gray-200">
+          <div
+            className="flex items-center justify-between px-8 py-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => toggleSectionExpansion('research')}
+          >
+            <h3 className="text-xl font-semibold text-gray-800">2. 最新イノベーションのスポットライト（2025年初頭）</h3>
+            {expandedSections.research ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          </div>
+          
+          {expandedSections.research && (
+            <div className="px-8 py-4">
+              <p className="text-gray-700 mb-4">
+                2025年の幕開けと共に、AI分野では注目すべきツールやアップデートが相次いで発表されました。
+              </p>
+              
+              {/* 検索結果カード */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-6">
+                {researchSteps.map((step, index) => {
+                  // 検索結果のURLを抽出
+                  const urlMatch = step.content.match(/(https?:\/\/[^\s]+)/g);
+                  const url = urlMatch ? urlMatch[0] : 'example.com';
+                  const domain = url.replace(/^https?:\/\//, '').split('/')[0];
+                  
+                  return (
+                    <div key={`research-${index}`} className="border border-gray-200 rounded-lg p-4 hover:shadow-md transition-shadow">
+                      <div className="text-sm font-medium text-gray-900 mb-1">{domain}</div>
+                      <div className="text-base font-semibold text-gray-800 mb-2">{step.title}</div>
+                      <div className="text-sm text-gray-600 mb-3 line-clamp-3">{step.content.replace(url, '')}</div>
+                      {url !== 'example.com' && (
+                        <a 
+                          href={url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-blue-600 hover:underline flex items-center"
+                        >
+                          ソースを開く <ExternalLink size={14} className="ml-1" />
+                        </a>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* 思考プロセス */}
+        <div className="border-b border-gray-200">
+          <div
+            className="flex items-center justify-between px-8 py-4 cursor-pointer hover:bg-gray-50"
+            onClick={() => toggleSectionExpansion('thoughts')}
+          >
+            <h3 className="text-xl font-semibold text-gray-800">3. 思考プロセス</h3>
+            {expandedSections.thoughts ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+          </div>
+          
+          {expandedSections.thoughts && (
+            <div className="px-8 py-4">
               {isLoading ? (
                 <div className="flex flex-col items-center justify-center py-8">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600"></div>
                   <p className="mt-4 text-sm text-gray-600">思考中...</p>
                 </div>
               ) : filteredSteps.length === 0 ? (
@@ -185,42 +300,42 @@ export const ReasoningSidebar: React.FC<ReasoningSidebarProps> = ({ steps, isLoa
                   <p>まだ思考プロセスはありません</p>
                 </div>
               ) : (
-                <div className="space-y-6">
+                <div className="space-y-8">
                   {filteredSteps.map((step) => {
                     const isExpanded = expandedSteps[step.id] !== false; // デフォルトで展開
                     const borderColorClass = getColorForType(step.type);
                     const hasLongContent = step.content && step.content.length > 200;
                     
                     return (
-                      <div key={step.id} className={`border-l-4 ${borderColorClass} pl-4 py-1`}>
-                        <div className="flex items-start gap-3">
-                          <div className="text-xl">{getIconForType(step.type)}</div>
+                      <div key={step.id} className={`border-l-4 ${borderColorClass} pl-6 py-3 bg-gray-50 rounded-r-lg`}>
+                        <div className="flex items-start gap-4">
+                          <div className="text-2xl mt-1">{getIconForType(step.type)}</div>
                           <div className="flex-1">
                             <div 
                               className="flex justify-between items-center cursor-pointer" 
                               onClick={() => hasLongContent && toggleStepExpansion(step.id)}
                             >
-                              <h4 className="font-medium text-gray-900">{step.title}</h4>
+                              <h4 className="font-semibold text-gray-900 text-lg">{step.title}</h4>
                               {hasLongContent && (
-                                <button className="text-gray-500 p-1">
-                                  {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                                <button className="text-gray-500 p-1 hover:bg-gray-200 rounded">
+                                  {isExpanded ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
                                 </button>
                               )}
                             </div>
-                            <div className={`mt-2 text-sm text-gray-700 whitespace-pre-wrap ${hasLongContent && !isExpanded ? 'line-clamp-3' : ''}`}>
+                            <div className={`mt-3 text-base text-gray-700 whitespace-pre-wrap ${hasLongContent && !isExpanded ? 'line-clamp-3' : ''}`}>
                               {hasUrls(step.content) 
                                 ? formatContentWithLinks(step.content)
                                 : step.content}
                             </div>
                             {hasLongContent && !isExpanded && (
-                              <button 
-                                className="mt-1 text-xs text-blue-600 hover:underline flex items-center"
+                              <button
+                                className="mt-2 text-sm text-blue-600 hover:underline flex items-center"
                                 onClick={() => toggleStepExpansion(step.id)}
                               >
-                                続きを読む <ArrowRight size={12} className="ml-1" />
+                                続きを読む <ArrowRight size={14} className="ml-1" />
                               </button>
                             )}
-                            <div className="mt-2 text-xs text-gray-500">
+                            <div className="mt-3 text-sm text-gray-500">
                               {new Date(step.timestamp).toLocaleTimeString()}
                             </div>
                           </div>
@@ -234,71 +349,41 @@ export const ReasoningSidebar: React.FC<ReasoningSidebarProps> = ({ steps, isLoa
           )}
         </div>
 
-        {/* 検索結果セクション */}
-        {researchSteps.length > 0 && (
-          <div>
-            <div className="flex items-center p-4 border-b border-gray-200">
-              <svg viewBox="0 0 24 24" width="24" height="24" xmlns="http://www.w3.org/2000/svg">
-                <path d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0 0 16 9.5 6.5 6.5 0 1 0 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" fill="#5F6368"/>
-              </svg>
-              <h3 className="ml-2 text-lg font-medium text-gray-800">検索結果</h3>
-            </div>
-            <div className="p-4 grid grid-cols-1 gap-4">
-              {researchSteps.map((step, index) => {
-                // 検索結果のURLを抽出
-                const urlMatch = step.content.match(/(https?:\/\/[^\s]+)/g);
-                const url = urlMatch ? urlMatch[0] : 'example.com';
-                const domain = url.replace(/^https?:\/\//, '').split('/')[0];
-                
-                return (
-                  <div key={`research-${index}`} className="border border-gray-200 rounded-lg p-3 hover:shadow-sm">
-                    <div className="text-sm font-medium text-gray-900 truncate">{domain}</div>
-                    <div className="text-xs text-gray-500 mt-1 line-clamp-2">{step.title}</div>
-                    {url !== 'example.com' && (
-                      <a 
-                        href={url} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="mt-2 text-xs text-blue-600 hover:underline flex items-center"
-                      >
-                        ソースを開く <ExternalLink size={12} className="ml-1" />
-                      </a>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
-        {/* 分析結果セクション */}
+        {/* 分析と洞察セクション */}
         {analysisSteps.length > 0 && (
-          <div>
-            <div className="flex items-center p-4 border-b border-gray-200">
-              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3ZM9 17H7V10H9V17ZM13 17H11V7H13V17ZM17 17H15V13H17V17Z" fill="#5F6368"/>
-              </svg>
-              <h3 className="ml-2 text-lg font-medium text-gray-800">分析と洞察</h3>
+          <div className="border-b border-gray-200">
+            <div
+              className="flex items-center justify-between px-8 py-4 cursor-pointer hover:bg-gray-50"
+              onClick={() => toggleSectionExpansion('analysis')}
+            >
+              <h3 className="text-xl font-semibold text-gray-800">4. 分析と洞察</h3>
+              {expandedSections.analysis ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
             </div>
-            <div className="p-4 space-y-4">
-              {analysisSteps.map((step, index) => (
-                <div key={`analysis-${index}`} className="border border-gray-200 rounded-lg p-3 hover:shadow-sm">
-                  <div className="flex items-center">
-                    <span className="text-xl mr-2">{getIconForType(step.type)}</span>
-                    <div className="text-sm font-medium text-gray-900">{step.title}</div>
-                  </div>
-                  <div className="text-xs text-gray-700 mt-2 whitespace-pre-wrap line-clamp-3">
-                    {step.content}
-                  </div>
-                  <button 
-                    className="mt-2 text-xs text-blue-600 hover:underline flex items-center"
-                    onClick={() => toggleStepExpansion(step.id)}
-                  >
-                    詳細を見る <ArrowRight size={12} className="ml-1" />
-                  </button>
+            
+            {expandedSections.analysis && (
+              <div className="px-8 py-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {analysisSteps.map((step, index) => (
+                    <div key={`analysis-${index}`} className="border border-gray-200 rounded-lg p-5 hover:shadow-md transition-shadow bg-white">
+                      <div className="flex items-center mb-3">
+                        <span className="text-2xl mr-3">{getIconForType(step.type)}</span>
+                        <div className="text-lg font-semibold text-gray-900">{step.title}</div>
+                      </div>
+                      <div className="text-base text-gray-700 whitespace-pre-wrap line-clamp-4 mb-3">
+                        {step.content}
+                      </div>
+                      <button
+                        className="text-sm text-blue-600 hover:underline flex items-center"
+                        onClick={() => toggleStepExpansion(step.id)}
+                      >
+                        詳細を見る <ArrowRight size={14} className="ml-1" />
+                      </button>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </div>
+            )}
           </div>
         )}
       </div>

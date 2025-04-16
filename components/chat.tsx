@@ -11,6 +11,21 @@ import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
 import { randomUUID } from 'crypto';
+import { 
+  XMarkIcon, 
+  LightBulbIcon,
+  ChevronDownIcon as ChevronDown, 
+  ChevronUpIcon as ChevronUp,
+  ClipboardDocumentListIcon,
+  MagnifyingGlassIcon,
+  ChartBarIcon,
+  SparklesIcon,
+  BeakerIcon,
+  ExclamationTriangleIcon,
+  PuzzlePieceIcon,
+  DocumentTextIcon,
+  ArrowPathIcon
+} from '@heroicons/react/24/outline';
 
 import { Artifact } from './artifact';
 import { MultimodalInput } from './multimodal-input';
@@ -726,89 +741,81 @@ export function Chat({
   }, [isXSearchEnabled]);
   */ // ★ コメントアウト終了
 
-  // データストリームからのToT結果処理
+  // データストリームからのアノテーション処理に対応するために既存コードを修正
   useEffect(() => {
     // ローディングが終了し、メッセージが存在する場合のみ処理
     if (isLoading || !messages || messages.length === 0) {
-        // console.log('[Chat DEBUG] Skipping step processing: Still loading or no messages.');
         return;
     }
 
-    const newSteps: ReasoningStep[] = [];
-    let updated = false;
-
-    // 最後のメッセージを解析
+    // 最後のメッセージをチェック
     const lastMessage = messages[messages.length - 1];
-
-    // isLoading が false になった直後の最後のメッセージが tool ロールかチェック
-    // 注意: ストリーム完了直後に isLoading が false になるとは限らない場合があるため、
-    //       より確実な完了検知が必要な場合もある
-    if (lastMessage && (lastMessage as any).role === 'tool') {
-      console.log('[Chat DEBUG] Processing Tool message after loading finished:', lastMessage);
-      // ツール結果をステップに変換
-      if (Array.isArray(lastMessage.content)) {
-        lastMessage.content.forEach(toolResult => {
-          if (toolResult.type === 'tool-result' && toolResult.toolName && toolResult.result) {
-            const step = convertSingleTotResultToStep(toolResult.toolName, toolResult.result);
-            if (step) {
-              newSteps.push(step);
-              updated = true;
+    
+    // アノテーションがあるかチェック（Vercel AI SDKの最新版にあわせて修正）
+    if (lastMessage && 'annotations' in lastMessage && Array.isArray(lastMessage.annotations)) {
+      // ToT思考ステップのアノテーションを処理
+      const totAnnotation = lastMessage.annotations.find(
+        (a) => a && typeof a === 'object' && ('type' in a) && 
+        (a.type === 'tot_reasoning' || a.type === 'tot_reasoning_complete')
+      );
+      
+      if (totAnnotation && typeof totAnnotation === 'object') {
+        console.log('[Chat] ToT思考ステップのアノテーションを検出:', totAnnotation);
+        
+        if ('type' in totAnnotation && totAnnotation.type === 'tot_reasoning' && 
+            'reasoningStep' in totAnnotation && totAnnotation.reasoningStep) {
+          // 個々の思考ステップの追加
+          setReasoningSteps((prevSteps) => {
+            // 安全に型変換
+            const step = totAnnotation.reasoningStep as ReasoningStep;
+            const existingIndex = prevSteps.findIndex(s => s.id === step.id);
+            if (existingIndex >= 0) {
+              const newSteps = [...prevSteps];
+              newSteps[existingIndex] = step;
+              return newSteps;
             }
-          }
-        });
-      } else if (typeof lastMessage.content === 'string') {
-        try {
-          const parsedContent = JSON.parse(lastMessage.content);
-          if (parsedContent.type === 'tool-result' && parsedContent.toolName && parsedContent.result) {
-             const step = convertSingleTotResultToStep(parsedContent.toolName, parsedContent.result);
-             if (step) {
-               newSteps.push(step);
-               updated = true;
-             }
-          } else {
-            console.warn('[Chat DEBUG] Tool message content (string) is not a valid tool-result JSON:', lastMessage.content);
-          }
-        } catch (e) {
-           console.warn('[Chat DEBUG] Failed to parse tool message content (string) as JSON:', e);
-           newSteps.push({
-             id: `tool-parse-error-${Date.now()}`,
-             timestamp: new Date().toISOString(),
-             type: 'thinking',
-             title: 'ツール結果処理エラー',
-             content: `ツール結果(文字列)の解析に失敗しました:\n${lastMessage.content.substring(0,500)}...`
-           });
-           updated = true;
+            return [...prevSteps, step];
+          });
+          setShowReasoningSidebar(true);
+        } else if ('type' in totAnnotation && 
+                  totAnnotation.type === 'tot_reasoning_complete' && 
+                  'reasoningSteps' in totAnnotation && 
+                  Array.isArray(totAnnotation.reasoningSteps)) {
+          // 最終的な思考ステップ一覧の受信
+          console.log('[Chat] 最終的な思考ステップを受信:', totAnnotation.reasoningSteps.length);
+          setReasoningSteps(totAnnotation.reasoningSteps as ReasoningStep[]);
+          setShowReasoningSidebar(true);
         }
       }
-    } else {
-        // console.log('[Chat DEBUG] Last message is not a tool result or processing skipped.');
     }
-
-
-    // 既存のステップと比較して新しいステップのみを追加
-    if (updated) {
-      console.log('[Chat DEBUG] Generated new steps from tool results:', newSteps);
-      setReasoningSteps(prevSteps => {
-        const existingStepIds = new Set(prevSteps.map(s => s.id));
-        const uniqueNewSteps = newSteps.filter(ns => !existingStepIds.has(ns.id));
-        if (uniqueNewSteps.length > 0) {
-          console.log(`[Chat] 新しい思考ステップを追加: ${uniqueNewSteps.length}件`);
-          const combinedSteps = [...prevSteps, ...uniqueNewSteps];
-          combinedSteps.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
-          console.log('[Chat DEBUG] Final combined steps being set:', combinedSteps);
+    
+    // データプロパティがある場合の処理
+    if (data) {
+      const reasoningData = Object.entries(data).find(
+        ([key, value]) => 
+          value !== null && 
+          typeof value === 'object' && 
+          ('type' in value) &&
+          (value.type === 'reasoning_steps' || value.type === 'reasoning_data')
+      );
+      
+      if (reasoningData && reasoningData[1] && 
+          typeof reasoningData[1] === 'object' &&
+          (('reasoningSteps' in reasoningData[1] && Array.isArray(reasoningData[1].reasoningSteps)) || 
+           ('steps' in reasoningData[1] && Array.isArray(reasoningData[1].steps)))) {
+        
+        const steps = 'reasoningSteps' in reasoningData[1] ? 
+          reasoningData[1].reasoningSteps as ReasoningStep[] : 
+          reasoningData[1].steps as ReasoningStep[];
+        
+        if (steps.length > 0) {
+          console.log('[Chat] データプロパティから思考ステップを検出:', steps.length);
+          setReasoningSteps(steps);
           setShowReasoningSidebar(true);
-          // setIsReasoningLoading(false); // isLoading は useChat から来るので不要
-          return combinedSteps;
         }
-        // console.log('[Chat DEBUG] No unique new steps to add.');
-        return prevSteps;
-      });
+      }
     }
-    // else {
-    //   console.log('[Chat DEBUG] No updates detected for reasoning steps.');
-    // }
-
-  }, [messages, isLoading]); // isLoading を依存配列に追加
+  }, [messages, data, isLoading]);
 
   return (
     <div className="relative flex flex-col min-h-screen">

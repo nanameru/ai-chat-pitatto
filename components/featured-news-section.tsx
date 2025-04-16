@@ -1,11 +1,11 @@
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { News } from '@/types/news';
+import { NewsItem } from '@/lib/newsData';
 import { format } from 'date-fns';
 import { ja } from 'date-fns/locale';
 
-export function FeaturedNewsSection({ featuredNews }: { featuredNews: News[] }) {
+export function FeaturedNewsSection({ featuredNews }: { featuredNews: NewsItem[] }) {
   return (
     <div className="space-y-4">
       <h2 className="text-xl font-semibold mb-4">注目の記事</h2>
