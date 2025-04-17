@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { type VariantProps, cva } from 'class-variance-authority';
-import { PanelLeft } from 'lucide-react';
+import { PanelLeft, LogOut, Moon, Menu } from 'lucide-react';
 
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -167,6 +167,48 @@ const SidebarProvider = React.forwardRef<
 );
 SidebarProvider.displayName = 'SidebarProvider';
 
+const SidebarHeaderWithToggle = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<'div'> & { title?: string }
+>(({ className, title, ...props }, ref) => {
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === 'collapsed';
+
+  return (
+    <div
+      ref={ref}
+      data-sidebar="header-with-toggle"
+      className={cn(
+        'flex items-center justify-between px-3 py-2 border-b border-sidebar-border',
+        isCollapsed ? 'flex-col gap-4' : 'flex-row',
+        className
+      )}
+      {...props}
+    >
+      {title && (
+        <div className={cn(
+          'font-semibold', 
+          isCollapsed ? 'text-xs' : 'text-base',
+          isCollapsed && 'whitespace-nowrap rotate-90'
+        )}>
+          {isCollapsed ? title.substring(0, 3) : title}
+        </div>
+      )}
+      
+      <Button
+        variant="ghost"
+        size="sm"
+        className="h-7 w-7"
+        onClick={toggleSidebar}
+      >
+        <Menu className="h-4 w-4" />
+        <span className="sr-only">Toggle Sidebar</span>
+      </Button>
+    </div>
+  );
+});
+SidebarHeaderWithToggle.displayName = 'SidebarHeaderWithToggle';
+
 const Sidebar = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'> & {
@@ -239,24 +281,24 @@ const Sidebar = React.forwardRef<
         {/* This is what handles the sidebar gap on desktop */}
         <div
           className={cn(
-            'duration-200 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-linear',
+            'duration-300 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-in-out',
             'group-data-[collapsible=offcanvas]:w-0',
             'group-data-[side=right]:rotate-180',
             variant === 'floating' || variant === 'inset'
-              ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]'
-              : 'group-data-[collapsible=icon]:w-[--sidebar-width-icon]',
+              ? 'group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))] group-data-[state=collapsed]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4))]'
+              : 'group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[state=collapsed]:w-[--sidebar-width-icon]',
           )}
         />
         <div
           className={cn(
-            'duration-200 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-linear md:flex',
+            'duration-300 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-in-out md:flex',
             side === 'left'
               ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
               : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
             // Adjust the padding for floating and inset variants.
             variant === 'floating' || variant === 'inset'
-              ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]'
-              : 'group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l',
+              ? 'p-2 group-data-[collapsible=icon]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)] group-data-[state=collapsed]:w-[calc(var(--sidebar-width-icon)_+_theme(spacing.4)_+2px)]'
+              : 'group-data-[collapsible=icon]:w-[--sidebar-width-icon] group-data-[state=collapsed]:w-[--sidebar-width-icon] group-data-[side=left]:border-r group-data-[side=right]:border-l',
             className,
           )}
           {...props}
@@ -281,6 +323,8 @@ Sidebar.displayName = 'Sidebar';
 const SidebarUserMenu = () => {
   const router = useRouter();
   const supabase = createClient();
+  const { state } = useSidebar();
+  const isCollapsed = state === 'collapsed';
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
@@ -289,22 +333,67 @@ const SidebarUserMenu = () => {
 
   return (
     <div className="flex flex-col gap-1 p-2">
-      <Button
-        variant="ghost"
-        className="w-full justify-start"
-        onClick={() => {
-          document.documentElement.classList.toggle('dark');
-        }}
-      >
-        ダークモード切替
-      </Button>
-      <Button
-        variant="ghost"
-        className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
-        onClick={handleSignOut}
-      >
-        サインアウト
-      </Button>
+      {isCollapsed ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 mx-auto"
+                onClick={() => {
+                  document.documentElement.classList.toggle('dark');
+                }}
+              >
+                <Moon className="h-4 w-4" />
+                <span className="sr-only">ダークモード切替</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              ダークモード切替
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <Button
+          variant="ghost"
+          className="w-full justify-start"
+          onClick={() => {
+            document.documentElement.classList.toggle('dark');
+          }}
+        >
+          ダークモード切替
+        </Button>
+      )}
+      
+      {isCollapsed ? (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 mx-auto text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
+                onClick={handleSignOut}
+              >
+                <LogOut className="h-4 w-4" />
+                <span className="sr-only">サインアウト</span>
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              サインアウト
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
+      ) : (
+        <Button
+          variant="ghost"
+          className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
+          onClick={handleSignOut}
+        >
+          サインアウト
+        </Button>
+      )}
     </div>
   );
 };
@@ -328,7 +417,7 @@ const SidebarTrigger = React.forwardRef<
       }}
       {...props}
     >
-      <PencilEditIcon />
+      <Menu className="h-4 w-4" />
       <span className="sr-only">Toggle Sidebar</span>
     </Button>
   );
@@ -408,7 +497,7 @@ const SidebarHeader = React.forwardRef<
     <div
       ref={ref}
       data-sidebar="header"
-      className={cn('flex flex-col gap-2 p-2', className)}
+      className={cn('flex flex-col gap-2 p-2 group-data-[state=collapsed]:items-center', className)}
       {...props}
     />
   );
@@ -423,7 +512,7 @@ const SidebarFooter = React.forwardRef<
     <div
       ref={ref}
       data-sidebar="footer"
-      className={cn('flex flex-col gap-2 p-2', className)}
+      className={cn('flex flex-col gap-2 p-2 group-data-[state=collapsed]:items-center', className)}
       {...props}
     />
   );
@@ -454,6 +543,7 @@ const SidebarContent = React.forwardRef<
     data-sidebar="content"
     className={cn(
       'flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto h-full',
+      'group-data-[state=collapsed]:items-center',
       className,
     )}
     {...props}
@@ -469,7 +559,7 @@ const SidebarGroup = React.forwardRef<
     <div
       ref={ref}
       data-sidebar="group"
-      className={cn('relative flex w-full min-w-0 flex-col p-2', className)}
+      className={cn('relative flex w-full min-w-0 flex-col p-2 group-data-[state=collapsed]:items-center', className)}
       {...props}
     />
   );
@@ -541,7 +631,7 @@ const SidebarMenu = React.forwardRef<
     ref={ref}
     data-sidebar="menu"
     className={cn(
-      'flex w-full min-w-0 flex-col gap-1 px-1 group-data-[collapsible=icon]:gap-2 group-data-[collapsible=icon]:px-0',
+      'flex w-full min-w-0 flex-col gap-1 px-1 group-data-[collapsible=icon]:gap-2 group-data-[collapsible=icon]:px-0 group-data-[state=collapsed]:items-center group-data-[state=collapsed]:px-0 group-data-[state=collapsed]:gap-2',
       className
     )}
     {...props}
@@ -563,7 +653,7 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = 'SidebarMenuItem';
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 pl-3 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-full [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 group-data-[collapsible=icon]:[&>svg]:size-5 group-data-[collapsible=icon]:[&>span:last-child]:hidden',
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 pl-3 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-full [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 group-data-[collapsible=icon]:[&>svg]:size-5 group-data-[collapsible=icon]:[&>span:last-child]:hidden group-data-[state=collapsed]:justify-center',
   {
     variants: {
       variant: {
@@ -795,6 +885,7 @@ export {
   SidebarGroupContent,
   SidebarGroupLabel,
   SidebarHeader,
+  SidebarHeaderWithToggle,
   SidebarInput,
   SidebarInset,
   SidebarMenu,
