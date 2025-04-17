@@ -5,7 +5,8 @@ import { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../components/ui/tabs';
 import { Input } from '@/components/ui/input';
-import { SearchIcon, Loader2 } from 'lucide-react';
+import { SearchIcon, Loader2, PlusCircle } from 'lucide-react';
+import Link from 'next/link';
 // import Link from 'next/link'; // No longer needed here if header/footer removed
 import { NewsItem, getAllNews, allCategories, filterNewsByCategory, searchNews, sortNews, SortOption, getFeaturedNews } from '@/lib/newsData'; // sortNews と SortOption をインポート
 import NewsCard from '../../components/NewsCard';
@@ -98,6 +99,15 @@ export default function NewsPage() {
             onChange={(e) => setSearchTerm(e.target.value)}
           />
         </div>
+        
+        {/* 記事生成ページへのリンクボタン */}
+        <Link href="/admin/news-generator" passHref>
+          <Button variant="outline" className="w-full md:w-auto flex items-center gap-2">
+            <PlusCircle className="h-4 w-4" />
+            <span>記事を生成</span>
+          </Button>
+        </Link>
+        
         <SortSelector 
           currentSort={currentSort}
           onSortChange={handleSortChange}

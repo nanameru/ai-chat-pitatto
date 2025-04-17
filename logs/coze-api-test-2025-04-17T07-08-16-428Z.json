@@ -1,0 +1,15 @@
+{
+  "raw": {
+    "code": 0,
+    "cost": "0",
+    "data": "{\"output\":{\"freeBusy\":null}}",
+    "debug_url": "https://www.coze.com/work_flow?execute_id=7494175440971890696&space_id=7381418361848528897&workflow_id=7493492287205638152&execute_mode=2",
+    "msg": "Success",
+    "token": 0
+  },
+  "parsed": {
+    "output": {
+      "freeBusy": null
+    }
+  }
+}

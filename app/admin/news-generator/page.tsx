@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import { Button } from 'components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from 'components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from 'components/ui/alert';
+import Link from 'next/link';
+import { ArrowLeftIcon } from 'lucide-react';
 
 // スピナーコンポーネントの作成
 const Spinner = () => (
@@ -80,7 +82,13 @@ export default function NewsGeneratorPage() {
 
   return (
     <div className="container mx-auto py-6">
-      <h1 className="text-2xl font-bold mb-6">生成AIニュース自動生成管理</h1>
+      <div className="flex items-center mb-6">
+        <Link href="/news" className="inline-flex items-center mr-4 text-sm font-medium text-gray-600 hover:text-gray-900">
+          <ArrowLeftIcon className="h-4 w-4 mr-1" />
+          ニュース一覧に戻る
+        </Link>
+        <h1 className="text-2xl font-bold">生成AIニュース自動生成管理</h1>
+      </div>
 
       <div className="grid gap-6">
         <Card>

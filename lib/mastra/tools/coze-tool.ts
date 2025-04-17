@@ -24,7 +24,7 @@ function verboseLog(...args: any[]) {
 }
 
 // Coze API用の定数
-const WORKFLOW_ID = '7462445424055746578';
+const WORKFLOW_ID = '7493492287205638152';
 const API_URL = 'https://api.coze.com/v1/workflow/run';
 const MAX_RETRIES = 2;
 const RETRY_DELAY = 3000; // 3秒

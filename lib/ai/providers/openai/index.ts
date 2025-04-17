@@ -5,7 +5,6 @@ import { openai } from '@ai-sdk/openai';
 import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types';
 
 // 既存のAPIキーを使用する（.env.localから読み込み）
-// セキュリティ上の理由からキーをコード内に直接記述しません
 // 環境変数が優先的に使用されることを確認
 if (process.env.OPENAI_API_KEY) {
   console.log('[OpenAI Provider] 環境変数からAPIキーを検出しました');
