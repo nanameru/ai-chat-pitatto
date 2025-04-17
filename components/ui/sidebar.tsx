@@ -3,7 +3,7 @@
 import * as React from 'react';
 import { Slot } from '@radix-ui/react-slot';
 import { type VariantProps, cva } from 'class-variance-authority';
-import { PanelLeft, LogOut, Moon, Menu } from 'lucide-react';
+import { PanelLeft, LogOut, Moon, Menu, ChevronLeft, ChevronRight } from 'lucide-react';
 
 import { useIsMobile } from '@/hooks/use-mobile';
 import { cn } from '@/lib/utils';
@@ -208,6 +208,60 @@ const SidebarHeaderWithToggle = React.forwardRef<
   );
 });
 SidebarHeaderWithToggle.displayName = 'SidebarHeaderWithToggle';
+
+const SidebarToggle = React.forwardRef<
+  HTMLButtonElement,
+  React.ComponentProps<'button'>
+>(({ className, ...props }, ref) => {
+  const { state, toggleSidebar } = useSidebar();
+  const isCollapsed = state === 'collapsed';
+
+  return (
+    <Button
+      ref={ref}
+      variant="ghost"
+      size="icon"
+      className={cn(
+        'h-8 w-8 rounded-full p-0 m-2',
+        isCollapsed ? 'mx-auto' : '',
+        className
+      )}
+      onClick={toggleSidebar}
+      {...props}
+    >
+      {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+      <span className="sr-only">
+        {isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+      </span>
+    </Button>
+  );
+});
+SidebarToggle.displayName = 'SidebarToggle';
+
+const SidebarHeader = React.forwardRef<
+  HTMLDivElement,
+  React.ComponentProps<'div'>
+>(({ className, ...props }, ref) => {
+  const { state } = useSidebar();
+  const isCollapsed = state === 'collapsed';
+  
+  return (
+    <div
+      ref={ref}
+      data-sidebar="header"
+      className={cn(
+        'flex flex-col gap-2 p-2 group-data-[state=collapsed]:items-center',
+        isCollapsed ? 'items-center' : 'items-start',
+        className
+      )}
+      {...props}
+    >
+      <SidebarToggle className={isCollapsed ? 'mx-auto' : 'ml-auto'} />
+      {props.children}
+    </div>
+  );
+});
+SidebarHeader.displayName = 'SidebarHeader';
 
 const Sidebar = React.forwardRef<
   HTMLDivElement,
@@ -489,21 +543,6 @@ const SidebarInput = React.forwardRef<
 });
 SidebarInput.displayName = 'SidebarInput';
 
-const SidebarHeader = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<'div'>
->(({ className, ...props }, ref) => {
-  return (
-    <div
-      ref={ref}
-      data-sidebar="header"
-      className={cn('flex flex-col gap-2 p-2 group-data-[state=collapsed]:items-center', className)}
-      {...props}
-    />
-  );
-});
-SidebarHeader.displayName = 'SidebarHeader';
-
 const SidebarFooter = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<'div'>
@@ -653,7 +692,7 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = 'SidebarMenuItem';
 
 const sidebarMenuButtonVariants = cva(
-  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 pl-3 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-full [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 group-data-[collapsible=icon]:[&>svg]:size-5 group-data-[collapsible=icon]:[&>span:last-child]:hidden group-data-[state=collapsed]:justify-center',
+  'peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 pl-3 text-left text-sm outline-none ring-sidebar-ring transition-[width,height,padding] hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 active:bg-sidebar-accent active:text-sidebar-accent-foreground disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-sidebar-accent data-[active=true]:font-medium data-[active=true]:text-sidebar-accent-foreground data-[state=open]:hover:bg-sidebar-accent data-[state=open]:hover:text-sidebar-accent-foreground group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:rounded-full [&>span:last-child]:truncate [&>svg]:size-4 [&>svg]:shrink-0 group-data-[collapsible=icon]:[&>svg]:size-5 group-data-[collapsible=icon]:[&>span:last-child]:hidden group-data-[state=collapsed]:justify-center group-data-[state=collapsed]:[&>span:last-child]:hidden group-data-[state=collapsed]:[&>svg]:size-5',
   {
     variants: {
       variant: {
@@ -900,6 +939,7 @@ export {
   SidebarProvider,
   SidebarRail,
   SidebarSeparator,
+  SidebarToggle,
   SidebarTrigger,
   SidebarUserMenu,
   useSidebar,
