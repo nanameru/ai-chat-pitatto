@@ -4,9 +4,25 @@
 import { openai } from '@ai-sdk/openai';
 import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types';
 
-// APIキーを直接設定
-process.env.OPENAI_API_KEY = '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';
-console.log('[OpenAI Provider] APIキーを直接設定しました');
+// 既存のAPIキーを使用する（.env.localから読み込み）
+// セキュリティ上の理由からキーをコード内に直接記述しません
+// 環境変数が優先的に使用されることを確認
+if (process.env.OPENAI_API_KEY) {
+  console.log('[OpenAI Provider] 環境変数からAPIキーを検出しました');
+  
+  // 値が上書きされないようにObject.definePropertyを使用
+  const envDescriptor = Object.getOwnPropertyDescriptor(process.env, 'OPENAI_API_KEY');
+  if (envDescriptor && envDescriptor.configurable) {
+    Object.defineProperty(process.env, 'OPENAI_API_KEY', {
+      value: process.env.OPENAI_API_KEY,
+      writable: false,
+      configurable: false
+    });
+    console.log('[OpenAI Provider] APIキーを保護しました');
+  }
+} else {
+  console.error('[OpenAI Provider] 環境変数OPENAI_API_KEYが設定されていません');
+}
 
 /**
  * OpenAIで利用可能なチャットモデル

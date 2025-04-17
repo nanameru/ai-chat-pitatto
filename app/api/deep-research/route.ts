@@ -1,3 +1,7 @@
+// 環境変数を.envファイルから読み込む（既存の環境変数を上書き）
+import * as dotenv from 'dotenv';
+dotenv.config({ path: '.env.local', override: true });
+
 import { NextRequest, NextResponse } from 'next/server';
 import { z } from 'zod';
 // // ★★★ @mastra 関連はコメントアウトしたまま ★★★
