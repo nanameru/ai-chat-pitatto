@@ -23,7 +23,14 @@ import { type CoreMessage, createDataStreamResponse, DataStreamWriter, StreamDat
 // } from '@mastra/core';
 // import { deepResearchAgentV2 } from '@/lib/mastra/agents/deep-research-v2';
 import { mastra } from '@/lib/mastra'; // ★ lib/mastra/index.ts から mastra インスタンスをインポート
-// // ★★★ ここまで再修正 ★★★
+
+// OpenAI APIキーが設定されているか確認
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+if (!OPENAI_API_KEY) {
+  console.error('💥 環境変数OPENAI_API_KEYが設定されていません！APIリクエストは失敗します');
+} else {
+  console.log('✅ OPENAI_API_KEY is set:', OPENAI_API_KEY.substring(0, 10) + '...');
+}
 
 // // 以下の不要なインポートを削除
 // // import { SupabaseClient } from '@supabase/supabase-js';
