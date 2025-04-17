@@ -4,6 +4,10 @@
 import { openai } from '@ai-sdk/openai';
 import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types';
 
+// APIキーを直接設定
+process.env.OPENAI_API_KEY = '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';
+console.log('[OpenAI Provider] APIキーを直接設定しました');
+
 /**
  * OpenAIで利用可能なチャットモデル
  */
