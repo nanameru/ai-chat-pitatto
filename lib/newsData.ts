@@ -111,12 +111,24 @@ export const allCategories = ['すべて', ...newsCategories];
 // すべてのニュースを取得する関数 (ソート機能を考慮)
 export const getAllNews = async (sortBy: SortOption = 'newest'): Promise<NewsItem[]> => {
   try {
-    // APIからデータを取得 - サーバーサイドとクライアントサイドの両方で動作するURLを構築
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 
-                   (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+    // APIからデータを取得 - 常に完全なURLを構築
+    let baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    
+    // 環境変数が設定されていない場合はフォールバック
+    if (!baseUrl) {
+      // クライアントサイドならwindowから取得
+      if (typeof window !== 'undefined') {
+        baseUrl = window.location.origin;
+      } else {
+        // サーバーサイドならデフォルト値を使用
+        baseUrl = 'http://localhost:3001';
+      }
+    }
     
     // 絶対URLを構築して使用
-    const apiUrl = new URL('/api/news', baseUrl).toString();
+    const apiUrl = `${baseUrl}/api/news`;
+    console.log(`APIリクエスト送信先: ${apiUrl}`);
+    
     const response = await fetch(apiUrl);
     
     if (!response.ok) {
@@ -145,12 +157,24 @@ export const getAllNews = async (sortBy: SortOption = 'newest'): Promise<NewsIte
 // 特定IDのニュース記事を取得する関数
 export const getNewsById = async (id: string): Promise<NewsItem | undefined> => {
   try {
-    // APIから単一記事を取得 - サーバーサイドとクライアントサイドの両方で動作するURLを構築
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 
-                   (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3001');
+    // APIから単一記事を取得 - 常に完全なURLを構築
+    let baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+    
+    // 環境変数が設定されていない場合はフォールバック
+    if (!baseUrl) {
+      // クライアントサイドならwindowから取得
+      if (typeof window !== 'undefined') {
+        baseUrl = window.location.origin;
+      } else {
+        // サーバーサイドならデフォルト値を使用
+        baseUrl = 'http://localhost:3001';
+      }
+    }
     
     // 絶対URLを構築して使用
-    const apiUrl = new URL(`/api/news/${id}`, baseUrl).toString();
+    const apiUrl = `${baseUrl}/api/news/${id}`;
+    console.log(`APIリクエスト送信先: ${apiUrl}`);
+    
     const response = await fetch(apiUrl);
     
     if (!response.ok) {

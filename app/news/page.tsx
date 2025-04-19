@@ -39,16 +39,26 @@ export default function NewsPage() {
     const fetchInitialData = async () => {
       setIsLoading(true);
       setIsLoadingFeatured(true);
-      const [news, featured] = await Promise.all([
-        getAllNews(currentSort), 
-        getFeaturedNews(4) // 右カラム用に4件取得
-      ]);
-      setAllNewsItems(news);
-      setFilteredNews(news);
-      setFeaturedNews(featured);
-      setCurrentPage(1);
-      setIsLoading(false);
-      setIsLoadingFeatured(false);
+      try {
+        const [news, featured] = await Promise.all([
+          getAllNews(currentSort), 
+          getFeaturedNews(4) // 右カラム用に4件取得
+        ]);
+        setAllNewsItems(news);
+        setFilteredNews(news);
+        setFeaturedNews(featured);
+        setCurrentPage(1);
+      } catch (error) {
+        console.error('ニュースデータの取得中にエラーが発生しました:', error);
+        // エラー時はモックデータを使用
+        const mockNews = await getAllNews(currentSort);
+        setAllNewsItems(mockNews);
+        setFilteredNews(mockNews);
+        setFeaturedNews(mockNews.slice(0, 4));
+      } finally {
+        setIsLoading(false);
+        setIsLoadingFeatured(false);
+      }
     };
     fetchInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps

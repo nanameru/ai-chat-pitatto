@@ -15,7 +15,13 @@ import { saveMessages } from '@/lib/db/queries';
 import type { Message as DBMessage } from '@/lib/db/schema';
 import { randomUUID } from 'crypto'; // ★ crypto.randomUUID を戻す
 // import { type CoreMessage, StreamData, createDataStreamResponse, smoothStream, streamText } from 'ai'; // ★ streamText を使用するように変更
-import { type CoreMessage, createDataStreamResponse, DataStreamWriter, StreamData } from 'ai'; // StreamData, createDataStreamResponse, smoothStream は一旦不要 ★ StreamingTextResponse をインポート
+import {
+  type CoreMessage,
+  createDataStreamResponse,
+  DataStreamWriter, // ★ 再度インポート
+  StreamData,
+  // streamText // 不要
+} from 'ai';
 // // ★★★ @mastra 関連のインポートを再修正 ★★★
 // import {
 //   Mastra,                // Mastra クラスはこれで合っているはず
@@ -137,8 +143,10 @@ function createReasoningStep(toolName: string, toolResult: any) {
       if (toolName === 'thoughtGenerator' && toolResult.thoughts) {
         content = toolResult.thoughts.map((t: any) => t.content || '').join('\n\n');
       } else if (toolName === 'thoughtEvaluator' && toolResult.evaluatedThoughts) {
-        content = toolResult.evaluatedThoughts.map((t: any) => 
-          `思考「${t.id || t.content?.substring(0, 20) || ''}」: ${t.evaluation?.score || '?'}/10\n理由: ${t.evaluation?.reason || '理由なし'}`
+        content = toolResult.evaluatedThoughts.map((t: any, i: number) => 
+          `思考${i+1}: ${t.content || '(内容なし)'}\n` +
+          `評価: ${t.score ? Math.round(t.score * 10) / 10 : '?'}/10点\n` +
+          `理由: ${t.reasoning ? t.reasoning.split('\n')[0] : '理由なし'}`
         ).join('\n\n');
       } else if (toolName === 'pathSelector' && toolResult.selectedPath) {
         content = `選択パス: ${toolResult.selectedPath.id || ''}\n理由: ${toolResult.reason || ''}`;
@@ -448,7 +456,7 @@ export async function POST(req: NextRequest) {
                       });
 
                       // さらにデータとしても送信（冗長だが確実に受信させるため）
-                      streamData.append({
+                      dataStreamWriter.writeMessageAnnotation({
                         type: 'reasoning_step',
                         step: reasoningStep
                       });
@@ -554,14 +562,14 @@ export async function POST(req: NextRequest) {
 
           // ステップ情報などを data としてストリームに追加
           if (agentResult.steps) {
-            streamData.append({ type: 'agent_steps', steps: agentResult.steps });
+            dataStreamWriter.writeMessageAnnotation({ type: 'agent_steps', steps: agentResult.steps });
             console.log('[API Deep Research DEBUG] Appended steps to stream data.');
           }
 
           // ToTの推論ステップがあれば追加
           if (agentResult.reasoningSteps) {
             console.log('[API Deep Research DEBUG] Found ToT reasoning steps:', agentResult.reasoningSteps.length);
-            streamData.append({ 
+            dataStreamWriter.writeMessageAnnotation({ 
               type: 'reasoning_steps', 
               reasoningSteps: agentResult.reasoningSteps 
             });
@@ -575,94 +583,58 @@ export async function POST(req: NextRequest) {
           }
 
           // テキストをストリームに書き込む
-          if (fullCompletionText) {
+          if (fullCompletionText && !needsClarification) {
+            // プレーンな write を試す (SDK の仕様による)
+            // Vercel SDK の text stream は '0:"<json_escaped_string>"\n' の形式
             dataStreamWriter.write(`0:"${JSON.stringify(fullCompletionText).slice(1, -1)}"\n`);
-            console.log('[API Deep Research DEBUG] Wrote text to stream.');
+            console.log('[API Deep Research DEBUG] Wrote final text to stream via write.');
+          } else if (needsClarification) {
+            console.log('[API Deep Research DEBUG] Clarification needed, skipping final text write.');
+          } else {
+             console.log('[API Deep Research DEBUG] No final text to write.');
           }
 
           // ToTの思考ステップが存在する場合、最終的なまとめとして再度送信
-          if (agentResult.reasoningSteps && agentResult.reasoningSteps.length > 0) {
+          const finalReasoningSteps = agentResult.reasoningSteps || collectedReasoningSteps;
+          if (finalReasoningSteps && finalReasoningSteps.length > 0) {
             try {
-              // reasoningStepsをログ出力して確認
-              console.log('[API Deep Research] ReasoningSteps data structure:', 
-                JSON.stringify(agentResult.reasoningSteps.slice(0, 1), null, 2));
-              
-              // collectedReasoningStepsとagentResultのreasoningStepsをマージして重複を排除
-              const allReasoningSteps = [...collectedReasoningSteps];
-              
-              // 既に収集されたIDのセットを作成
-              const existingStepIds = new Set(collectedReasoningSteps.map(step => step.id));
-              
-              // agentResultのreasoningStepsから、まだ収集されていないものを追加
-              agentResult.reasoningSteps.forEach(step => {
-                if (!existingStepIds.has(step.id)) {
-                  allReasoningSteps.push(step);
-                }
-              });
-              
-              console.log(`[API Deep Research] 合計思考ステップ数: ${allReasoningSteps.length}`);
-              
               // reasoningStepsをアノテーションとしてだけでなく、データとしても送信
-              streamData.append({
+              dataStreamWriter.writeMessageAnnotation({
                 type: 'reasoning_data',
-                reasoningSteps: allReasoningSteps
+                reasoningSteps: finalReasoningSteps
               });
               console.log('[API Deep Research DEBUG] Appended reasoning_data to stream');
               
               // reasoningStepsをストリームに書き込み（最終的なメタデータとして）
               dataStreamWriter.writeMessageAnnotation({
                 type: 'tot_reasoning_complete',
-                reasoningSteps: allReasoningSteps
+                reasoningSteps: finalReasoningSteps
               });
-              
-              console.log('[API Deep Research DEBUG] Wrote reasoning steps as metadata:', 
-                allReasoningSteps.length, 'steps');
-                
-              // 思考ステップの送信成功を明示的に記録
-              console.log('[API Deep Research DEBUG] Successfully sent reasoning steps to the frontend');
+              console.log('[API Deep Research DEBUG] Wrote final reasoning steps annotation:', finalReasoningSteps.length, 'steps');
             } catch (annotationError) {
-              console.error('[API Deep Research] Error writing reasoning steps annotation:', annotationError);
-            }
-          } else if (collectedReasoningSteps.length > 0) {
-            // agentResultにreasoningStepsがなく、collectedReasoningStepsがある場合
-            try {
-              console.log(`[API Deep Research] 収集された思考ステップのみ送信: ${collectedReasoningSteps.length}`);
-              
-              // 収集された思考ステップをデータとして送信
-              streamData.append({
-                type: 'reasoning_data',
-                reasoningSteps: collectedReasoningSteps
-              });
-              
-              // 収集された思考ステップをアノテーションとして送信
-              dataStreamWriter.writeMessageAnnotation({
-                type: 'tot_reasoning_complete',
-                reasoningSteps: collectedReasoningSteps
-              });
-              
-              console.log('[API Deep Research DEBUG] Wrote collected reasoning steps:', collectedReasoningSteps.length);
-            } catch (annotationError) {
-              console.error('[API Deep Research] Error writing collected reasoning steps:', annotationError);
+              console.error('[API Deep Research] Error writing final reasoning steps annotation:', annotationError);
             }
           } else {
-            console.log('[API Deep Research DEBUG] No reasoning steps found to write');
+            console.log('[API Deep Research DEBUG] No final reasoning steps found to write');
           }
 
           // 明確化が必要な場合はアノテーションを追加
           if (needsClarification) {
+            // streamData.append({ type: 'clarification' });
             dataStreamWriter.writeMessageAnnotation({ type: 'clarification' });
-            console.log('[API Deep Research DEBUG] Wrote clarification annotation to stream.');
+            console.log('[API Deep Research DEBUG] Wrote clarification annotation.');
           }
 
         } catch (error) {
           console.error('[API Deep Research] Error during agent execution:', error);
           agentError = error instanceof Error ? error : new Error(String(error));
           try {
-            // エラー情報をストリームに書き込む
+            // エラー情報もストリームに書き込む
+            // streamData.append({ type: 'error', message: agentError.message });
             dataStreamWriter.writeData({ type: 'error', message: agentError.message });
             console.log('[API Deep Research DEBUG] Wrote execution error to stream data.');
           } catch (writeErrorError) {
-            console.error('[API Deep Research] Failed to write execution error to stream:', writeErrorError);
+            console.error('[API Deep Research] Failed to write execution error to stream data:', writeErrorError);
           }
         } finally {
           // DB保存
@@ -694,8 +666,17 @@ export async function POST(req: NextRequest) {
             }
           }
           
+          // ストリームデータオブジェクトを閉じる
           streamData.close();
-          console.log('[API Deep Research DEBUG] Closed stream data.');
+          console.log('[API Deep Research DEBUG] Closed stream data object.');
+
+          // ★ HTTPレスポンスストリームを閉じる処理は一旦コメントアウト (SDK依存)
+          // try {
+          //   dataStreamWriter.close();
+          //   console.log('[API Deep Research DEBUG] Closed HTTP response stream (DataStreamWriter).');
+          // } catch (closeError) {
+          //   console.warn('[API Deep Research DEBUG] Failed to explicitly close DataStreamWriter:', closeError);
+          // }
         }
       },
       onError: (error: unknown) => {

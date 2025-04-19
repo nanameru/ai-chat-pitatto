@@ -148,12 +148,14 @@ function convertSingleTotResultToStep(toolName: string, toolResult: any): Reason
       // 特定のツールの結果をより分かりやすく整形
       switch (toolName) {
         case 'thoughtGenerator':
-          content = (toolResult.thoughts || []).map((t: any, i: number) => `案${i+1}: ${t.approach || t.idea || JSON.stringify(t)}`).join('\n');
+          content = (toolResult.thoughts || []).map((t: any, i: number) => `案${i+1}: ${t.content || t.approach || t.idea || JSON.stringify(t)}`).join('\n');
           break;
         case 'thoughtEvaluator':
-          content = (toolResult.evaluatedThoughts || []).map((t: any) => 
-            `案「${t.approach || t.id}」: ${t.evaluation?.score || '評価なし'}点 (${t.evaluation?.reason || '理由なし'})`
-          ).join('\n');
+          content = (toolResult.evaluatedThoughts || []).map((t: any, i: number) => 
+            `思考${i+1}: ${t.content || '(内容なし)'}\n` +
+            `評価: ${t.score ? Math.round(t.score * 10) / 10 : '?'}/10点\n` +
+            `理由: ${t.reasoning ? t.reasoning.split('\n')[0] : '理由なし'}\n`
+          ).join('\n\n');
           break;
         case 'pathSelector':
           content = `選択されたパス: ${toolResult.selectedPath?.approach || toolResult.selectedPath?.id || '不明'}\n理由: ${toolResult.reason || '記載なし'}`;
@@ -505,6 +507,60 @@ export function Chat({
     updateChatStateRef(messages, input);
   }, [messages, input, updateChatStateRef]);
 
+  // ツール実行ごとの ToT annotation を受信して Sidebar に反映
+  useEffect(() => {
+    if (!messages || messages.length === 0) return;
+    const lastMsg = messages[messages.length - 1];
+    if (!('annotations' in lastMsg) || !Array.isArray((lastMsg as any).annotations)) return;
+    
+    // 全アノテーションを調査用にログ
+    console.log('[Chat] 受信したアノテーション一覧:', (lastMsg as any).annotations.map((a: any) => a?.type || 'unknown'));
+    
+    (lastMsg as any).annotations.forEach((a: any) => {
+      // tot_reasoning タイプのアノテーション処理
+      if (a?.type === 'tot_reasoning' && a.reasoningStep) {
+        const step = a.reasoningStep as ReasoningStep;
+        setReasoningSteps(prev => prev.some(s => s.id === step.id) ? prev : [...prev, step]);
+        setShowReasoningSidebar(true);
+        console.log('[Chat] Annotation tot_reasoning received:', step.title);
+      }
+      
+      // reasoning_step タイプのアノテーション処理（代替形式）
+      if (a?.type === 'reasoning_step' && a.step) {
+        const step = a.step as ReasoningStep;
+        setReasoningSteps(prev => prev.some(s => s.id === step.id) ? prev : [...prev, step]);
+        setShowReasoningSidebar(true);
+        console.log('[Chat] Annotation reasoning_step received:', step.title);
+      }
+      
+      // 一括ステップデータの処理
+      if (a?.type === 'reasoning_steps' && Array.isArray(a.reasoningSteps)) {
+        console.log('[Chat] Bulk reasoning steps received:', a.reasoningSteps.length);
+        setReasoningSteps(prev => {
+          // 既存のステップIDを抽出
+          const existingIds = new Set(prev.map(s => s.id));
+          // 新しいステップを追加（重複を避ける）
+          const newSteps = a.reasoningSteps.filter((s: ReasoningStep) => !existingIds.has(s.id));
+          return [...prev, ...newSteps];
+        });
+        setShowReasoningSidebar(true);
+      }
+
+      // 最終的なまとめステップの処理
+      if (a?.type === 'tot_reasoning_complete' && Array.isArray(a.reasoningSteps)) {
+        console.log('[Chat] Final reasoning steps received:', a.reasoningSteps.length);
+        setReasoningSteps(prev => {
+          // 既存のステップIDを抽出
+          const existingIds = new Set(prev.map(s => s.id));
+          // 新しいステップを追加（重複を避ける）
+          const newSteps = a.reasoningSteps.filter((s: ReasoningStep) => !existingIds.has(s.id));
+          return [...prev, ...newSteps];
+        });
+        setShowReasoningSidebar(true);
+      }
+    });
+  }, [messages]);
+
   // カスタムイベントをリッスンして、ローカルストレージの値を直接確認
   useEffect(() => {
     const handleModeChange = (event: CustomEvent) => {
@@ -741,81 +797,22 @@ export function Chat({
   }, [isXSearchEnabled]);
   */ // ★ コメントアウト終了
 
-  // データストリームからのアノテーション処理に対応するために既存コードを修正
-  useEffect(() => {
-    // ローディングが終了し、メッセージが存在する場合のみ処理
-    if (isLoading || !messages || messages.length === 0) {
-        return;
-    }
+  // ※ 重複処理防止のため、データプロパティのハンドリングは上部の useEffect 内で行います
+  // assistant メッセージの最初のトークンを受信したかどうか
+  const [hasFirstAssistantToken, setHasFirstAssistantToken] = useState(false);
 
-    // 最後のメッセージをチェック
-    const lastMessage = messages[messages.length - 1];
-    
-    // アノテーションがあるかチェック（Vercel AI SDKの最新版にあわせて修正）
-    if (lastMessage && 'annotations' in lastMessage && Array.isArray(lastMessage.annotations)) {
-      // ToT思考ステップのアノテーションを処理
-      const totAnnotation = lastMessage.annotations.find(
-        (a) => a && typeof a === 'object' && ('type' in a) && 
-        (a.type === 'tot_reasoning' || a.type === 'tot_reasoning_complete')
-      );
-      
-      if (totAnnotation && typeof totAnnotation === 'object') {
-        console.log('[Chat] ToT思考ステップのアノテーションを検出:', totAnnotation);
-        
-        if ('type' in totAnnotation && totAnnotation.type === 'tot_reasoning' && 
-            'reasoningStep' in totAnnotation && totAnnotation.reasoningStep) {
-          // 個々の思考ステップの追加
-          setReasoningSteps((prevSteps) => {
-            // 安全に型変換
-            const step = totAnnotation.reasoningStep as ReasoningStep;
-            const existingIndex = prevSteps.findIndex(s => s.id === step.id);
-            if (existingIndex >= 0) {
-              const newSteps = [...prevSteps];
-              newSteps[existingIndex] = step;
-              return newSteps;
-            }
-            return [...prevSteps, step];
-          });
-          setShowReasoningSidebar(true);
-        } else if ('type' in totAnnotation && 
-                  totAnnotation.type === 'tot_reasoning_complete' && 
-                  'reasoningSteps' in totAnnotation && 
-                  Array.isArray(totAnnotation.reasoningSteps)) {
-          // 最終的な思考ステップ一覧の受信
-          console.log('[Chat] 最終的な思考ステップを受信:', totAnnotation.reasoningSteps.length);
-          setReasoningSteps(totAnnotation.reasoningSteps as ReasoningStep[]);
-          setShowReasoningSidebar(true);
-        }
+  // 最新の assistant メッセージにトークンが到達したらフラグを立てる
+  useEffect(() => {
+    if (messages && messages.length > 0) {
+      const last = messages[messages.length - 1];
+      if (last.role === 'assistant' && typeof last.content === 'string' && last.content.trim().length > 0) {
+        setHasFirstAssistantToken(true);
       }
     }
-    
-    // データプロパティがある場合の処理
-    if (data) {
-      const reasoningData = Object.entries(data).find(
-        ([key, value]) => 
-          value !== null && 
-          typeof value === 'object' && 
-          ('type' in value) &&
-          (value.type === 'reasoning_steps' || value.type === 'reasoning_data')
-      );
-      
-      if (reasoningData && reasoningData[1] && 
-          typeof reasoningData[1] === 'object' &&
-          (('reasoningSteps' in reasoningData[1] && Array.isArray(reasoningData[1].reasoningSteps)) || 
-           ('steps' in reasoningData[1] && Array.isArray(reasoningData[1].steps)))) {
-        
-        const steps = 'reasoningSteps' in reasoningData[1] ? 
-          reasoningData[1].reasoningSteps as ReasoningStep[] : 
-          reasoningData[1].steps as ReasoningStep[];
-        
-        if (steps.length > 0) {
-          console.log('[Chat] データプロパティから思考ステップを検出:', steps.length);
-          setReasoningSteps(steps);
-          setShowReasoningSidebar(true);
-        }
-      }
-    }
-  }, [messages, data, isLoading]);
+  }, [messages]);
+
+  // thinking 表示用の統合ローディング状態
+  const showThinking = isReasoningLoading || (isLoading && !hasFirstAssistantToken);
 
   return (
     <div className="relative flex flex-col min-h-screen">
@@ -839,7 +836,7 @@ export function Chat({
               <div className="flex-1">
                 <Messages
                   chatId={id}
-                  isLoading={isLoading}
+                  isLoading={showThinking}
                   votes={votes}
                   messages={optimisticMessages}
                   setMessages={originalSetMessages}
@@ -858,7 +855,7 @@ export function Chat({
                       chatId={id}
                       input={input}
                       setInput={handleSetInput}
-                      isLoading={isLoading}
+                      isLoading={showThinking}
                       attachments={attachments}
                       setAttachments={setAttachments}
                       messages={messages}
@@ -1025,7 +1022,7 @@ export function Chat({
                         }, options);
                         return { success: true };
                       }}
-                      isLoading={isLoading}
+                      isLoading={showThinking}
                       stop={stop}
                       attachments={attachments}
                       setAttachments={setAttachments}
@@ -1089,7 +1086,7 @@ export function Chat({
           await append(message, options);
           return { success: true };
         }}
-        isLoading={isLoading}
+        isLoading={showThinking}
         stop={stop}
         attachments={attachments}
         setAttachments={setAttachments}

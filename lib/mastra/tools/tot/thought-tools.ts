@@ -10,6 +10,7 @@ import { nanoid } from "nanoid";
 import { Thought, EvaluatedThought } from "../../types/tot";
 import { openai } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
+import { totConfig } from "../../config/totConfig";
 
 /**
  * 思考生成ツール
@@ -23,9 +24,10 @@ export const thoughtGenerator = createTool({
     stage: z.enum(["planning", "analysis", "insight"]).describe("思考生成のステージ"),
     maxThoughts: z.number().min(1).max(10).default(5).describe("生成する思考の最大数"),
     context: z.any().optional().describe("追加コンテキスト情報（オプション）"),
+    modelOverride: z.any().optional().describe("モデルをオーバーライドするための関数（オプション）"),
   }),
   description: "指定されたステージに応じて複数の思考経路を生成します",
-  execute: async ({ context: { query, stage, maxThoughts, context } }) => {
+  execute: async ({ context: { query, stage, maxThoughts, context, modelOverride } }) => {
     console.log(`[ToT] 思考生成: ステージ=${stage}, クエリ=${query.substring(0, 50)}...`);
     
     // ステージに応じたプロンプトを構築
@@ -82,7 +84,7 @@ JSONではなく、自然な文章形式で返してください。各洞察は�
         instructions: `あなたは複数の思考経路を提案する思考生成の専門家です。
 与えられたクエリやコンテキストに基づいて、多様で創造的な思考を生成してください。
 各思考は明確に区切り、指定された形式に従ってください。`,
-        model: openai("gpt-4o-mini"),
+        model: modelOverride || openai(totConfig.generationModel),
       });
       
       // Generate thoughts using the agent
@@ -138,9 +140,10 @@ export const thoughtEvaluator = createTool({
     stage: z.enum(["planning", "analysis", "insight"]).describe("評価するステージ"),
     evaluationCriteria: z.array(z.string()).optional().describe("評価基準（オプション）"),
     context: z.any().optional().describe("追加コンテキスト情報（オプション）"),
+    modelOverride: z.any().optional().describe("モデルをオーバーライドするための関数（オプション）"),
   }),
   description: "生成された思考を評価してスコア付けします",
-  execute: async ({ context: { thoughts, stage, evaluationCriteria, context } }) => {
+  execute: async ({ context: { thoughts, stage, evaluationCriteria, context, modelOverride } }) => {
     console.log(`[ToT] 思考評価: ステージ=${stage}, 思考数=${thoughts.length}`);
     
     // ステージに応じたデフォルト評価基準を設定
@@ -159,7 +162,7 @@ export const thoughtEvaluator = createTool({
         instructions: `あなたは思考を評価する専門家です。与えられた思考を指定された評価基準に基づいて評価し、スコア付けしてください。
 各基準について0〜10の数値スコアを提供し、評価理由を説明してください。
 最終的に、すべての基準の平均値として総合スコアを計算してください。`,
-        model: openai("gpt-4o-mini"),
+        model: modelOverride || openai(totConfig.evaluationModel),
       });
       
       // Evaluate each thought
@@ -245,9 +248,10 @@ export const pathSelector = createTool({
     stage: z.enum(["planning", "analysis", "insight"]).describe("選択するステージ"),
     selectionStrategy: z.enum(["best", "hybrid", "diverse"]).optional().default("best").describe("選択戦略"),
     context: z.any().optional().describe("追加コンテキスト情報（オプション）"),
+    modelOverride: z.any().optional().describe("モデルをオーバーライドするための関数（オプション）"),
   }),
   description: "評価された思考から最適な経路を選択します",
-  execute: async ({ context: { evaluatedThoughts, stage, selectionStrategy = "best", context } }) => {
+  execute: async ({ context: { evaluatedThoughts, stage, selectionStrategy = "best", context, modelOverride } }) => {
     console.log(`[ToT] 経路選択: ステージ=${stage}, 戦略=${selectionStrategy}, 思考数=${evaluatedThoughts.length}`);
     
     try {
@@ -264,7 +268,7 @@ export const pathSelector = createTool({
         const pathSelectionAgent = new Agent({
           name: "Path Selection Agent",
           instructions: `あなたは思考経路を統合する専門家です。複数の思考の強みを組み合わせて、新しい統合的な思考を生成してください。`,
-          model: openai("gpt-4o-mini"),
+          model: modelOverride || openai(totConfig.generationModel),
         });
         
         if (evaluatedThoughts.length >= 2) {
@@ -306,7 +310,7 @@ ${top2.content}
         const pathSelectionAgent = new Agent({
           name: "Path Selection Agent",
           instructions: `あなたは思考経路を選択する専門家です。多様性を考慮して、高スコアだけでなくユニークな視点も持つ思考を選択してください。`,
-          model: openai("gpt-4o-mini"),
+          model: modelOverride || openai(totConfig.generationModel),
         });
         
         // Create prompt for diverse selection
