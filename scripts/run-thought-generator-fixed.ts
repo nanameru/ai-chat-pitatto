@@ -29,8 +29,9 @@ async function main() {
     // @ts-ignore - ライブラリの型定義の変更に対応
     const result = await thoughtGenerator.execute({
       // 内部呼び出し用のダミーコンテナ
+      // @ts-ignore - Container interfaceの完全実装を回避
       container: {
-        get: () => null,
+        get: () => null as any,
         set: () => {},
         has: () => false,
         registry: {}
