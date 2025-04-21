@@ -6,18 +6,26 @@ import { ChatModel, ImageModel, ModelProvider, ProviderType } from '../../types'
 
 // 既存のAPIキーを使用する（.env.localから読み込み）
 // 環境変数が優先的に使用されることを確認
-if (process.env.OPENAI_API_KEY) {
+const apiKey = process.env.OPENAI_API_KEY;
+if (apiKey) {
   console.log('[OpenAI Provider] 環境変数からAPIキーを検出しました');
+  console.log(`[OpenAI Provider] APIキー先頭: ${apiKey.substring(0, 5)}...`);
   
-  // 値が上書きされないようにObject.definePropertyを使用
-  const envDescriptor = Object.getOwnPropertyDescriptor(process.env, 'OPENAI_API_KEY');
-  if (envDescriptor && envDescriptor.configurable) {
-    Object.defineProperty(process.env, 'OPENAI_API_KEY', {
-      value: process.env.OPENAI_API_KEY,
-      writable: false,
-      configurable: false
-    });
-    console.log('[OpenAI Provider] APIキーを保護しました');
+  // プロバイダー初期化前にAPIキーが設定されていることを確認する
+  // @ai-sdk/openai に直接APIキーを渡す
+  try {
+    // 値が上書きされないようにObject.definePropertyを使用
+    const envDescriptor = Object.getOwnPropertyDescriptor(process.env, 'OPENAI_API_KEY');
+    if (envDescriptor && envDescriptor.configurable) {
+      Object.defineProperty(process.env, 'OPENAI_API_KEY', {
+        value: apiKey,
+        writable: false,
+        configurable: false
+      });
+      console.log('[OpenAI Provider] APIキーを保護しました');
+    }
+  } catch (error) {
+    console.error('[OpenAI Provider] APIキー保護中にエラーが発生しました', error);
   }
 } else {
   console.error('[OpenAI Provider] 環境変数OPENAI_API_KEYが設定されていません');
@@ -51,8 +59,10 @@ export const openaiChatModels: ChatModel[] = [
  * OpenAIで利用可能な特殊目的モデル
  */
 export const openaiSpecialModels = {
-  'title-model': openai('gpt-4o'),
-  'artifact-model': openai('gpt-4o-mini')
+  // @ts-ignore - 型エラーを無視して明示的にAPIキーを設定
+  'title-model': openai('gpt-4o', { apiKey: apiKey || '' }),
+  // @ts-ignore - 型エラーを無視して明示的にAPIキーを設定
+  'artifact-model': openai('gpt-4o-mini', { apiKey: apiKey || '' })
 };
 
 /**
@@ -77,7 +87,9 @@ export class OpenAIProvider implements ModelProvider {
     
     // チャットモデルを追加
     openaiChatModels.forEach(model => {
-      models[model.id] = openai(model.modelVersion);
+      // @ts-ignore - 型エラーを無視して明示的にAPIキーを設定
+      models[model.id] = openai(model.modelVersion, { apiKey: apiKey || '' });
+      console.log(`[OpenAI Provider] 言語モデル初期化: ${model.modelVersion}, APIキー: ${apiKey ? '設定済み' : '未設定'}`);
     });
     
     // 特殊目的モデルを追加
