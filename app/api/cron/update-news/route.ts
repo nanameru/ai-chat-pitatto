@@ -59,7 +59,9 @@ export async function GET(request: Request) {
         options: {
           format: 'json'
         }
-      }
+      },
+      // コンテナオブジェクトの追加 - Mastra Tool実行に必要
+      container: {} as any  // 暫定対応: 型エラー回避
     });
 
     console.log('Cozeからのレスポンス:');

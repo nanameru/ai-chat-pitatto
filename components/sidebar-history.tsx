@@ -414,7 +414,7 @@ export function SidebarHistory() {
       </SidebarGroup>
 
       {/* Chat groups */}
-      {Object.entries(
+      {!isCollapsed && Object.entries(
         groupChatsByDate(history.filter((h) => h.userId !== null))
       ).map(([group, chats]) =>
         chats.length > 0 ? (

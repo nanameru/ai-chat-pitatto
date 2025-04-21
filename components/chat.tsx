@@ -1,7 +1,7 @@
 'use client';
 
 import type { Attachment, Message, CreateMessage, ChatRequestOptions } from 'ai';
-import { useChat } from '@ai-sdk/react';
+import { useChat } from '@ai-sdk/react'; // 継続利用。ただし api オプションで自前エンドポイントを指定
 import { useEffect, useOptimistic, useState, useRef, useCallback, useTransition } from 'react';
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
@@ -406,7 +406,7 @@ export function Chat({
     reload
   } = useChat({
     ...chatOptions,
-    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat',
+    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat', // サーバープロキシ経由で OpenAI を呼び出すため、useChat の api オプションを設定
     body: {
       ...(chatOptions?.body || {}),
       chatId: id,

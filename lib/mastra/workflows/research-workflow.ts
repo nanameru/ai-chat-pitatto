@@ -47,6 +47,7 @@ const initialSearchStep = new Step({
     
     const response = await searchTool.execute({
       context: { query },
+      container: {} as any  // 暫定対応: 型エラー回避
     }) as { query: string; results: { title: string; snippet: string; url: string; }[]; timestamp: string; };
     
     return response;
@@ -89,6 +90,7 @@ const analysisStep = new Step({
         query: searchResults.query,
         results: searchResults.results || [],
       },
+      container: {} as any  // 暫定対応: 型エラー回避
     }) as { originalQuery: string; missingInformation: string[]; followUpQueries: string[]; analysisTimestamp: string; };
     
     return response;
@@ -140,6 +142,7 @@ const followUpSearchStep = new Step({
       
       const response = await searchTool.execute({
         context: { query },
+        container: {} as any  // 暫定対応: 型エラー回避
       }) as { query: string; results: { title: string; snippet: string; url: string; }[]; timestamp: string; };
       
       additionalResults.push({
