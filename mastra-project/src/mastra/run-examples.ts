@@ -1,4 +1,5 @@
 import { cyclicalWorkflow, whileLoopWorkflow } from './workflows';
+import { memoryAgent } from './agents';
 
 /**
  * 循環的ワークフローの実行例
@@ -34,6 +35,21 @@ export async function runWhileLoopWorkflowExample() {
   return res.results;
 }
 
+/**
+ * エージェントメモリーの実行例
+ */
+export async function runMemoryAgentExample() {
+  console.log('=== Memory Agent Example ===');
+  const resourceId = 'user_alice';
+  const threadId = 'preferences_thread';
+  // 初回: ユーザーの好みを記憶させる
+  await memoryAgent.generate('私の好きな色は青です。', { resourceId, threadId });
+  // 記憶を参照させる
+  const response = await memoryAgent.generate('私の好きな色は何ですか？', { resourceId, threadId });
+  console.log('Agent response:', response);
+  return response;
+}
+
 // コマンドラインから直接実行された場合、両方の例を実行
 if (require.main === module) {
   (async () => {
@@ -42,6 +58,9 @@ if (require.main === module) {
     
     console.log('\nWhileループワークフローを実行中...');
     await runWhileLoopWorkflowExample();
+    
+    console.log('\nMemory Agent Exampleを実行中...');
+    await runMemoryAgentExample();
   })().catch(err => {
     console.error('実行中にエラーが発生しました:', err);
     process.exit(1);
