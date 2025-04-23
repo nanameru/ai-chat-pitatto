@@ -6,4 +6,5 @@ export { conditionalContentWorkflow } from './conditional-content-workflow';
 export { agentSearchWorkflow } from './agent-search-workflow'; 
 export { searchSummarizeWorkflow } from './search-summarize-workflow'; 
 export { cyclicalWorkflow } from './cyclical-workflow';
-export { whileLoopWorkflow } from './while-loop-workflow'; 
+export { whileLoopWorkflow } from './while-loop-workflow';
+export { humanInTheLoopWorkflow } from './human-in-the-loop-workflow'; 
