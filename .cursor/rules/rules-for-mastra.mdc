@@ -1,0 +1,47 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+
+# Mastra プロジェクトに関するルール
+
+## ポート使用中の問題対応
+Mastra の Agent、Tools、ワークフローを修正した後にサーバーを再起動する際、以下のエラーが表示されることがあります：
+```
+Error: listen EADDRINUSE: address already in use :::4111
+```
+
+この場合、以下の手順で解決してください：
+
+1. 使用中のポートを確認：
+   ```bash
+   lsof -i :4111 | grep LISTEN
+   ```
+
+2. 表示されたプロセスIDを強制終了：
+   ```bash
+   kill -9 <PID>
+   ```
+
+3. ポートが解放されたことを確認：
+   ```bash
+   lsof -i :4111 | grep LISTEN
+   ```
+
+4. サーバーを再起動：
+   ```bash
+   cd mastra-project
+   npm run dev
+   ```
+
+## 開発サーバー起動
+Mastra プロジェクトで開発サーバーを起動する際は、必ずプロジェクトディレクトリに移動してから実行してください：
+
+```bash
+cd mastra-project
+npm run dev
+```
+
+プロジェクトルートから直接 `npm run dev` を実行すると、別のプロジェクトのサーバーが起動する可能性があります。
+

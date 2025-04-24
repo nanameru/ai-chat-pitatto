@@ -2,6 +2,10 @@ import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { weatherTool, webSearchTool } from '../tools';
 import { catAgent } from './catAgent';
+import { copywriterAgent } from './copywriterAgent';
+import { editorAgent } from './editorAgent';
+import { publisherAgent } from './publisherAgent';
+import { voiceAgent } from './voiceAgent';
 
 export const weatherAgent = new Agent({
   name: 'Weather Agent',
@@ -42,3 +46,7 @@ export const webSearchAgent = new Agent({
 
 export { catAgent };
 export { memoryAgent } from './memoryAgent';
+export { copywriterAgent };
+export { editorAgent };
+export { publisherAgent };
+export { voiceAgent };

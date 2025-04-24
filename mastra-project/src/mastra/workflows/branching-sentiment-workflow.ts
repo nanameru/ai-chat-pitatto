@@ -281,7 +281,7 @@ const finalIntegrationStep = new Step({
 
 // Sentiment analysis workflow definition
 export const branchingSentimentWorkflow = new Workflow({
-  name: "test-branchingSentimentWorkflow",
+  name: "test-test-branchingSentimentWorkflow",
   triggerSchema: z.object({
     inputText: z.string().min(1).describe("Text to analyze"),
   }),

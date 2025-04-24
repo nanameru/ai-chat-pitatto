@@ -1,0 +1,121 @@
+---
+description: 
+globs: 
+alwaysApply: true
+---
+# Mastra プロジェクト構造ルール
+
+**目的**: Cursorを使った開発者が同じ手順で再現性高くMastraプロダクトをセットアップ・拡張できるように、ディレクトリ構成・命名規則・運用フローを定義します。
+
+---
+
+## 1. ディレクトリ構成
+プロジェクトルートは以下のように配置します。必要に応じて拡張できます。
+
+```text
+mastra-project/
+├─ src/
+│  ├─ mastra/
+│  │  ├─ agents/         # AIエージェントを配置 (例: weatherAgent.ts, catAgent.ts)
+│  │  ├─ workflows/      # Mastraワークフローを配置
+│  │  └─ tools/          # 独自ツール定義
+├─ .mastra/              # Mastra内部ファイル(.build, outputなど)
+├─ tests/                # 自動テストコード (Jest, Vitestなど)
+├─ .env.example          # 必要な環境変数のテンプレート
+├─ .gitignore            # 無視ファイル定義
+├─ package.json          # 依存パッケージ定義 + 実行スクリプト
+├─ tsconfig.json         # TypeScript設定
+└─ README.md             # プロジェクト概要とセットアップ手順
+```
+
+- `src/mastra/agents/`: 各エージェントは`export const myAgent = new Agent({ ... })`形式で定義し、`src/mastra/index.ts`にまとめて登録します。  
+- `src/mastra/workflows/`: ワークフロー単位でサブフォルダまたはファイルを分割。  
+- `src/mastra/tools/`: `createTool()`で定義する補助ツール群を配置。
+- `tests/`: エージェント・ワークフロー・ツールの単体テストを統一的に管理。
+
+---
+
+## 2. 命名規則
+- **ファイル名**: すべて `camelCase` または `kebab-case` で統一。（例: `catAgent.ts` / `weather-agent.ts`）
+- **クラス・定数**: `PascalCase`（例: `CatAgent`, `WeatherTool`）。
+- **変数・関数**: `camelCase`（例: `fetchUserData`, `createTool`）。
+- **ディレクトリ名**: `kebab-case`（例: `mastra-workflows`など必要時）。
+
+---
+
+## 3. スキャフォールディング（雛形生成）
+CLIで新規エージェント/ワークフローを作る手順例：
+
+```bash
+# エージェント追加
+mkdir -p src/mastra/agents && \
+  cat << 'EOF' > src/mastra/agents/myAgent.ts
+import { openai } from '@ai-sdk/openai';
+import { Agent } from '@mastra/core/agent';
+
+export const myAgent = new Agent({
+  name: 'my-agent',
+  instructions: 'You are a helpful assistant...',
+  model: openai('gpt-4o-mini'),
+});
+EOF
+
+# 登録用エントリポイント更新
+apply_patch << 'EOF'
+*** Begin Patch
+*** Update File: src/mastra/index.ts
+@@ export const mastra = new Mastra({
+-  agents: { /* existing agents */ },
++  agents: { /* existing agents */, myAgent },
+*** End Patch
+EOF
+```  
+※パスやエージェント名は適宜置き換えてください。
+
+---
+
+## 4. 開発フロー
+1. リポジトリをクローン  
+   `git clone <repo-url>`  
+2. 依存インストール  
+   `npm ci`  
+3. 環境変数を設定  
+   `.env.example` をコピーして必要な値を記入  
+   ```bash
+   cp .env.example .env.development
+   ```
+4. 開発サーバー起動  
+   ```bash
+   cd mastra-project
+   npm run dev            # または mastra dev
+   ```
+5. HTTP UI確認  
+   http://localhost:4111/agents にエージェント一覧が表示される
+
+---
+
+## 5. テスト & CI
+- `npm test` でユニットテストを実行  
+- CIでは `npm ci && npm test && npm run build` をパイプラインに設定  
+- ビルドが成功しない場合、デプロイを防止する
+
+---
+
+## 6. バージョン管理 & デプロイ
+- **package.json** の依存は厳格に固定（`^`ではなく具体的なバージョン指定）  
+- **lockfile** (`package-lock.json` / `pnpm-lock.yaml`) をコミット  
+- デプロイ時は `npm run build` → `npm run start`  
+
+---
+
+## 7. ドキュメント & コミット規約
+- README.md: プロジェクト概要・セットアップ・主要コマンドを明記  
+- チェンジログ: 重大変更はCHANGELOG.mdに記録  
+- コミットメッセージ: Conventional Commits に準拠  
+  - feat: 新機能  
+  - fix: バグ修正  
+  - docs: ドキュメント更新  
+
+---
+
+以上のルールに従うことで、Cursorを使う開発者が同一手順でMastraプロジェクトを再現・拡張しやすくなります。 

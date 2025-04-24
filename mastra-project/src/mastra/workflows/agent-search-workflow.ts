@@ -165,7 +165,7 @@ const formatResultStep = new Step({
 
 // ワークフロー定義
 export const agentSearchWorkflow = new Workflow({
-  name: "agentSearchWorkflow",
+  name: "test-agentSearchWorkflow",
   triggerSchema: z.object({
     query: z.string().describe("Search query to analyze"),
   }),
