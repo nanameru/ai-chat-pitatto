@@ -119,3 +119,436 @@ EOF
 ---
 
 以上のルールに従うことで、Cursorを使う開発者が同一手順でMastraプロジェクトを再現・拡張しやすくなります。 
+
+
+# Mastra ワークフローにおけるエラー処理ルール
+
+Mastra のワークフローにおけるエラー処理は、大きく以下の４つの機能で支えられています。文系の方にもイメージしやすいように、身近な例えを交えて説明します。
+
+---
+
+## 1. リトライ（再試行）
+– 例）自動応答サービスがつながらなかったら、もう一度掛け直す  
+– ステップに `retryConfig` を設定すると、指定回数・間隔で自動実行されます
+
+```ts
+const apiStep = new Step({
+  id: 'callApi',
+  execute: async () => { /* 失敗しやすい操作 */ },
+  retryConfig: { attempts: 3, delay: 1000 },
+});
+```
+(ソース: https://mastra.ai/ja/docs/workflows/error-handling#retry)
+
+---
+
+## 2. フォールバック（代替パス）
+– 例）在庫切れなら似た商品を提案  
+– 条件分岐で「成功時はA」「失敗時はB」のルートを定義
+
+```ts
+workflow
+  .step(fetchData)
+  .then(processData, { when: ctx => ctx.status==='success' })
+  .then(fallbackStep,  { when: ctx => ctx.status==='failed' });
+```
+(ソース: https://mastra.ai/ja/docs/workflows/error-handling#conditional-branching)
+
+---
+
+## 3. ウォッチ（監視）
+– 例）管理者がリアルタイムでエラー発生を検知  
+– `createRun().watch()` でワークフロー全体を監視し、失敗があれば通知
+
+```ts
+const { start, watch } = run;
+watch(({ results }) => {
+  if (Object.values(results).some(s => s.status==='failed')) {
+    console.error('失敗ステップあり', results);
+  }
+});
+await start();
+```
+(ソース: https://mastra.ai/ja/docs/workflows/error-handling#watch)
+
+---
+
+## 4. ステップ内部での例外キャッチ
+– 例）通信エラー時にフォールバック結果を返す  
+– `try…catch` で例外をキャッチし、結果オブジェクトを返す
+
+```ts
+const safeStep = new Step({
+  id: 'safeStep',
+  execute: async () => {
+    try {
+      return { ok: true, data: await riskyOperation() };
+    } catch (e) {
+      return { ok: false, error: e.message };
+    }
+  },
+});
+```
+(ソース: https://mastra.ai/ja/docs/workflows/error-handling#step-error-handling)
+
+---
+
+## ベストプラクティス
+1. **リトライ**：一時的なエラーには自動再試行  
+2. **フォールバック**：代替パスを用意  
+3. **エラー種別で対応**：致命的 vs 一時的  
+4. **詳細ログ**：どのステップで何が起きたか記録  
+5. **冪等性**：何度実行されても安全な設計  
+
+詳細は公式ドキュメントを参照してください：  
+https://mastra.ai/ja/docs/workflows/error-handling
+
+
+```yaml
+agents:
+  overview: |
+    Mastra のエージェントは「Agent クラス」を使って作成します。
+    - name: エージェントの識別子（文字列）
+    - instructions: エージェントに与えるシステムプロンプト（文字列）
+    - model: 利用する言語モデル (openai, anthropic など)
+    - tools: エージェントから呼び出せる外部ツール群 (オプション)
+    - memory: 会話履歴や状態を保持する Memory インスタンス (オプション)
+    - voice: 音声入出力を扱う Voice プロバイダー (オプション)
+
+  codePattern: |
+    import { Agent } from '@mastra/core/agent';
+    import { openai } from '@ai-sdk/openai';
+    // (必要に応じてツール／メモリ／音声のインポート)
+
+    export const yourAgent = new Agent({
+      name: 'yourAgentName',
+      instructions: 'あなたは…',
+      model: openai('gpt-4o'),
+      tools: { /* toolA, toolB */ },    # optional
+      memory: yourMemoryInstance,      # optional
+      voice: yourVoiceProvider,        # optional
+    });
+
+  examples:
+    - id: weatherAgent
+      description: |
+        天気情報取得用エージェント。weatherTool を呼び出して現在の天気を返す。
+      code: |
+        import { Agent } from '@mastra/core/agent';
+        import { openai } from '@ai-sdk/openai';
+        import { weatherTool } from '../tools';
+
+        export const weatherAgent = new Agent({
+          name: 'weatherAgent',
+          instructions: '指定された地域の天気情報を返してください。',
+          model: openai('gpt-4o'),
+          tools: { weatherTool },
+        });
+
+    - id: memoryAgent
+      description: |
+        会話履歴を保持する Memory 機能付きエージェント。ユーザーの過去発話を文脈に利用。
+      code: |
+        import { Agent } from '@mastra/core/agent';
+        import { openai } from '@ai-sdk/openai';
+        import { Memory } from '@mastra/memory';
+
+        const memory = new Memory();
+        export const memoryAgent = new Agent({
+          name: 'memoryAgent',
+          instructions: 'あなたはメモリを持つアシスタントです。',
+          model: openai('gpt-4o'),
+          memory,  
+        });
+
+    - id: voiceAgent
+      description: |
+        音声入出力を持つエージェント。OpenAIVoiceで STT/TTS が可能。
+      code: |
+        import { Agent } from '@mastra/core/agent';
+        import { openai } from '@ai-sdk/openai';
+        import { OpenAIVoice } from '@mastra/voice-openai';
+
+        const voice = new OpenAIVoice();
+        export const voiceAgent = new Agent({
+          name: 'voiceAgent',
+          instructions: '音声で会話できるAIアシスタントです。',
+          model: openai('gpt-4o'),
+          voice,
+        });
+
+  tips:
+    - "Agent の設定はシンプル：必須は name/instructions/model の 3 つ。"
+    - "tools プロパティにツールを指定すると、そのツール関数が agent.action() から利用可能に。"
+    - "memory を追加すると過去の会話を自動的にコンテキストに保持できる。"
+    - "voice を渡すと `agent.voice.speak()` / `agent.voice.listen()` が使える。"
+    - "新しいエージェントを作ったら、`src/mastra/index.ts` に必ず登録を忘れずに。"
+```
+
+workflows:
+  overview: |
+    Mastra のワークフローは「Workflow クラス」と「Step クラス」を使って作成します。
+    - Workflow: 一連の処理の設計図（名前、triggerSchema、mastraインスタンスなど）
+    - Step: 個々の処理単位（id、description、入力・出力スキーマ、実行ロジック）
+    - .step() / .then() / .commit() で処理を並列・連鎖・分岐させる
+
+  codePattern: |
+    import { Workflow, Step } from '@mastra/core/workflows';
+    import { z } from 'zod';
+
+    // 1) ワークフローを定義
+    const myWorkflow = new Workflow({
+      name: 'my-workflow',
+      triggerSchema: z.object({ input: z.string() }),
+      mastra,   // Mastra インスタンス
+    });
+
+    // 2) ステップを定義
+    const firstStep = new Step({
+      id: 'first-step',
+      description: '最初の処理',
+      inputSchema: z.object({ input: z.string() }),
+      outputSchema: z.object({ result: z.string() }),
+      execute: async ({ context }) => {
+        // 実行ロジック
+        return { result: `Processed: ${context.triggerData.input}` };
+      },
+    });
+
+    // 3) ワークフローに組み込んでコミット
+    myWorkflow
+      .step(firstStep)
+      .commit();
+
+  entries:
+    - id: searchWorkflow
+      name: test-search-workflow
+      triggerSchema:
+        query: string
+      steps:
+        - id: web-search
+          description: 指定クエリで Brave Search API を呼び出し、結果一覧を取得
+        - id: summarize-results
+          description: 取得結果を AI に渡して要約文を生成
+
+    - id: chainSearchWorkflow
+      name: chain-search-workflow
+      triggerSchema:
+        query: string
+      steps:
+        - id: initial-search
+          description: 最初の検索クエリで API 検索
+        - id: generate-second-query
+          description: 検索結果をもとに次のクエリを AI で生成
+        - id: second-search
+          description: 生成クエリで再度 API 検索
+        - id: generate-final-query
+          description: ２回の結果を踏まえて最終クエリを AI で生成
+        - id: final-search
+          description: 最終クエリで最終検索
+        - id: summarize-results
+          description: 最終検索結果を AI で要約して返却
+
+    - id: parallelSearchWorkflow
+      name: parallel-search-workflow
+      triggerSchema:
+        query: string
+      steps:
+        - id: split-queries
+          description: 元クエリを複数サブクエリに分割
+        - id: parallel-search
+          description: 分割した各クエリを並列検索
+        - id: merge-results
+          description: 並列結果をまとめて出力
+
+    - id: branchingSentimentWorkflow
+      name: branching-sentiment-workflow
+      triggerSchema:
+        text: string
+      steps:
+        - id: analyze-sentiment
+          description: テキストの感情を分類（positive/negative/neutral）
+        - id: positive-flow
+          description: 肯定的フィードバック時の処理
+        - id: negative-flow
+          description: 否定的フィードバック時の処理
+
+    - id: conditionalContentWorkflow
+      name: conditional-content-workflow
+      triggerSchema:
+        topic: string
+      steps:
+        - id: generate-outline
+          description: トピックに基づくアウトライン生成
+        - id: write-content
+          description: アウトラインに沿って本文生成
+        - id: refine-content
+          description: 条件分岐に応じた内容の微調整
+
+    - id: agentSearchWorkflow
+      name: agent-search-workflow
+      triggerSchema:
+        query: string
+      steps:
+        - id: prepare-query
+          description: 検索用プロンプト作成
+        - id: call-search-agent
+          description: 別エージェントに検索を依頼
+        - id: format-results
+          description: エージェント応答をパース
+
+    - id: searchSummarizeWorkflow
+      name: search-summarize-workflow
+      triggerSchema:
+        query: string
+      steps:
+        - id: run-search
+          description: searchWorkflow を呼び出して検索実行
+        - id: summarize
+          description: 検索結果を要約
+
+    - id: cyclicalWorkflow
+      name: cyclical-workflow
+      triggerSchema:
+        start: number
+      steps:
+        - id: increment
+          description: 値を増加させつつループ
+        - id: check-condition
+          description: ループ継続条件を評価
+
+    - id: whileLoopWorkflow
+      name: while-loop-workflow
+      triggerSchema:
+        initialValue: number
+      steps:
+        - id: loop-step
+          description: 条件を満たす限り繰り返す While ループ
+
+    - id: humanInTheLoopWorkflow
+      name: human-in-the-loop-workflow
+      triggerSchema:
+        inputData: string
+      steps:
+        - id: auto-step
+          description: 自動処理ステップ
+        - id: wait-for-human
+          description: 人による承認を待機
+        - id: post-approval
+          description: 承認後の処理
+
+    - id: contentGenerationWorkflow
+      name: content-generation-workflow
+      triggerSchema:
+        prompt: string
+      steps:
+        - id: generate-draft
+          description: 入力プロンプトから下書き生成
+        - id: revise
+          description: 修正・編集ステップ
+
+    - id: multiAgentWorkflow
+      name: multi-agent-workflow
+      triggerSchema:
+        input: string
+      steps:
+        - id: distribute-tasks
+          description: 複数エージェントに役割分担
+        - id: aggregate-responses
+          description: エージェントからの回答を集約
+
+  tips:
+    - "各 Workflow は必ず commit() を呼び出して確定すること"
+    - "triggerSchema で受け取るデータを zod で型安全に定義する"
+    - "複雑な処理はサブワークフロー化して再利用性を高める"
+    - "then() を使うと条件分岐やフォールバックが簡単に組める"
+    - "watch() で実行中のワークフローを監視し、失敗時に通知可能"
+
+    tools:
+  overview: |
+    Mastra のツールは `.createTool()` で定義し、エージェントやワークフロー内から
+    呼び出せる「関数」のように扱えます。  
+    - id: ツールの識別子（文字列）  
+    - description: ツールの用途説明  
+    - inputSchema / outputSchema: zod で型安全に定義  
+    - execute: 実際の処理ロジック  
+
+  codePattern: |
+    import { createTool } from '@mastra/core/tools';
+    import { z } from 'zod';
+
+    export const yourTool = createTool({
+      id: 'your-tool-id',
+      description: 'ツールの説明文',
+      inputSchema: z.object({
+        foo: z.string().describe('説明'),
+      }),
+      outputSchema: z.object({
+        bar: z.number().describe('説明'),
+      }),
+      execute: async ({ context }) => {
+        // context.foo などで入力を参照し、
+        // 処理結果を { bar: 数値 } の形で返す
+        return { bar: parseInt(context.foo, 10) };
+      },
+    });
+
+  entries:
+    - id: weatherTool
+      package: src/mastra/tools/index.ts
+      description: 現在の天気情報を取得するツール
+      inputSchema:
+        location: string  # 都市名
+      outputSchema:
+        temperature: number
+        feelsLike: number
+        humidity: number
+        windSpeed: number
+        windGust: number
+        conditions: string
+        location: string
+      execute: |
+        # Geocoding API で緯度経度を取得し
+        # Open-Meteo API で天気を取得する
+
+    - id: webSearchTool
+      package: src/mastra/tools/index.ts
+      description: Brave Search API を呼び出してウェブ検索するツール
+      inputSchema:
+        query: string
+        count?: number
+      outputSchema:
+        results: Array<{ title: string; url: string; description: string }>
+        totalResults?: number
+      execute: |
+        # 環境変数 BRAVE_API_KEY を参照し、
+        # https://api.search.brave.com/res/v1/web/search を呼び出して結果を返す
+
+    - id: copywriterTool
+      package: src/mastra/tools/copywriterTool.ts
+      description: ブログ投稿のコピーを生成するエージェントツール
+      inputSchema:
+        topic: string
+      outputSchema:
+        copy: string
+      execute: |
+        # copywriterAgent.generate() を呼び出し、
+        # テキスト結果を { copy } に詰めて返す
+
+    - id: editorTool
+      package: src/mastra/tools/editorTool.ts
+      description: 生成コピーを編集するエージェントツール
+      inputSchema:
+        copy: string
+      outputSchema:
+        copy: string
+      execute: |
+        # editorAgent.generate() を呼び出し、
+        # 編集済みコピーを返す
+
+  tips:
+    - "ツールを増やしたら `src/mastra/tools/index.ts` でもエクスポートを忘れずに。"
+    - "エージェントを内部で呼び出す場合は `execute` 内で `.generate()` を使う。"
+    - "zod の `.describe()` を使うとドキュメント化に役立つ。"
+    - "ワークフローやエージェントの `tools` プロパティにツールIDを渡せば連携可能。"
+
