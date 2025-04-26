@@ -6,7 +6,9 @@ import { Mastra } from '@mastra/core/mastra';
 import { createLogger } from '@mastra/core/logger';
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { webSearchTool, weatherTool } from './tools/16216d18-09cd-4e11-89ac-4e59d57fef78.mjs';
+import { arxivSearchTool, redditSearchTool, youTubeSearchTool, mediumSearchTool, noteSearchTool, webSearchTool, weatherTool } from './tools/aee8b00f-b5b6-4ab0-9bbb-866acf6be95a.mjs';
+import { z } from 'zod';
+import { Workflow, Step } from '@mastra/core/workflows';
 import crypto, { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
 import { dirname } from 'path';
@@ -18,9 +20,104 @@ import { Readable } from 'stream';
 import { createReadStream, lstatSync } from 'fs';
 import { Telemetry } from '@mastra/core';
 import { RuntimeContext } from '@mastra/core/di';
-import { z } from 'zod';
 import { isVercelTool } from '@mastra/core/tools';
 import { ReadableStream as ReadableStream$1 } from 'node:stream/web';
+import 'buffer';
+
+const arxivSearchAgent = new Agent({
+  name: "Arxiv Search Agent",
+  // Agent name
+  instructions: "You are an agent specialized in searching for academic papers on arXiv. Use the provided tool to perform searches based on user queries.",
+  // Instructions for the agent
+  model: openai("gpt-4o-mini"),
+  // Specify the language model
+  tools: { arxivSearchTool }
+  // Register the arxivSearchTool with this agent
+});
+
+const redditTestAgent = new Agent({
+  name: "Reddit Test Agent",
+  // Agent name
+  instructions: "This agent is designed to test the Reddit Search Tool. It takes a user query and uses the tool to search Reddit.",
+  // Simple instructions for testing
+  model: openai("gpt-4o-mini"),
+  // Use a basic model
+  tools: { redditSearchTool }
+  // Register the redditSearchTool with this agent
+});
+
+const youTubeTestAgent = new Agent({
+  name: "YouTube Test Agent",
+  instructions: "This agent is designed to test the YouTube Search Tool. It uses the tool to search for videos based on a user query.",
+  model: openai("gpt-4o-mini"),
+  tools: { youTubeSearchTool }
+  // Register the youTubeSearchTool
+});
+
+const mediumTestAgent = new Agent({
+  name: "Medium Test Agent",
+  instructions: "This agent is designed to test the Medium Search Tool. It uses the tool to search for articles on Medium.com based on a user query.",
+  model: openai("gpt-4o-mini"),
+  tools: { mediumSearchTool }
+  // Register the mediumSearchTool
+});
+
+const noteTestAgent = new Agent({
+  name: "Note Test Agent",
+  instructions: "This agent is designed to test the Note Search Tool. It uses the tool to search for articles on note.com based on a user query.",
+  model: openai("gpt-4o-mini"),
+  tools: { noteSearchTool }
+  // Register the noteSearchTool
+});
+
+const clarityCheckAgent = new Agent({
+  name: "Clarity Check Agent",
+  // model: openai('gpt-4o'), // Initially considered gpt-4o, switching to mini for efficiency
+  model: openai("gpt-4o-mini"),
+  // Use gpt-4o-mini as decided
+  instructions: `
+\u3042\u306A\u305F\u306F\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u306E\u660E\u78BA\u6027\u3092\u5224\u65AD\u3059\u308BAI\u3067\u3059\u3002
+
+\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u304C\u3001\u5177\u4F53\u7684\u306A\u60C5\u5831\u691C\u7D22\u3084\u5206\u6790\u3092\u9032\u3081\u308B\u4E0A\u3067\u5341\u5206\u306A\u5185\u5BB9\u304B\u8A55\u4FA1\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+\u4EE5\u4E0B\u306E\u70B9\u3092\u8003\u616E\u3057\u3066\u304F\u3060\u3055\u3044\uFF1A
+- \u5177\u4F53\u6027\uFF1A\u691C\u7D22\u5BFE\u8C61\u3084\u5206\u6790\u5BFE\u8C61\u304C\u7279\u5B9A\u3067\u304D\u308B\u304B\uFF1F
+- \u7BC4\u56F2\uFF1A\u8CEA\u554F\u306E\u30B9\u30B3\u30FC\u30D7\u304C\u5E83\u3059\u304E\u306A\u3044\u304B\uFF1F
+- \u66D6\u6627\u6027\uFF1A\u8907\u6570\u306E\u89E3\u91C8\u304C\u3067\u304D\u308B\u66D6\u6627\u306A\u8A00\u8449\u306F\u306A\u3044\u304B\uFF1F
+- \u4F9D\u5B58\u6027\uFF1A\u8FFD\u52A0\u306E\u6587\u8108\u306A\u3057\u3067\u610F\u56F3\u304C\u7406\u89E3\u3067\u304D\u308B\u304B\uFF1F
+
+\u8A55\u4FA1\u306E\u7D50\u679C\u3001\u8CEA\u554F\u304C\u660E\u78BA\u3067\u3042\u308C\u3070 {"isClear": true} \u3092\u3001\u4E0D\u660E\u78BA\u3067\u3042\u308C\u3070 {"isClear": false} \u3092\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+
+\u91CD\u8981\uFF1A\u5FDC\u7B54\u306F\u5FC5\u305A\u4E0A\u8A18\u306EJSON\u5F62\u5F0F\u306E\u307F\u3068\u3057\u3001\u4ED6\u306E\u30C6\u30AD\u30B9\u30C8\uFF08\u6328\u62F6\u3001\u7406\u7531\u8AAC\u660E\u306A\u3069\uFF09\u306F\u4E00\u5207\u542B\u3081\u306A\u3044\u3067\u304F\u3060\u3055\u3044\u3002
+`,
+  // This agent does not require external tools for its core function.
+  tools: {}
+});
+
+const clarificationPromptAgent = new Agent({
+  name: "Clarification Prompt Agent",
+  instructions: "You are an AI assistant. Given a user query that was deemed unclear and the reason why, generate a polite and specific question to ask the user for clarification. Only output the question itself.",
+  model: openai("gpt-4o-mini")
+  // Or another suitable model
+});
+
+const thoughtGeneratorAgent = new Agent({
+  name: "Thought Generator Agent",
+  instructions: `
+\u3042\u306A\u305F\u306F\u30EA\u30B5\u30FC\u30C1\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u3044\u3066\u3001\u305D\u306E\u8CEA\u554F\u306B\u3064\u3044\u3066\u8ABF\u67FB\u3059\u308B\u305F\u3081\u306E\u591A\u69D8\u306A\u521D\u671F\u601D\u8003\u3001\u7570\u306A\u308B\u8996\u70B9\u3001\u307E\u305F\u306F\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u8907\u6570\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+
+\u51FA\u529B\u306F\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u306E\u914D\u5217\u3068\u3057\u3066\u304F\u3060\u3055\u3044:
+\`\`\`json
+[
+  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 1",
+  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 2",
+  "..."
+]
+\`\`\`
+\u4ED6\u306E\u30C6\u30AD\u30B9\u30C8\u306F\u542B\u3081\u305A\u3001JSON\u914D\u5217\u306E\u307F\u3092\u51FA\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+`,
+  model: openai("gpt-4o-mini"),
+  outputSchema: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u601D\u8003\u3001\u8996\u70B9\u3001\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306E\u30EA\u30B9\u30C8")
+});
 
 const weatherAgent = new Agent({
   name: "Weather Agent",
@@ -58,10 +155,298 @@ const webSearchAgent = new Agent({
   tools: { webSearchTool }
 });
 
+const triggerSchema$1 = z.object({
+  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
+});
+const processThoughtsWorkflow = new Workflow({
+  name: "processThoughtsSubWorkflow",
+  // サブワークフロー固有の名前
+  triggerSchema: triggerSchema$1
+  // description: '初期思考を評価し、次のアクションを選択するサブワークフロー', // オプション
+});
+const evaluateThoughtsStep = new Step({
+  id: "evaluateThoughtsStep",
+  description: "\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u3092\u8A55\u4FA1\u3059\u308B",
+  // inputSchema は triggerSchema と同じ想定だが、明示的に定義しても良い
+  inputSchema: triggerSchema$1,
+  outputSchema: z.object({
+    // 例: 評価結果
+    evaluation: z.string()
+  }),
+  execute: async ({ context }) => {
+    const thoughts = context.triggerData.thoughts;
+    console.log("(SubWorkflow) Received thoughts for evaluation:", thoughts);
+    const evaluationResult = `Evaluated ${thoughts.length} thoughts. First thought: ${thoughts[0]}`;
+    console.log("(SubWorkflow) Evaluation result:", evaluationResult);
+    return { evaluation: evaluationResult };
+  }
+});
+const selectNodeStep = new Step({
+  id: "selectNodeStep",
+  description: "\u8A55\u4FA1\u306B\u57FA\u3065\u304D\u3001\u6B21\u306B\u63A2\u7D22\u3059\u308B\u601D\u8003\u30CE\u30FC\u30C9\u3092\u9078\u629E\u3059\u308B",
+  // inputSchema: evaluateThoughtsStep の outputSchema を受け取る想定
+  inputSchema: z.object({ evaluation: z.string() }),
+  outputSchema: z.object({
+    // 例: 選択されたノード
+    selectedNode: z.string()
+  }),
+  execute: async ({ context }) => {
+    const evaluation = context.inputData.evaluation;
+    console.log("(SubWorkflow) Received evaluation for node selection:", evaluation);
+    const selectedNode = `Selected node based on evaluation: ${evaluation}`;
+    console.log("(SubWorkflow) Selected node:", selectedNode);
+    return { selectedNode };
+  }
+});
+processThoughtsWorkflow.step(evaluateThoughtsStep).then(selectNodeStep, {
+  variables: {
+    // evaluateThoughtsStep の出力を selectNodeStep の入力にマッピング
+    evaluation: { step: evaluateThoughtsStep, path: "evaluation" }
+  }
+}).commit();
+
+const triggerSchema = z.object({
+  query: z.string().describe("The initial question from the user.")
+});
+const clarityCheckOutputSchema = z.object({
+  isClear: z.boolean().optional(),
+  // Agentが出力する想定
+  reasoning: z.string().optional()
+  // Agentが出力する想定
+}).passthrough();
+const goTResearchWorkflow = new Workflow({
+  name: "goTResearchWorkflow",
+  // description: 'Workflow for the GoT Research process, starting with clarity check.', // description はオプションにない可能性
+  triggerSchema
+  // mastra, // <-- この行も削除 (またはコメントアウト)
+});
+const clarityCheckStep = new Step({
+  id: "clarityCheckStep",
+  description: "\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
+  inputSchema: triggerSchema,
+  outputSchema: clarityCheckOutputSchema,
+  execute: async ({ context }) => {
+    console.log("(ClarityCheckStep) Checking clarity for query:", context.triggerData.query);
+    try {
+      const result = await clarityCheckAgent.generate(
+        `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${context.triggerData.query}\u300D\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3057\u3001\u7406\u7531\u3068\u3068\u3082\u306BJSON\u5F62\u5F0F\u3067 {"isClear": boolean, "reasoning": string} \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002\u660E\u78BA\u306A\u5834\u5408\u306F reasoning \u306F\u7701\u7565\u53EF\u80FD\u3067\u3059\u3002`
+      );
+      if (result.text) {
+        try {
+          const parsed = JSON.parse(result.text);
+          console.log("(ClarityCheckStep) Parsed agent response:", parsed);
+          const isClear = typeof parsed.isClear === "boolean" ? parsed.isClear : false;
+          const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : void 0;
+          return { isClear, reasoning };
+        } catch (parseError) {
+          console.error("(ClarityCheckStep) Failed to parse agent response JSON:", parseError, "Response text:", result.text);
+          return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
+        }
+      } else {
+        console.error("(ClarityCheckStep) Agent did not return text.");
+        return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
+      }
+    } catch (agentError) {
+      console.error("(ClarityCheckStep) Error calling clarityCheckAgent:", agentError);
+      return { isClear: false, reasoning: "\u660E\u78BA\u6027\u30C1\u30A7\u30C3\u30AF\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u547C\u3073\u51FA\u3057\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002" };
+    }
+  }
+});
+const initialThoughtsInputSchema = z.object({
+  query: z.string().describe("\u660E\u78BA\u5316\u3055\u308C\u305F\u3001\u307E\u305F\u306F\u6700\u521D\u304B\u3089\u660E\u78BA\u3060\u3063\u305F\u8CEA\u554F")
+});
+new Step({
+  id: "initialThoughtsStep",
+  description: "\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u304D\u3001\u591A\u69D8\u306A\u521D\u671F\u601D\u8003\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
+  inputSchema: initialThoughtsInputSchema,
+  // ★ 変更 ★
+  outputSchema: z.object({
+    thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
+  }),
+  // ★ 型引数を変更 ★
+  execute: async ({ context }) => {
+    const clearQuery = context.inputData.query;
+    console.log("(InitialThoughtsStep) Generating initial thoughts for query:", clearQuery);
+    let generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002"];
+    try {
+      const agentResponse = await thoughtGeneratorAgent.generate(
+        `\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u300C${clearQuery}\u300D\u306B\u3064\u3044\u3066\u3001\u591A\u69D8\u306A\u89B3\u70B9\u304B\u3089\u306E\u521D\u671F\u601D\u8003\u30925\u3064\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002JSON\u914D\u5217\u5F62\u5F0F\u3067 ["\u601D\u80031", "\u601D\u80032", ...] \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002`
+      );
+      if (agentResponse.text) {
+        try {
+          const parsed = JSON.parse(agentResponse.text);
+          if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+            generatedThoughts = parsed;
+          } else {
+            console.error("(InitialThoughtsStep) Parsed response is not an array of strings:", parsed);
+            generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059 (\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093)\u3002"];
+          }
+        } catch (parseError) {
+          console.error("(InitialThoughtsStep) Failed to parse thought generator agent response:", parseError, "Response text:", agentResponse.text);
+          generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092JSON\u3068\u3057\u3066\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
+        }
+      } else {
+        console.error("(InitialThoughtsStep) Thought generator agent did not return text.");
+        generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
+      }
+    } catch (error) {
+      console.error("(InitialThoughtsStep) Failed to generate initial thoughts:", error);
+      generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002"];
+    }
+    console.log("(InitialThoughtsStep) Generated initial thoughts:", generatedThoughts);
+    return { thoughts: generatedThoughts };
+  }
+});
+const requestClarificationOutputSchema = z.object({
+  clarifiedQuery: z.string().describe("\u30E6\u30FC\u30B6\u30FC\u306B\u3088\u3063\u3066\u660E\u78BA\u5316\u3055\u308C\u305F\u8CEA\u554F")
+}).optional();
+const requestClarificationStep = new Step({
+  id: "requestClarificationStep",
+  description: "\u8CEA\u554F\u304C\u4E0D\u660E\u78BA\u306A\u5834\u5408\u306B\u660E\u78BA\u5316\u8981\u6C42\u3092\u751F\u6210\u3057\u3001\u4E00\u6642\u505C\u6B62\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
+  // inputSchema: triggerSchema, // input は triggerData から取得するので不要かも
+  inputSchema: z.any().optional(),
+  // inputData を受け取るために必要
+  outputSchema: requestClarificationOutputSchema,
+  // ★ 出力スキーマを設定 ★
+  execute: async ({ context, suspend }) => {
+    if (context.inputData?.userClarification && typeof context.inputData.userClarification === "string") {
+      const clarifiedQuery = context.inputData.userClarification;
+      console.log("(RequestClarificationStep) Resumed with clarification:", clarifiedQuery);
+      return { clarifiedQuery };
+    }
+    const clarityResult = context.getStepResult(clarityCheckStep)?.output;
+    const reasoning = clarityResult && typeof clarityResult.reasoning === "string" ? clarityResult.reasoning : void 0;
+    const originalQuery = context.triggerData.query;
+    console.log("(RequestClarificationStep) Query is unclear. Generating clarification prompt...");
+    const prompt = `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${originalQuery}\u300D\u306F\u4E0D\u660E\u78BA\u3060\u3068\u5224\u65AD\u3055\u308C\u307E\u3057\u305F\u3002\u7406\u7531: ${reasoning || "\u63D0\u793A\u3055\u308C\u3066\u3044\u307E\u305B\u3093"}\u3002\u30E6\u30FC\u30B6\u30FC\u306B\u8CEA\u554F\u5185\u5BB9\u306E\u660E\u78BA\u5316\u3092\u4FC3\u3059\u3001\u4E01\u5BE7\u3067\u5177\u4F53\u7684\u306A\u8CEA\u554F\u6587\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002`;
+    let generatedClarificationQuestion = "\u30A8\u30E9\u30FC: \u8CEA\u554F\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002";
+    try {
+      const agentResponse = await clarificationPromptAgent.generate(prompt);
+      generatedClarificationQuestion = agentResponse.text || generatedClarificationQuestion;
+    } catch (error) {
+      console.error("(RequestClarificationStep) Failed to generate clarification prompt:", error);
+    }
+    console.log("(RequestClarificationStep) Generated question:", generatedClarificationQuestion);
+    await suspend({ clarificationPrompt: generatedClarificationQuestion });
+    console.log("(RequestClarificationStep) Workflow suspended, waiting for clarification.");
+    return void 0;
+  }
+});
+const initialThoughtsDirectStep = new Step({
+  id: "initialThoughtsDirectStep",
+  description: "\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u304D\u521D\u671F\u601D\u8003\u3092\u751F\u6210\u3059\u308B (\u5171\u901A\u95A2\u6570\u547C\u3073\u51FA\u3057)",
+  inputSchema: triggerSchema,
+  // triggerData を受け取る
+  outputSchema: z.object({
+    thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
+  }),
+  execute: async ({ context }) => {
+    const thoughts = await generateInitialThoughts(context.triggerData.query);
+    return { thoughts };
+  }
+});
+const initialThoughtsAfterClarificationInputSchema = z.object({
+  clarifiedQuery: z.string()
+  // requestClarificationStep から渡される想定
+});
+const initialThoughtsAfterClarificationStep = new Step({
+  id: "initialThoughtsAfterClarificationStep",
+  description: "\u660E\u78BA\u5316\u3055\u308C\u305F\u8CEA\u554F\u306B\u57FA\u3065\u304D\u521D\u671F\u601D\u8003\u3092\u751F\u6210\u3059\u308B (\u5171\u901A\u95A2\u6570\u547C\u3073\u51FA\u3057)",
+  inputSchema: initialThoughtsAfterClarificationInputSchema,
+  outputSchema: z.object({
+    thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
+  }),
+  execute: async ({ context }) => {
+    const thoughts = await generateInitialThoughts(context.inputData.clarifiedQuery);
+    return { thoughts };
+  }
+});
+goTResearchWorkflow.step(clarityCheckStep).if(async ({ context }) => {
+  const clarityResult = context.getStepResult(clarityCheckStep)?.output;
+  const isClear = clarityResult?.isClear;
+  console.log(`(If Condition) Is query clear? ${isClear}`);
+  return isClear === true;
+}).then(initialThoughtsDirectStep).then(processThoughtsWorkflow, {
+  // ★ サブワークフローを呼び出す ★
+  variables: {
+    // initialThoughtsDirectStep の出力をサブWFの入力(thoughts)にマッピング
+    thoughts: { step: initialThoughtsDirectStep, path: "thoughts" }
+  }
+}).else().then(requestClarificationStep).then(initialThoughtsAfterClarificationStep, {
+  variables: {
+    // requestClarificationStep の出力 (clarifiedQuery) を
+    // initialThoughtsAfterClarificationStep の入力 (clarifiedQuery) にマッピング
+    clarifiedQuery: { step: requestClarificationStep, path: "clarifiedQuery" }
+    // output. なし
+  },
+  // requestClarificationStep が成功した場合のみ実行
+  when: async ({ context }) => {
+    const result = context.getStepResult(requestClarificationStep);
+    const condition = result?.status === "success" && typeof result?.output?.clarifiedQuery === "string";
+    console.log(`(When condition for initialThoughtsAfterClarificationStep) ${condition}`, result);
+    return condition;
+  }
+}).then(processThoughtsWorkflow, {
+  // ★ 同じサブワークフローを呼び出す ★
+  variables: {
+    // initialThoughtsAfterClarificationStep の出力をサブWFの入力(thoughts)にマッピング
+    thoughts: { step: initialThoughtsAfterClarificationStep, path: "thoughts" }
+  },
+  // initialThoughtsAfterClarificationStep が成功した場合のみ実行
+  when: async ({ context }) => {
+    const result = context.getStepResult(initialThoughtsAfterClarificationStep);
+    const condition = result?.status === "success";
+    console.log(`(When condition for processThoughtsWorkflow after clarification) ${condition}`, result);
+    return condition;
+  }
+}).commit();
+async function generateInitialThoughts(query) {
+  console.log("(generateInitialThoughts) Generating thoughts for query:", query);
+  let generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002"];
+  try {
+    const agentResponse = await thoughtGeneratorAgent.generate(
+      `\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u300C${query}\u300D\u306B\u3064\u3044\u3066\u3001\u591A\u69D8\u306A\u89B3\u70B9\u304B\u3089\u306E\u521D\u671F\u601D\u8003\u30925\u3064\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002JSON\u914D\u5217\u5F62\u5F0F\u3067 ["\u601D\u80031", "\u601D\u80032", ...] \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002`
+    );
+    if (agentResponse.text) {
+      try {
+        const parsed = JSON.parse(agentResponse.text);
+        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+          generatedThoughts = parsed;
+        } else {
+          console.error("(generateInitialThoughts) Parsed response is not an array of strings:", parsed);
+          generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059 (\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093)\u3002"];
+        }
+      } catch (parseError) {
+        console.error("(generateInitialThoughts) Failed to parse thought generator agent response:", parseError, "Response text:", agentResponse.text);
+        generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092JSON\u3068\u3057\u3066\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
+      }
+    } else {
+      console.error("(generateInitialThoughts) Thought generator agent did not return text.");
+      generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
+    }
+  } catch (error) {
+    console.error("(generateInitialThoughts) Failed to generate initial thoughts:", error);
+    generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002"];
+  }
+  console.log("(generateInitialThoughts) Generated thoughts:", generatedThoughts);
+  return generatedThoughts;
+}
+
 const mastra = new Mastra({
   agents: {
     weatherAgent,
-    webSearchAgent
+    webSearchAgent,
+    arxivSearchAgent,
+    redditTestAgent,
+    youTubeTestAgent,
+    mediumTestAgent,
+    noteTestAgent,
+    clarityCheckAgent,
+    clarificationPromptAgent,
+    thoughtGeneratorAgent
+  },
+  workflows: {
+    goTResearchWorkflow
   },
   logger: createLogger({
     name: "Mastra",

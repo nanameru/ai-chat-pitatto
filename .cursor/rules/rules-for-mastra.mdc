@@ -4,44 +4,64 @@ globs:
 alwaysApply: true
 ---
 
-# Mastra プロジェクトに関するルール
+## 対応手順
 
-## ポート使用中の問題対応
-Mastra の Agent、Tools、ワークフローを修正した後にサーバーを再起動する際、以下のエラーが表示されることがあります：
-```
-Error: listen EADDRINUSE: address already in use :::4111
-```
+1.  **ポート 4111 を使用しているプロセスを特定**
 
-この場合、以下の手順で解決してください：
+    ```bash
+    lsof -i :4111 | grep LISTEN | cat
+    ```
 
-1. 使用中のポートを確認：
-   ```bash
-   lsof -i :4111 | grep LISTEN
-   ```
+    **実行結果 (例):**
+    ```
+    node    31141 kimurataiyou   16u  IPv6 0x7830ba9d4dfa5eb4      0t0  TCP *:xgrid (LISTEN)
+    ```
+    -> PID `31141` がポートを使用中。
 
-2. 表示されたプロセスIDを強制終了：
-   ```bash
-   kill -9 <PID>
-   ```
+2.  **該当プロセスを強制終了**
 
-3. ポートが解放されたことを確認：
-   ```bash
-   lsof -i :4111 | grep LISTEN
-   ```
+    ```bash
+    kill -9 31141
+    ```
 
-4. サーバーを再起動：
-   ```bash
-   cd mastra-project
-   npm run dev
-   ```
+3.  **(誤って実行) `npm run dev` を実行**
 
-## 開発サーバー起動
-Mastra プロジェクトで開発サーバーを起動する際は、必ずプロジェクトディレクトリに移動してから実行してください：
+    ```bash
+    npm run dev
+    ```
+    -> これにより、今度は Next.js サーバーが使用するポート `4114` で競合が発生。
 
-```bash
-cd mastra-project
-npm run dev
-```
+    **エラー出力 (例):**
+    ```
+    ⨯ Failed to start server
+    Error: listen EADDRINUSE: address already in use :::4114
+    ```
 
-プロジェクトルートから直接 `npm run dev` を実行すると、別のプロジェクトのサーバーが起動する可能性があります。
+4.  **ポート 4114 を使用しているプロセスを特定**
 
+    ```bash
+    lsof -i :4114 | grep LISTEN | cat
+    ```
+
+    **実行結果 (例):**
+    ```
+    node    7744 kimurataiyou   17u  IPv6 0x713985d602229aae      0t0  TCP *:jomamqmonitor (LISTEN)
+    ```
+    -> PID `7744` がポートを使用中。
+
+5.  **該当プロセスを強制終了**
+
+    ```bash
+    kill -9 7744
+    ```
+
+6.  **Mastra 開発サーバーを再起動 (正しいコマンド)**
+
+    ```bash
+    mastra dev
+    ```
+    -> サーバーが正常に起動するはず。
+
+## まとめ
+
+Mastra 開発サーバー (`mastra dev`) が使用するポート (デフォルト `4111`) や、関連するプロセス (例: Next.js 開発サーバー `npm run dev` が使用するポート `4114`) が他のプロセスによって使用されている場合、`EADDRINUSE` エラーが発生する。`lsof` コマンドでポートを使用しているプロセスの PID を特定し、`kill -9 <PID>` で強制終了することで解決できる。

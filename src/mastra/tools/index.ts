@@ -41,6 +41,11 @@ export const weatherTool = createTool({
 });
 
 export { webSearchTool } from './webSearchTool';
+export { arxivSearchTool } from './arxivSearchTool';
+export { redditSearchTool } from './redditSearchTool';
+export { youTubeSearchTool } from './youTubeSearchTool';
+export { mediumSearchTool } from './mediumSearchTool';
+export { noteSearchTool } from './noteSearchTool';
 
 const getWeather = async (location: string) => {
   const geocodingUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(location)}&count=1`;

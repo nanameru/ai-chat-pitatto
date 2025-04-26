@@ -38,3 +38,12 @@ export const webSearchAgent = new Agent({
   model: openai('gpt-4o'),
   tools: { webSearchTool },
 });
+
+export { arxivSearchAgent } from './arxivSearchAgent';
+export { redditTestAgent } from './redditTestAgent';
+export { youTubeTestAgent } from './youTubeTestAgent';
+export { mediumTestAgent } from './mediumTestAgent';
+export { noteTestAgent } from './noteTestAgent';
+export { clarityCheckAgent } from './clarityCheckAgent';
+export { clarificationPromptAgent } from './clarificationPromptAgent';
+export { thoughtGeneratorAgent } from './thoughtGeneratorAgent';
