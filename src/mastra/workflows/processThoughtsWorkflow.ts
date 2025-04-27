@@ -1,38 +1,88 @@
 // src/mastra/workflows/processThoughtsWorkflow.ts
 import { z } from 'zod';
-import { Workflow, Step, StepExecutionContext } from '@mastra/core/workflows';
-// import { evaluateThoughtsAgent, selectNodeAgent } from '../agents'; // 将来的に使うAgent
+import { Workflow, Step, StepExecutionContext, WorkflowContext } from '@mastra/core/workflows';
+import { thoughtEvaluatorAgent } from '../agents';
+import { mastra } from '..';
 
 // サブワークフローが受け取るデータ型 (メインワークフローから渡される)
 const triggerSchema = z.object({
   thoughts: z.array(z.string()).describe("生成された初期思考のリスト"),
 });
 
+// 評価結果スキーマ定義を追加
+const thoughtEvaluationSchema = z.object({
+  thought: z.string().describe("元の思考内容"),
+  score: z.number().min(1).max(10).describe("評価スコア (1-10)"),
+  reasoning: z.string().describe("評価理由"),
+});
+const evaluateThoughtsOutputSchema = z.object({
+  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
+});
+type ThoughtEvaluation = z.infer<typeof thoughtEvaluationSchema>;
+type EvaluateThoughtsOutput = z.infer<typeof evaluateThoughtsOutputSchema>;
+
 // サブワークフローの定義
 export const processThoughtsWorkflow = new Workflow({
   name: 'processThoughtsSubWorkflow', // サブワークフロー固有の名前
   triggerSchema,
-  // description: '初期思考を評価し、次のアクションを選択するサブワークフロー', // オプション
 });
 
 // --- サブワークフロー内のステップ定義 ---
 
-// 例: 思考を評価するステップ (プレースホルダー)
+// evaluateThoughtsStep の実装を更新
 const evaluateThoughtsStep = new Step({
     id: 'evaluateThoughtsStep',
     description: '生成された初期思考を評価する',
-    // inputSchema は triggerSchema と同じ想定だが、明示的に定義しても良い
     inputSchema: triggerSchema,
-    outputSchema: z.object({ // 例: 評価結果
-        evaluation: z.string(),
-    }),
-    execute: async ({ context }: StepExecutionContext<typeof triggerSchema>) => {
-        const thoughts = context.triggerData.thoughts;
-        console.log("(SubWorkflow) Received thoughts for evaluation:", thoughts);
-        // TODO: 思考評価Agent呼び出しなどのロジックを実装
-        const evaluationResult = `Evaluated ${thoughts.length} thoughts. First thought: ${thoughts[0]}`;
-        console.log("(SubWorkflow) Evaluation result:", evaluationResult);
-        return { evaluation: evaluationResult };
+    outputSchema: evaluateThoughtsOutputSchema,
+    execute: async ({ context }: StepExecutionContext<typeof triggerSchema, WorkflowContext<typeof triggerSchema>>) => {
+        const logger = mastra.getLogger();
+        const thoughts = context.triggerData.thoughts; 
+        const originalQuery = context.workflow?.triggerData?.query || "不明なクエリ";
+
+        logger.info("(SubWorkflow - Evaluate) Evaluating thoughts", { count: thoughts.length, originalQuery });
+
+        const evaluatedThoughts: ThoughtEvaluation[] = [];
+
+        for (const thought of thoughts) {
+            logger.info(`(SubWorkflow - Evaluate) Evaluating thought: "${thought}"`);
+            try {
+                const prompt = `元の質問:「${originalQuery}」\n\nこの質問に対する以下の思考（アイデア）を評価してください:\n「${thought}」\n\n評価結果は必ず {"score": number (1-10), "reasoning": "評価理由"} のJSON形式で返してください。`;
+                const agentResponse = await thoughtEvaluatorAgent.generate(prompt);
+
+                if (agentResponse.text) {
+                    try {
+                        let responseText = agentResponse.text.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                        const parsed: { score: number; reasoning: string } = JSON.parse(responseText);
+
+                        const validation = thoughtEvaluationSchema.pick({ score: true, reasoning: true }).safeParse(parsed);
+                        if (validation.success) {
+                            evaluatedThoughts.push({
+                                thought: thought, 
+                                score: validation.data.score,
+                                reasoning: validation.data.reasoning,
+                            });
+                            logger.info(`(SubWorkflow - Evaluate) Evaluation successful`, { thought, score: validation.data.score });
+                        } else {
+                           logger.error(`(SubWorkflow - Evaluate) Agent response validation failed`, { thought, responseText, error: validation.error });
+                           evaluatedThoughts.push({ thought: thought, score: 0, reasoning: "評価形式エラー" });
+                        }
+                    } catch (parseError) {
+                        logger.error(`(SubWorkflow - Evaluate) Failed to parse agent response`, { thought, responseText: agentResponse.text, error: parseError });
+                        evaluatedThoughts.push({ thought: thought, score: 0, reasoning: "評価パースエラー" });
+                    }
+                } else {
+                    logger.error(`(SubWorkflow - Evaluate) Agent returned no text`, { thought });
+                    evaluatedThoughts.push({ thought: thought, score: 0, reasoning: "評価応答なし" });
+                }
+            } catch (agentError) {
+                logger.error(`(SubWorkflow - Evaluate) Error calling evaluation agent`, { thought, error: agentError });
+                evaluatedThoughts.push({ thought: thought, score: 0, reasoning: "評価エージェントエラー" });
+            }
+        }
+
+        logger.info("(SubWorkflow - Evaluate) Finished evaluating thoughts", { count: evaluatedThoughts.length });
+        return { evaluatedThoughts }; 
     },
 });
 
@@ -40,39 +90,35 @@ const evaluateThoughtsStep = new Step({
 const selectNodeStep = new Step({
     id: 'selectNodeStep',
     description: '評価に基づき、次に探索する思考ノードを選択する',
-    // inputSchema: evaluateThoughtsStep の outputSchema を受け取る想定
-    inputSchema: z.object({ evaluation: z.string() }),
-    outputSchema: z.object({ // 例: 選択されたノード
-        selectedNode: z.string(),
+    inputSchema: evaluateThoughtsOutputSchema, 
+    outputSchema: z.object({
+        selectedThought: thoughtEvaluationSchema.optional().describe("選択された思考とその評価")
     }),
-    execute: async ({ context }: StepExecutionContext<{ evaluation: string }>) => {
-        const evaluation = context.inputData.evaluation;
-        console.log("(SubWorkflow) Received evaluation for node selection:", evaluation);
-        // TODO: ノード選択Agent呼び出しなどのロジックを実装
-        const selectedNode = `Selected node based on evaluation: ${evaluation}`;
-        console.log("(SubWorkflow) Selected node:", selectedNode);
-        return { selectedNode: selectedNode };
+    execute: async ({ context }: StepExecutionContext<EvaluateThoughtsOutput>) => {
+        const logger = mastra.getLogger(); 
+        const evaluatedThoughts = context.inputData.evaluatedThoughts;
+        logger.info("(SubWorkflow - Select) Received evaluations for node selection", { count: evaluatedThoughts.length });
+        
+        let bestThought: ThoughtEvaluation | undefined = undefined;
+        if (evaluatedThoughts.length > 0) {
+            evaluatedThoughts.sort((a, b) => b.score - a.score);
+            bestThought = evaluatedThoughts[0];
+        }
+
+        logger.info("(SubWorkflow - Select) Selected node", { selectedThought: bestThought?.thought, score: bestThought?.score });
+        return { selectedThought: bestThought };
     },
 });
 
 
 // --- サブワークフローの構築 ---
 processThoughtsWorkflow
-    // サブワークフローの最初のステップとして evaluateThoughtsStep を設定
-    // triggerData がそのまま inputData として渡される
     .step(evaluateThoughtsStep)
-    // evaluateThoughtsStep の後に selectNodeStep を実行
     .then(selectNodeStep, {
         variables: {
-            // evaluateThoughtsStep の出力を selectNodeStep の入力にマッピング
-            evaluation: { step: evaluateThoughtsStep, path: 'evaluation' }
+            evaluatedThoughts: { step: evaluateThoughtsStep, path: 'evaluatedThoughts' }
         }
     })
-    // 必要に応じてさらにステップを繋げる
     .commit();
 
-// 重要: このサブワークフローを Mastra インスタンスに登録する必要があります。
-// 通常は src/mastra/index.ts などで行いますが、
-// 動的ワークフローのようにメインワークフローに mastra インスタンスを
-// 注入していれば、明示的な登録なしで呼び出せる可能性もあります。
-// 一旦、メインワークフロー側でインポートして呼び出す形で進めます。 
+// ... コメントは省略 ...

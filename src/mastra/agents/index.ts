@@ -47,3 +47,4 @@ export { noteTestAgent } from './noteTestAgent';
 export { clarityCheckAgent } from './clarityCheckAgent';
 export { clarificationPromptAgent } from './clarificationPromptAgent';
 export { thoughtGeneratorAgent } from './thoughtGeneratorAgent';
+export { thoughtEvaluatorAgent } from './thoughtEvaluatorAgent';
