@@ -45,6 +45,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   useSidebar,
+  SidebarGroupLabel,
 } from '@/components/ui/sidebar';
 import type { Chat } from '@/lib/db/schema';
 import { fetcher } from '@/lib/utils';
@@ -75,6 +76,8 @@ const PureChatItem = ({
   });
   
   const router = useRouter();
+  const { state } = useSidebar();
+  const isCollapsed = state === 'collapsed';
   
   // シンプルなハンドラーに戻す - 常にrouter.pushを使用
   const handleClick = (e: React.MouseEvent) => {
@@ -91,70 +94,80 @@ const PureChatItem = ({
 
   return (
     <SidebarMenuItem>
-      <SidebarMenuButton asChild isActive={isActive}>
+      <SidebarMenuButton asChild isActive={isActive} tooltip={isCollapsed ? chat.title : undefined}>
         <Link href={`/chat/${chat.id}`} onClick={handleClick}>
-          <span>{chat.title}</span>
+          {isCollapsed ? (
+            <div className="flex items-center justify-center">
+              <div className="w-4 h-4 bg-sidebar-accent rounded-full flex items-center justify-center text-xs text-sidebar-accent-foreground">
+                {chat.title.charAt(0)}
+              </div>
+            </div>
+          ) : (
+            <span>{chat.title}</span>
+          )}
         </Link>
       </SidebarMenuButton>
 
-      <DropdownMenu modal={true}>
-        <DropdownMenuTrigger asChild>
-          <SidebarMenuAction
-            className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mr-0.5"
-            showOnHover={!isActive}
-          >
-            <MoreHorizontalIcon />
-            <span className="sr-only">More</span>
-          </SidebarMenuAction>
-        </DropdownMenuTrigger>
+      {!isCollapsed && (
+        <DropdownMenu modal={true}>
+          <DropdownMenuTrigger asChild>
+            <SidebarMenuAction
+              className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground mr-0.5"
+              showOnHover={!isActive}
+            >
+              <MoreHorizontalIcon />
+              <span className="sr-only">More</span>
+            </SidebarMenuAction>
+          </DropdownMenuTrigger>
 
-        <DropdownMenuContent side="bottom" align="end">
-          <DropdownMenuSub>
-            <DropdownMenuSubTrigger className="cursor-pointer">
-              <ShareIcon />
-              <span>Share</span>
-            </DropdownMenuSubTrigger>
-            <DropdownMenuPortal>
-              <DropdownMenuSubContent>
-                <DropdownMenuItem
-                  className="cursor-pointer flex-row justify-between"
-                  onClick={() => {
-                    setVisibilityType('private');
-                  }}
-                >
-                  <div className="flex flex-row gap-2 items-center">
-                    <LockIcon size={12} />
-                    <span>Private</span>
-                  </div>
-                  {visibilityType === 'private' ? (
-                    <CheckCircleFillIcon />
-                  ) : null}
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  className="cursor-pointer flex-row justify-between"
-                  onClick={() => {
-                    setVisibilityType('public');
-                  }}
-                >
-                  <div className="flex flex-row gap-2 items-center">
-                    <GlobeIcon />
-                    <span>Public</span>
-                  </div>
-                  {visibilityType === 'public' ? <CheckCircleFillIcon /> : null}
-                </DropdownMenuItem>
-              </DropdownMenuSubContent>
-            </DropdownMenuPortal>
-          </DropdownMenuSub>
+          <DropdownMenuContent side="bottom" align="end">
+            <DropdownMenuSub>
+              <DropdownMenuSubTrigger className="cursor-pointer">
+                <ShareIcon />
+                <span>Share</span>
+              </DropdownMenuSubTrigger>
+              <DropdownMenuPortal>
+                <DropdownMenuSubContent>
+                  <DropdownMenuItem
+                    className="cursor-pointer flex-row justify-between"
+                    onClick={() => {
+                      setVisibilityType('private');
+                    }}
+                  >
+                    <div className="flex flex-row gap-2 items-center">
+                      <LockIcon size={12} />
+                      <span>Private</span>
+                    </div>
+                    {visibilityType === 'private' ? (
+                      <CheckCircleFillIcon />
+                    ) : null}
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="cursor-pointer flex-row justify-between"
+                    onClick={() => {
+                      setVisibilityType('public');
+                    }}
+                  >
+                    <div className="flex flex-row gap-2 items-center">
+                      <GlobeIcon />
+                      <span>Public</span>
+                    </div>
+                    {visibilityType === 'public' ? <CheckCircleFillIcon /> : null}
+                  </DropdownMenuItem>
+                </DropdownMenuSubContent>
+              </DropdownMenuPortal>
+            </DropdownMenuSub>
 
-          <DropdownMenuItem
-            className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
-            onSelect={() => onDelete(chat.id)}
-          >
-            <TrashIcon />
-            <span>Delete</span>
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
+            <DropdownMenuItem
+              className="cursor-pointer text-destructive focus:bg-destructive/15 focus:text-destructive dark:text-red-500"
+              onSelect={() => onDelete(chat.id)}
+            >
+              <TrashIcon />
+              <span>Delete</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      )}
     </SidebarMenuItem>
   );
 };
@@ -165,8 +178,27 @@ export const ChatItem = memo(PureChatItem, (prevProps, nextProps) => {
   return true;
 });
 
+// Add a function to get group labels
+const groupLabel = (group: string): string => {
+  switch (group) {
+    case 'today':
+      return '今日';
+    case 'yesterday':
+      return '昨日';
+    case 'lastWeek':
+      return '過去7日間';
+    case 'lastMonth':
+      return '過去30日間';
+    case 'older':
+      return 'それ以前';
+    default:
+      return group;
+  }
+};
+
 export function SidebarHistory() {
-  const { setOpenMobile } = useSidebar();
+  const { setOpenMobile, state } = useSidebar();
+  const isCollapsed = state === 'collapsed';
   const { id } = useParams() as { id?: string };
   const pathname = usePathname();
   const router = useRouter();
@@ -292,192 +324,123 @@ export function SidebarHistory() {
   };
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Pitatto AIのロゴと文字を追加 */}
-      <div className="px-3 mb-2">
+    <>
+      {/* Pitatto section at top */}
+      <div className={`px-3 mb-2 ${isCollapsed ? 'text-center' : ''}`}>
         <button 
           type="button"
-          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          className={`flex ${isCollapsed ? 'justify-center' : 'w-full justify-between'} cursor-pointer rounded-lg p-2 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800`}
           onClick={handleNewChat}
         >
-          <div className="flex items-center">
+          <div className={`flex items-center ${isCollapsed ? 'flex-col' : ''}`}>
             <Image 
               src="/images/pitattologo.png" 
               alt="Pitatto Logo" 
-              width={22} 
-              height={22}
+              width={isCollapsed ? 26 : 22} 
+              height={isCollapsed ? 26 : 22}
               className="rounded-md" 
             />
-            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
-              Pitatto Chat
-            </span>
+            {!isCollapsed && (
+              <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+                Pitatto Chat
+              </span>
+            )}
           </div>
-
         </button>
         
-        {/* ピタッとニュースボタンを追加 */}
+        {/* ピタッとニュースボタン */}
         <button 
           type="button"
-          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          className={`flex ${isCollapsed ? 'justify-center' : 'w-full justify-between'} cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800`}
           onClick={() => {
             setOpenMobile(false);
-            // ニュースページへのリンク（実装時に適切なURLに変更してください）
             router.push('/news');
           }}
         >
-          <div className="flex items-center">
+          <div className={`flex items-center ${isCollapsed ? 'flex-col' : ''}`}>
             <Image 
               src="/images/pitattologo.png" 
               alt="Pitatto Logo" 
-              width={22} 
-              height={22}
+              width={isCollapsed ? 26 : 22} 
+              height={isCollapsed ? 26 : 22}
               className="rounded-md" 
             />
-            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
-              Pitatto Me
-            </span>
+            {!isCollapsed && (
+              <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+                ピタットニュース
+              </span>
+            )}
           </div>
         </button>
         
-        {/* AIで遊ぼうOSSアプリケーションボタンを追加 */}
+        {/* AIで遊ぼうOSSアプリケーションボタン */}
         <button 
           type="button"
-          className="flex w-full items-center justify-between cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
+          className={`flex ${isCollapsed ? 'justify-center' : 'w-full justify-between'} cursor-pointer rounded-lg p-2 mt-1 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800`}
           onClick={() => {
             setOpenMobile(false);
-            // OSSアプリケーションページへのリンク（必要に応じてURLを変更してください）
             router.push('/oss-applications');
           }}
         >
-          <div className="flex items-center">
+          <div className={`flex items-center ${isCollapsed ? 'flex-col' : ''}`}>
             <Image 
               src="/images/pitattologo.png" 
               alt="Pitatto Logo" 
-              width={22} 
-              height={22}
+              width={isCollapsed ? 26 : 22} 
+              height={isCollapsed ? 26 : 22}
               className="rounded-md" 
             />
-            <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
-              AIで遊ぼう
-            </span>
+            {!isCollapsed && (
+              <span className="text-base font-semibold ml-1.5 text-sidebar-foreground">
+                AIで遊ぼう
+              </span>
+            )}
           </div>
         </button>
       </div>
 
+      {/* New Chat button */}
       <SidebarGroup>
         <SidebarGroupContent>
-          <SidebarMenu>
-            {history &&
-              (() => {
-                const groupedChats = groupChatsByDate(history);
-
-                return (
-                  <>
-                    {groupedChats.today.length > 0 && (
-                      <>
-                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50">
-                          今日
-                        </div>
-                        {groupedChats.today.map((chat) => (
-                          <ChatItem
-                            key={chat.id}
-                            chat={chat}
-                            isActive={chat.id === id}
-                            onDelete={(chatId) => {
-                              setDeleteId(chatId);
-                              setShowDeleteDialog(true);
-                            }}
-                            setOpenMobile={setOpenMobile}
-                          />
-                        ))}
-                      </>
-                    )}
-
-                    {groupedChats.yesterday.length > 0 && (
-                      <>
-                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
-                          昨日
-                        </div>
-                        {groupedChats.yesterday.map((chat) => (
-                          <ChatItem
-                            key={chat.id}
-                            chat={chat}
-                            isActive={chat.id === id}
-                            onDelete={(chatId) => {
-                              setDeleteId(chatId);
-                              setShowDeleteDialog(true);
-                            }}
-                            setOpenMobile={setOpenMobile}
-                          />
-                        ))}
-                      </>
-                    )}
-
-                    {groupedChats.lastWeek.length > 0 && (
-                      <>
-                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
-                          過去7日間
-                        </div>
-                        {groupedChats.lastWeek.map((chat) => (
-                          <ChatItem
-                            key={chat.id}
-                            chat={chat}
-                            isActive={chat.id === id}
-                            onDelete={(chatId) => {
-                              setDeleteId(chatId);
-                              setShowDeleteDialog(true);
-                            }}
-                            setOpenMobile={setOpenMobile}
-                          />
-                        ))}
-                      </>
-                    )}
-
-                    {groupedChats.lastMonth.length > 0 && (
-                      <>
-                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
-                          過去30日間
-                        </div>
-                        {groupedChats.lastMonth.map((chat) => (
-                          <ChatItem
-                            key={chat.id}
-                            chat={chat}
-                            isActive={chat.id === id}
-                            onDelete={(chatId) => {
-                              setDeleteId(chatId);
-                              setShowDeleteDialog(true);
-                            }}
-                            setOpenMobile={setOpenMobile}
-                          />
-                        ))}
-                      </>
-                    )}
-
-                    {groupedChats.older.length > 0 && (
-                      <>
-                        <div className="px-3 py-1 text-xs text-sidebar-foreground/50 mt-6">
-                          それ以前
-                        </div>
-                        {groupedChats.older.map((chat) => (
-                          <ChatItem
-                            key={chat.id}
-                            chat={chat}
-                            isActive={chat.id === id}
-                            onDelete={(chatId) => {
-                              setDeleteId(chatId);
-                              setShowDeleteDialog(true);
-                            }}
-                            setOpenMobile={setOpenMobile}
-                          />
-                        ))}
-                      </>
-                    )}
-                  </>
-                );
-              })()}
-          </SidebarMenu>
+          <SidebarMenuButton
+            variant="outline"
+            className={isCollapsed ? 'justify-center p-2 h-8 w-8 mx-auto' : ''}
+            onClick={handleNewChat}
+          >
+            <PlusIcon />
+            {!isCollapsed && <span>New Chat</span>}
+          </SidebarMenuButton>
         </SidebarGroupContent>
       </SidebarGroup>
+
+      {/* Chat groups */}
+      {!isCollapsed && Object.entries(
+        groupChatsByDate(history.filter((h) => h.userId !== null))
+      ).map(([group, chats]) =>
+        chats.length > 0 ? (
+          <SidebarGroup key={group}>
+            <SidebarGroupLabel>{groupLabel(group)}</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {chats.map((chat) => (
+                  <ChatItem
+                    key={chat.id}
+                    chat={chat}
+                    isActive={chat.id === id}
+                    onDelete={() => {
+                      setDeleteId(chat.id);
+                      setShowDeleteDialog(true);
+                    }}
+                    setOpenMobile={setOpenMobile}
+                  />
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        ) : null
+      )}
+
+      {/* Alert dialog */}
       <AlertDialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -495,6 +458,6 @@ export function SidebarHistory() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
+    </>
   );
 }

@@ -1,0 +1,1 @@
+export { goTResearchWorkflow } from './goTResearchWorkflow'; 

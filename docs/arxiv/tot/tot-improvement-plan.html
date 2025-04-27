@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <title>ToT Research 改善計画</title>
+  <style>
+    body { 
+      font-family: 'Segoe UI', 'Meiryo UI', 'Hiragino Sans', sans-serif; 
+      background: #fafbfc;
+      margin: 0;
+      padding: 20px;
+      color: #2c3e50;
+      line-height: 1.6;
+    }
+    h1 {
+      font-weight: 600;
+      color: #2c3e50;
+      text-align: center;
+      margin: 24px 0;
+      font-size: 28px;
+    }
+    .container {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 20px;
+    }
+    .section {
+      margin-bottom: 30px;
+      background: white;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
+    .section-header {
+      background: #4a6baf;
+      color: white;
+      padding: 12px 20px;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    th, td {
+      padding: 12px 15px;
+      text-align: left;
+      border-bottom: 1px solid #eee;
+    }
+    th {
+      background-color: #f8f9fa;
+      font-weight: 600;
+      color: #495057;
+    }
+    tr:hover {
+      background-color: #f8f9fc;
+    }
+    .priority {
+      display: inline-block;
+      padding: 3px 8px;
+      border-radius: 12px;
+      font-size: 12px;
+      font-weight: 600;
+      text-align: center;
+      min-width: 60px;
+    }
+    .high {
+      background-color: #ffecec;
+      color: #e74c3c;
+    }
+    .medium {
+      background-color: #fff9e6;
+      color: #f39c12;
+    }
+    .low {
+      background-color: #e8f4f8;
+      color: #3498db;
+    }
+    .check {
+      color: #27ae60;
+      font-weight: bold;
+    }
+    .phase {
+      font-weight: bold;
+      color: #8e44ad;
+    }
+    .description {
+      color: #555;
+    }
+    .footer {
+      text-align: center;
+      margin-top: 40px;
+      color: #7f8c8d;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>ToT Research Agent 改善計画表</h1>
+    
+    <!-- アルゴリズム・設計面 -->
+    <div class="section">
+      <div class="section-header">1. アルゴリズム・設計面（ToT専用機構）</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>BFS/Beam Search実装</td>
+            <td class="description">深さ<code>maxDepth</code>・幅<code>branchingFactor</code>・ビーム幅<code>beamWidth</code>をパラメータ化<br>
+            <code>types/state.ts</code>で<code>State</code>と<code>Thought</code>の概念を分離</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 1</td>
+          </tr>
+          <tr>
+            <td>並列処理と評価</td>
+            <td class="description">思考生成→評価→選択をラウンドごとに並列実行<br>
+            スコア閾値による枝刈り（pruning）を実装</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 1</td>
+          </tr>
+          <tr>
+            <td>高度な探索戦略</td>
+            <td class="description">サブトピックごとに局所ツリーを生成し最後にマージする"Sub-Tree Merge"<br>
+            思考ノードに多次元スコア（有用性・新規性・確信度）を保持</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+          <tr>
+            <td>モデル活用戦略</td>
+            <td class="description">大規模モデル（gpt-4o）と小規模モデル（gpt-3.5）の役割分担<br>
+            評価は軽量モデルで先行フィルタリング</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>効率化</td>
+            <td class="description">探索再利用（Memoization）：同一思考内容＋クエリはキャッシュ<br>
+            ユーザー介入ポイントの設置（中間ツリー可視化、枝の選択指示）</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ツールAPI・スキーマ設計 -->
+    <div class="section">
+      <div class="section-header">2. ツールAPI・スキーマ設計</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>型安全性</td>
+            <td class="description"><code>ToolName</code>をenum管理し文字列ミスをコンパイル時検出<br>
+            すべてのTool入出力をzodで厳密型付け、anyを撲滅</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 0</td>
+          </tr>
+          <tr>
+            <td>エラーハンドリング</td>
+            <td class="description"><code>researchPlanGenerator</code>のJSON解析失敗時に<code>isFallback: true</code>を返却<br>
+            <code>thoughtEvaluator</code>の出力フォーマットをJSON固定化</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>バージョン管理</td>
+            <td class="description">各Toolにversionフィールド（schema hash）を付与し下位互換を検知</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>拡張性</td>
+            <td class="description">複合ツール（<code>parallelSearchExecutor</code>など）をStrategyパターンで実装</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- プロンプトエンジニアリング -->
+    <div class="section">
+      <div class="section-header">3. プロンプトエンジニアリング</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>セキュリティ</td>
+            <td class="description">Think-Step-Thought的chain-of-thought禁則を実装<br>
+            機密情報を非表示にする仕組み</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>柔軟性</td>
+            <td class="description">日本語プロンプト内のハードコード数値をパラメータ化<br>
+            Tool call用meta情報をsystemレイヤで付与</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>効率化</td>
+            <td class="description">Long contextでは要約＋圧縮promptを自動生成<br>
+            多段Clarification Loopプロンプトの実装</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- エラー処理・信頼性 -->
+    <div class="section">
+      <div class="section-header">4. エラー処理・信頼性</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>モニタリング</td>
+            <td class="description">JSONパース例外をSentry等へ送信し詳細stacktrace保存<br>
+            API RateLimit 429 → 指数バックオフ再試行</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>コスト管理</td>
+            <td class="description">モデル呼び出し前にコスト見積を算出し上限超過時に警告</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>フェイルセーフ</td>
+            <td class="description"><code>execute*Phase()</code>の戻り値に<code>success: boolean</code>と<code>errorMessage?</code>を追加<br>
+            外部API不調時は代替検索プロバイダへフェイルオーバー</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ロギング・可観測性 -->
+    <div class="section">
+      <div class="section-header">5. ロギング・可観測性</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>構造化ログ</td>
+            <td class="description">console.logをpino（構造化JSON）へ移行<br>
+            phase, tool, duration_msを付与</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>トレーサビリティ</td>
+            <td class="description">各Toolに<code>executionId</code>を発番し上流から下流までトレース<br>
+            <code>ReasoningStep</code>をTimeSeries DBに保存し可視化</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>可視化</td>
+            <td class="description">Beam Searchの枝刈り状況をd3.jsでリアルタイム表示<br>
+            エージェント全体のtoken使用量/USDコストをday-level集計</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- 性能・コスト最適化 -->
+    <div class="section">
+      <div class="section-header">6. 性能・コスト最適化</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>スケーリング</td>
+            <td class="description"><code>parallelSearchExecutor</code>の並列度をCPUコア & API rateベースで自動計算<br>
+            長文検索結果をLLMへ渡す前にBM25/Embeddingで要約選抜</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>レスポンス向上</td>
+            <td class="description">キャッシュにkv-storage（Cloudflare Workers KVなど）を利用<br>
+            openai SDKでstreamingを使い部分結果を逐次送信</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>ユーザー制御</td>
+            <td class="description">精度 <-> コストをスライダーで選択できるモード切替</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- コード品質・リファクタリング -->
+    <div class="section">
+      <div class="section-header">7. コード品質・リファクタリング</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>テスト環境</td>
+            <td class="description">scripts/test-*.tsをJest + ts-node ESMに置換しCIで自動実行</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>コード整理</td>
+            <td class="description">重複prompt生成を<code>buildPhasePrompt(phaseName, vars)</code>で共通化<br>
+            tot-research/index.tsをフェーズ別Serviceクラスに分割（600行→150行以下）</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>依存性管理</td>
+            <td class="description"><code>thought-tools.ts</code>などで<code>openai(model)</code>のDIを行いテスト切替容易に<br>
+            Agent.generate戻り値型をSDKからre-exportし独自ダミー型を削除</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>コード品質</td>
+            <td class="description">Linter: ESLint + Prettier + TypeScript strictに設定<br>
+            NanoidのURL safe variantへ統一</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- テスト戦略 -->
+    <div class="section">
+      <div class="section-header">8. テスト戦略</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>単体テスト</td>
+            <td class="description">各ToolのinputSchemaバリデーション・出力JSON形式テスト</td>
+            <td><span class="priority high">高</span></td>
+            <td class="phase">Phase 2</td>
+          </tr>
+          <tr>
+            <td>統合テスト</td>
+            <td class="description">Planning→Gatheringをモック検索でE2Eテスト</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>負荷テスト</td>
+            <td class="description">同時100リクエストで探索ループがOOMしないか確認</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+          <tr>
+            <td>回帰テスト</td>
+            <td class="description">重要promptをsnapshotし差分検知</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- CI/CD・DevOps -->
+    <div class="section">
+      <div class="section-header">9. CI/CD・DevOps</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>自動化</td>
+            <td class="description">GitHub Actionsでpnpm-install→lint→test→type-check→build<br>
+            .env取り扱いをdotenv-safeにし必須変数を定義</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>セキュリティ</td>
+            <td class="description">デプロイ先のSecrets ManagerにAPI Keyを保存</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>ドキュメント</td>
+            <td class="description">リリースごとにCHANGELOG.md自動生成</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- ドキュメント・UX -->
+    <div class="section">
+      <div class="section-header">10. ドキュメント・UX</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="40%">改善項目</th>
+            <th width="40%">詳細</th>
+            <th width="10%">優先度</th>
+            <th width="10%">フェーズ</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>開発者向け</td>
+            <td class="description">docs/にSequence Diagram & State Machineを追加</td>
+            <td><span class="priority medium">中</span></td>
+            <td class="phase">Phase 3</td>
+          </tr>
+          <tr>
+            <td>ユーザー向け</td>
+            <td class="description">UI上でReasoningStepをステップ表示＆共有リンク発行</td>
+            <td><span class="priority low">低</span></td>
+            <td class="phase">Phase 4</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <!-- 実装フェーズの説明 -->
+    <div class="section">
+      <div class="section-header">実装フェーズの説明</div>
+      <table>
+        <thead>
+          <tr>
+            <th width="20%">フェーズ</th>
+            <th width="30%">目的</th>
+            <th width="50%">主要タスク</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="phase">Phase 0</td>
+            <td>型安全性の確保</td>
+            <td class="description">
+              - <code>ToolName</code>をenum化<br>
+              - すべてのTool入出力をzodで定義し<code>any</code>を撲滅
+            </td>
+          </tr>
+          <tr>
+            <td class="phase">Phase 1</td>
+            <td>探索アルゴリズム基盤</td>
+            <td class="description">
+              - <code>State</code>, <code>Thought</code>, <code>Score</code>型を<code>types/state.ts</code>に追加<br>
+              - <code>planner.ts</code>で<code>expand</code>/<code>evaluate</code>、<code>searchController.ts</code>でBFS/Beamループ<br>
+              - 停止条件・メモ化キャッシュを組み込む
+            </td>
+          </tr>
+          <tr>
+            <td class="phase">Phase 2</td>
+            <td>サービス分割 & フェーズ統合</td>
+            <td class="description">
+              - <code>PlanningService / GatheringService</code>クラスを作成し600→150行へ<br>
+              - 旧<code>executePlanningPhase</code>を新BFSで書き換え<br>
+              - <code>researchPlanGenerator</code>のJSON失敗時<code>isFallback:true</code>などエラー型統一
+            </td>
+          </tr>
+          <tr>
+            <td class="phase">Phase 3</td>
+            <td>可観測性 & コスト最適化</td>
+            <td class="description">
+              - <code>pino</code>で構造化ログ（<code>phase, tool, duration_ms</code>）<br>
+              - token/コスト集計と429再試行<br>
+              - <code>.github/workflows/ci.yml</code>にlint+test+type-check
+            </td>
+          </tr>
+          <tr>
+            <td class="phase">Phase 4</td>
+            <td>高度な探索戦略 & UX</td>
+            <td class="description">
+              - Sub-Tree Merge, Pareto最適探索<br>
+              - UI可視化、ユーザー介入ポイント<br>
+              - 負荷テスト、ドキュメント自動生成
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    
+    <div class="footer">
+      <p>© 2025 ToT Research Team - 最終更新: 2025年4月20日</p>
+    </div>
+  </div>
+</body>
+</html>

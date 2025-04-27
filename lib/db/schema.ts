@@ -146,3 +146,19 @@ export const video = pgTable('Video', {
 });
 
 export type Video = InferSelectModel<typeof video>;
+
+export const news = pgTable('News', {
+  id: varchar('id', { length: 255 }).primaryKey().notNull(),
+  title: text('title').notNull(),
+  description: text('description').notNull(),
+  content: text('content').notNull(),
+  source: varchar('source', { length: 255 }).notNull(),
+  url: varchar('url', { length: 255 }).notNull(),
+  category: varchar('category', { length: 100 }).notNull(),
+  tags: json('tags').notNull().$type<string[]>(),
+  publishedAt: timestamp('publishedAt').notNull(),
+  featured: boolean('featured').default(false),
+  imageUrl: varchar('imageUrl', { length: 255 }),
+});
+
+export type News = InferSelectModel<typeof news>;

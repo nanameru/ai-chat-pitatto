@@ -19,6 +19,9 @@ export const myProvider = customProvider({
     'chat-model-reasoning': openai('o3-mini'),
     'title-model': openai('gpt-4o'),
     'artifact-model': openai('gpt-4o-mini'),
+    'o4-mini-model': openai('o4-mini'),
+    'o3-model': openai('o3'),
+    'gpt-4.1-model': openai('gpt-4.1-preview'),
     // 型アサーションを使用してバージョン互換性の問題を解決
     'grok-model': xai('grok-2-1212') as unknown as ReturnType<typeof openai>,
     'grok-vision-model': xai('grok-2-vision-1212') as unknown as ReturnType<typeof openai>,
@@ -54,6 +57,24 @@ export const chatModels: Array<ChatModel> = [
     name: 'ChatGPT-4o',
     description: '高度な理解と詳細な応答が可能な標準モデル',
     modelVersion: 'gpt-4o'
+  },
+  {
+    id: 'gpt-4.1-model',
+    name: 'GPT-4.1 Preview',
+    description: 'OpenAIの最新の高性能モデル',
+    modelVersion: 'gpt-4.1-preview'
+  },
+  {
+    id: 'o4-mini-model',
+    name: 'OpenAI o4-mini',
+    description: '最新の高効率モデル（温度パラメータ非対応）',
+    modelVersion: 'o4-mini'
+  },
+  {
+    id: 'o3-model',
+    name: 'OpenAI o3',
+    description: '高度な推論能力を持つモデル',
+    modelVersion: 'o3'
   },
   // TODO: @ai-sdk/anthropicのインストールに問題があるため、一時的にコメントアウト
   /*

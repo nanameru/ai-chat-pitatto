@@ -12,6 +12,8 @@ import { openai } from "@ai-sdk/openai";
 import { Agent } from "@mastra/core/agent";
 // Fix the import path
 import { searchTool as webSearchTool } from "../search-tool";
+// エラーハンドリングユーティリティをインポート
+import { handleJsonParseFailure, withAIModelBackoff, reportError } from "../../utils/errorHandling";
 
 /**
  * リサーチ計画生成ツール
@@ -30,6 +32,22 @@ export const researchPlanGenerator = createTool({
     maxSubtopics: z.number().min(1).max(10).default(5).describe("生成するサブトピックの最大数"),
     maxQueries: z.number().min(1).max(20).default(10).describe("生成する検索クエリの最大数"),
     selectedModelId: z.string().optional().describe("ユーザーが選択したモデルID (OpenAI API互換名)"),
+  }),
+  outputSchema: z.object({
+    researchPlan: z.object({
+      approach: z.string(),
+      description: z.string(),
+      subtopics: z.array(z.string()),
+      queries: z.array(z.object({
+        query: z.string(),
+        purpose: z.string(),
+        queryType: z.enum(["general", "specific", "technical"]),
+        priority: z.number()
+      }))
+    }).describe("生成されたリサーチ計画"),
+    originalQuery: z.string().describe("元のクエリ"),
+    timestamp: z.string().describe("タイムスタンプ"),
+    isFallback: z.boolean().optional().describe("フォールバックプランかどうか")
   }),
   description: "選択された思考経路からリサーチ計画を生成します",
   execute: async ({ context: { selectedThought, query, maxSubtopics, maxQueries, selectedModelId } }) => {
@@ -72,8 +90,13 @@ ${selectedThought.content}
 
 以上の情報に基づいて、効果的なリサーチ計画を作成してください。サブトピック数は最大${maxSubtopics}個、検索クエリ数は最大${maxQueries}個としてください。`;
 
-      const planResult = await planningAgent.generate(prompt);
+      // AIモデル呼び出しを指数バックオフで実行
+      const planResult = await withAIModelBackoff(() => 
+        planningAgent.generate(prompt)
+      );
+      
       let researchPlan: ResearchPlan;
+      let isFallback = false;
       
       try {
         // Try to parse the JSON response
@@ -104,10 +127,17 @@ ${selectedThought.content}
               }) as ResearchQuery[] : []
         };
       } catch (parseError) {
-        console.error(`[ToT] リサーチ計画JSON解析エラー:`, parseError);
+        // 新しいエラーハンドリングユーティリティを使用
+        const fallbackResult = handleJsonParseFailure(parseError, planResult.text, {
+          query,
+          selectedThoughtId: selectedThought.id,
+          modelId: modelIdToUse,
+          tool: "researchPlanGenerator"
+        });
         
         // Fallback to a minimal default plan if parsing fails
         // This ensures the tool doesn't fail completely
+        isFallback = true;
         researchPlan = {
           approach: selectedThought.content.split('\n')[0] || "総合的調査アプローチ",
           description: selectedThought.content,
@@ -135,12 +165,20 @@ ${selectedThought.content}
         };
       }
       
+      // outputSchemaを使用して返り値を検証
       return {
         researchPlan,
         originalQuery: query,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        isFallback
       };
     } catch (error: unknown) {
+      // エラー報告を追加
+      reportError('research_plan_generator_error', error, {
+        query,
+        selectedThoughtId: selectedThought.id
+      });
+      
       console.error(`[ToT] リサーチ計画生成エラー:`, error);
       throw new Error(`リサーチ計画生成中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -162,6 +200,17 @@ export const queryOptimizer = createTool({
       priority: z.number().optional()
     })).describe("最適化する検索クエリのリスト"),
     targetTool: z.string().default("web_search").describe("対象ツール（例: web_search, scholar_search）"),
+  }),
+  outputSchema: z.object({
+    optimizedQueries: z.array(z.object({
+      query: z.string(),
+      purpose: z.string(), 
+      queryType: z.enum(["general", "specific", "technical"]),
+      priority: z.number().optional(),
+      originalQuery: z.string()
+    })).describe("最適化された検索クエリのリスト"),
+    targetTool: z.string().describe("最適化対象のツール名"),
+    timestamp: z.string().describe("タイムスタンプ")
   }),
   description: "検索クエリを各ツールの特性に合わせて最適化します",
   execute: async ({ context: { queries, targetTool } }) => {
@@ -207,6 +256,7 @@ export const queryOptimizer = createTool({
         };
       });
       
+      // outputSchemaを使用して返り値を検証
       return {
         optimizedQueries,
         targetTool,
@@ -236,6 +286,23 @@ export const parallelSearchExecutor = createTool({
     })).describe("実行する検索クエリのリスト"),
     maxParallel: z.number().min(1).max(10).default(3).describe("同時実行する最大クエリ数"),
     searchTool: z.string().default("searchTool").describe("使用する検索ツールの名前"),
+  }),
+  outputSchema: z.object({
+    searchResults: z.array(z.object({
+      query: z.string().describe("実行されたクエリ"),
+      purpose: z.string().describe("クエリの目的"),
+      results: z.array(z.object({
+        title: z.string(),
+        url: z.string(),
+        snippet: z.string(),
+        date: z.string().optional()
+      })).describe("検索結果のリスト"),
+      timestamp: z.string().describe("検索実行時間")
+    })).describe("すべてのクエリの検索結果"),
+    totalQueries: z.number().describe("総クエリ数"),
+    executedQueries: z.number().describe("実行されたクエリ数"),
+    searchTool: z.string().describe("使用した検索ツール名"),
+    timestamp: z.string().describe("タイムスタンプ")
   }),
   description: "複数の検索クエリを並列実行します",
   execute: async ({ context: { queries, maxParallel, searchTool } }) => {
@@ -268,9 +335,10 @@ export const parallelSearchExecutor = createTool({
               throw new Error("検索ツールが見つかりません");
             }
             
-            // searchTool を使って検索を実行
+            // Webでこのクエリを検索して結果を取得
             const searchResult = await webSearchTool.execute({
-              context: { query: queryItem.query }
+              context: { query: queryItem.query },
+              container: {} as any  // 暫定対応: 型エラー回避
             });
             
             // 型アサーションを使用して結果の型を明示
@@ -308,6 +376,7 @@ export const parallelSearchExecutor = createTool({
         searchResults.push(...batchResults);
       }
       
+      // outputSchemaを使用して返り値を検証
       return {
         searchResults,
         totalQueries: queries.length,

@@ -7,6 +7,7 @@
 
 import { Agent } from "@mastra/core/agent";
 import { openai } from "@ai-sdk/openai";
+import { nanoid } from "nanoid";
 
 // ToT ツールのインポート
 import * as thoughtTools from "../../tools/tot/thought-tools";
@@ -21,6 +22,25 @@ import { searchTool } from "../../tools/search-tool";
 // 明確化ツールのインポート
 import { queryClarifier, clarificationProcessor } from "./clarification";
 
+// 設定のインポート
+import { totConfig } from "../../config/totConfig";
+
+// ツール名の列挙型をインポート
+import { 
+  ThoughtToolName,
+  PlanningToolName,
+  AnalysisToolName,
+  InsightToolName,
+  ReportToolName,
+  UtilityToolName
+} from "../../types/toolNames";
+
+// 型定義のインポート
+import { ReasoningStepMetadata, ReasoningStep, ToolCall, ToolResult, GenerateResult } from "./types";
+
+// 強化計画フェーズのインポート
+import { executeEnhancedPlanningPhase } from "./enhancedPlanningPhase";
+
 /**
  * ToT Deep Research Agent
  * 
@@ -34,37 +54,39 @@ export const totResearchAgent = new Agent({
 ## プロセス概要
 
 0. **クエリ明確化フェーズ**
-   - ユーザーのクエリが曖昧または一般的すぎる場合、queryClarifier ツールを使用して明確化
+   - ユーザーのクエリが曖昧または一般的すぎる場合、${UtilityToolName.QueryClarifier} ツールを使用して明確化
    - 明確化が必要な場合は、ユーザーに具体的な質問を提示
-   - ユーザーの回答に基づいて、clarificationProcessor ツールを使用してクエリを強化
+   - ユーザーの回答に基づいて、${UtilityToolName.ClarificationProcessor} ツールを使用してクエリを強化
 
 1. **研究計画生成フェーズ**
-   - 複数の思考経路を生成し、最も有望な経路を選択
-   - 選択した思考に基づいて詳細な研究計画を作成
-   - 効果的な検索クエリを最適化
+   - ${ThoughtToolName.ThoughtGenerator} ツールを使用して複数の思考経路を生成
+   - ${ThoughtToolName.ThoughtEvaluator} ツールを使用して各思考を評価
+   - ${ThoughtToolName.PathSelector} ツールを使用して最も有望な思考を選択
+   - ${PlanningToolName.ResearchPlanGenerator} ツールを使用して詳細な研究計画を作成
+   - ${PlanningToolName.QueryOptimizer} ツールを使用して効果的な検索クエリを最適化
 
 2. **情報収集フェーズ**
-   - 最適化されたクエリを使用して並列検索を実行
-   - Brave Search APIを使用して幅広い情報を収集
+   - ${PlanningToolName.ParallelSearchExecutor} ツールを使用して最適化されたクエリを並列実行
+   - ${UtilityToolName.SearchTool} を使用して幅広い情報を収集
 
 3. **情報評価・分析フェーズ**
-   - 収集した情報の信頼性と関連性を評価
-   - 複数の解釈仮説を生成
-   - 情報ギャップを特定
+   - ${AnalysisToolName.InformationEvaluator} ツールを使用して収集した情報の信頼性と関連性を評価
+   - ${AnalysisToolName.HypothesisGenerator} ツールを使用して複数の解釈仮説を生成
+   - ${AnalysisToolName.GapAnalyzer} ツールを使用して情報ギャップを特定
 
 4. **洞察生成・統合フェーズ**
-   - 分析に基づいて重要な洞察を生成
-   - 洞察を中心に全体ストーリーを構築
-   - 証拠に基づく結論を形成
+   - ${InsightToolName.InsightGenerator} ツールを使用して分析に基づいて重要な洞察を生成
+   - ${InsightToolName.StoryBuilder} ツールを使用して洞察を中心に全体ストーリーを構築
+   - ${InsightToolName.ConclusionFormer} ツールを使用して証拠に基づく結論を形成
 
 5. **レポート生成・最適化フェーズ**
-   - 統合された洞察から構造化レポートを生成
-   - レポートを最適化（読みやすさ、簡潔さ、視覚構造、引用品質）
+   - ${ReportToolName.ReportGenerator} ツールを使用して統合された洞察から構造化レポートを生成
+   - ${ReportToolName.ReportOptimizer} ツールを使用してレポートを最適化
 
 ## 使用上の注意
 
 - 各フェーズで適切なツールを使用してください
-- **重要**: ユーザーのクエリが曖昧または一般的すぎる場合は、必ず queryClarifier ツールを使用して明確化してください
+- **重要**: ユーザーのクエリが曖昧または一般的すぎる場合は、必ず ${UtilityToolName.QueryClarifier} ツールを使用して明確化してください
 - 常に証拠に基づいた分析と結論を提供してください
 - 情報の信頼性と出典を明確に示してください
 - 複数の視点や解釈を考慮してください
@@ -76,44 +98,44 @@ export const totResearchAgent = new Agent({
 
 ユーザーのクエリが曖昧または一般的すぎる場合（例: 「AIについて教えて」「気候変動」など）は、以下の手順に従ってください：
 
-1. まず queryClarifier ツールを使用して、クエリが明確化を必要とするか判断してください
+1. まず ${UtilityToolName.QueryClarifier} ツールを使用して、クエリが明確化を必要とするか判断してください
 2. 明確化が必要な場合は、ユーザーに明確化質問を提示し、回答を待ってください
-3. ユーザーの回答を受け取ったら、clarificationProcessor ツールを使用してクエリを強化してください
+3. ユーザーの回答を受け取ったら、${UtilityToolName.ClarificationProcessor} ツールを使用してクエリを強化してください
 4. 強化されたクエリを使用して、研究プロセスを開始してください
 
 明確化プロセスは、効果的な調査の基盤となる重要なステップです。`,
   model: openai("gpt-4o"),
   tools: {
     // 思考ツール
-    thoughtGenerator: thoughtTools.thoughtGenerator,
-    thoughtEvaluator: thoughtTools.thoughtEvaluator,
-    pathSelector: thoughtTools.pathSelector,
+    [ThoughtToolName.ThoughtGenerator]: thoughtTools.thoughtGenerator,
+    [ThoughtToolName.ThoughtEvaluator]: thoughtTools.thoughtEvaluator,
+    [ThoughtToolName.PathSelector]: thoughtTools.pathSelector,
     
     // 計画ツール
-    researchPlanGenerator: planningTools.researchPlanGenerator,
-    queryOptimizer: planningTools.queryOptimizer,
-    parallelSearchExecutor: planningTools.parallelSearchExecutor,
+    [PlanningToolName.ResearchPlanGenerator]: planningTools.researchPlanGenerator,
+    [PlanningToolName.QueryOptimizer]: planningTools.queryOptimizer,
+    [PlanningToolName.ParallelSearchExecutor]: planningTools.parallelSearchExecutor,
     
     // 分析ツール
-    informationEvaluator: analysisTools.informationEvaluator,
-    hypothesisGenerator: analysisTools.hypothesisGenerator,
-    gapAnalyzer: analysisTools.gapAnalyzer,
+    [AnalysisToolName.InformationEvaluator]: analysisTools.informationEvaluator,
+    [AnalysisToolName.HypothesisGenerator]: analysisTools.hypothesisGenerator,
+    [AnalysisToolName.GapAnalyzer]: analysisTools.gapAnalyzer,
     
     // 洞察ツール
-    insightGenerator: insightTools.insightGenerator,
-    storyBuilder: insightTools.storyBuilder,
-    conclusionFormer: insightTools.conclusionFormer,
+    [InsightToolName.InsightGenerator]: insightTools.insightGenerator,
+    [InsightToolName.StoryBuilder]: insightTools.storyBuilder,
+    [InsightToolName.ConclusionFormer]: insightTools.conclusionFormer,
     
     // レポートツール
-    reportGenerator: reportTools.reportGenerator,
-    reportOptimizer: reportTools.reportOptimizer,
+    [ReportToolName.ReportGenerator]: reportTools.reportGenerator,
+    [ReportToolName.ReportOptimizer]: reportTools.reportOptimizer,
     
     // 検索ツール
-    searchTool: searchTool,
+    [UtilityToolName.SearchTool]: searchTool,
     
     // 明確化ツール
-    queryClarifier: queryClarifier,
-    clarificationProcessor: clarificationProcessor,
+    [UtilityToolName.QueryClarifier]: queryClarifier,
+    [UtilityToolName.ClarificationProcessor]: clarificationProcessor,
   },
 });
 
@@ -142,13 +164,16 @@ export async function executeTotResearchAgent(
       try {
         // queryClarifier ツールが存在するか確認
         if (!queryClarifier || typeof queryClarifier.execute !== 'function') {
-          console.warn('[ToT Research] queryClarifierツールが利用できません');
-          throw new Error('queryClarifier tool is not available');
+          console.warn(`[ToT Research] ${UtilityToolName.QueryClarifier}ツールが利用できません`);
+          throw new Error(`${UtilityToolName.QueryClarifier} tool is not available`);
         }
         
         // queryClarifier ツールを直接実行
         const clarificationResult = await queryClarifier.execute({
-          context: { query }
+          context: { query },
+          // このコンテナは @mastra/core の内部APIに依存するため、
+          // 正確な型はコア側の更新時に合わせて修正する必要があります
+          container: {} as any  // 暫定対応: 型エラー回避
         }) as unknown as {
           needsClarification: boolean;
           message: string;
@@ -188,8 +213,8 @@ export async function executeTotResearchAgent(
       try {
         // clarificationProcessor ツールが存在するか確認
         if (!clarificationProcessor || typeof clarificationProcessor.execute !== 'function') {
-          console.warn('[ToT Research] clarificationProcessorツールが利用できません');
-          throw new Error('clarificationProcessor tool is not available');
+          console.warn(`[ToT Research] ${UtilityToolName.ClarificationProcessor}ツールが利用できません`);
+          throw new Error(`${UtilityToolName.ClarificationProcessor} tool is not available`);
         }
         
         // clarificationProcessor ツールを使用して強化されたクエリを生成
@@ -197,7 +222,10 @@ export async function executeTotResearchAgent(
           context: {
             originalQuery: query,
             userResponse: clarificationResponse
-          }
+          },
+          // このコンテナは @mastra/core の内部APIに依存するため、
+          // 正確な型はコア側の更新時に合わせて修正する必要があります
+          container: {} as any  // 暫定対応: 型エラー回避
         }) as unknown as {
           enhancedQuery: string;
           originalQuery: string;
@@ -222,7 +250,16 @@ export async function executeTotResearchAgent(
       }
     }
     
-    // エージェントを実行
+    // 拡張モードの使用有無をチェック（デフォルトでは拡張モードを使用）
+    const useEnhancedMode = true;
+    
+    // 拡張モードでビームサーチを使用する場合
+    if (useEnhancedMode) {
+      console.log(`[ToT Research] 拡張モードで実行: ビームサーチ深さ=${totConfig.maxDepth}`);
+      return await executeEnhancedPlanningPhase(query);
+    }
+    
+    // 従来モード（直接エージェントを実行）
     const result = await totResearchAgent.generate(initialPrompt);
     
     console.log(`[ToT Research] 実行完了: クエリ=${query.substring(0, 50)}...`);
@@ -249,20 +286,167 @@ export async function executePlanningPhase(query: string) {
 
 クエリ: ${query}
 
-1. thoughtGenerator ツールを使用して複数の思考経路を生成してください
-2. thoughtEvaluator ツールを使用して各思考を評価してください
-3. thoughtSelector ツールを使用して最も有望な思考を選択してください
-4. researchPlanGenerator ツールを使用して詳細な研究計画を作成してください
-5. queryOptimizer ツールを使用して効果的な検索クエリを最適化してください
+1. ${ThoughtToolName.ThoughtGenerator} ツールを使用して複数の思考経路を生成してください
+2. ${ThoughtToolName.ThoughtEvaluator} ツールを使用して各思考を評価してください
+3. ${ThoughtToolName.PathSelector} ツールを使用して最も有望な思考を選択してください
+4. ${PlanningToolName.ResearchPlanGenerator} ツールを使用して詳細な研究計画を作成してください
+5. ${PlanningToolName.QueryOptimizer} ツールを使用して効果的な検索クエリを最適化してください
 
 研究計画のみを返してください。実際の検索や分析は行わないでください。`;
+
+    // 推論ステップを記録 (Use the defined interface)
+    const reasoningSteps: ReasoningStep[] = [
+      {
+        id: nanoid(),
+        timestamp: new Date().toISOString(),
+        type: 'planning',
+        title: '研究計画フェーズを開始',
+        content: `クエリ「${query}」について研究計画を生成します。複数の調査アプローチを検討し、最適な戦略を選定します。`,
+        metadata: {
+          phase: 'planning',
+          currentStep: 1,
+          totalSteps: 5 // Initial estimate, will be updated
+        }
+      }
+    ];
     
-    // エージェントを実行
-    const result = await totResearchAgent.generate(planningPrompt);
+    // エージェントを実行 (Assume GenerateResult type)
+    const result: GenerateResult = await totResearchAgent.generate(planningPrompt);
+    
+    // 思考過程を推論ステップとして追加
+    if (result.toolCalls && result.toolCalls.length > 0) {
+      // Create a map for quick lookup of tool results by toolCallId
+      const toolResultsMap = new Map<string, ToolResult>();
+      if (result.toolResults) {
+        result.toolResults.forEach(res => toolResultsMap.set(res.toolCallId, res));
+      }
+
+      result.toolCalls.forEach((call, index) => {
+        const currentStepIndex = index + 2; // Step 1 is initial, then calls start from 2
+        const totalStepsEstimate = (result.toolCalls?.length || 0) + 2; // Initial + calls + final integration
+
+        // ツール名に基づいてtype値を決定
+        let toolType = 'tool_start';
+        if (call.toolName === ThoughtToolName.ThoughtGenerator) toolType = 'thought_generation';
+        else if (call.toolName === ThoughtToolName.ThoughtEvaluator) toolType = 'thought_evaluation';
+        else if (call.toolName === ThoughtToolName.PathSelector) toolType = 'path_selection';
+        else if (call.toolName === PlanningToolName.ResearchPlanGenerator) toolType = 'research_plan';
+        else if (call.toolName === PlanningToolName.QueryOptimizer) toolType = 'query_optimization';
+
+        // ツール開始ステップ
+        reasoningSteps.push({
+          id: nanoid(),
+          timestamp: new Date().toISOString(),
+          type: toolType,
+          title: `${call.toolName} を実行`,
+          content: `ツール入力: ${JSON.stringify(call.args, null, 2)}`,
+          metadata: {
+            toolName: call.toolName, // Use the defined interface field
+            phase: 'planning',
+            currentStep: currentStepIndex,
+            totalSteps: totalStepsEstimate
+          }
+        });
+        
+        // ツール出力ステップ
+        const toolResult = toolResultsMap.get(call.toolCallId);
+        if (toolResult) {
+          let outputContent = '';
+          const output = toolResult.result; // ** CORRECT: Access the result from toolResult **
+
+          try {
+            // 特定のツールの出力を人間が読みやすい形式に整形
+            if (call.toolName === ThoughtToolName.ThoughtGenerator) {
+              const thoughts = output.thoughts || []; // ** CORRECT: Use output variable **
+              outputContent = thoughts.map((t: any, i: number) => 
+                `思考 ${i+1}:\n${t.content}`
+              ).join('\n\n');
+            } else if (call.toolName === ThoughtToolName.ThoughtEvaluator) {
+              const evaluatedThoughts = output.evaluatedThoughts || []; // ** CORRECT: Use output variable **
+              outputContent = evaluatedThoughts.map((t: any, i: number) => 
+                `思考 ${i+1} (スコア: ${t.score?.toFixed(2) || 'N/A'}):\n${t.content}`
+              ).join('\n\n');
+            } else if (call.toolName === ThoughtToolName.PathSelector && output.selectedPath) { // ** CORRECT: Use output variable **
+              outputContent = `選択された思考: (スコア: ${output.selectedPath.score?.toFixed(2) || 'N/A'})\n${output.selectedPath.content}\n\n選択理由: ${output.reasoning || '最高スコアの思考を選択'}`; // ** CORRECT: Use output variable **
+            } else if (call.toolName === PlanningToolName.ResearchPlanGenerator && output.researchPlan) { // ** CORRECT: Use output variable **
+              const plan = output.researchPlan; // ** CORRECT: Use output variable **
+              outputContent = `アプローチ: ${plan.approach || 'N/A'}\n\nサブトピック:\n${(plan.subtopics || []).map((s: string) => `- ${s}`).join('\n')}\n\n検索クエリ:\n${(plan.queries || []).map((q: any) => `- ${q.query} (目的: ${q.purpose})`).join('\n')}`;
+            } else if (call.toolName === PlanningToolName.QueryOptimizer) {
+              const optimizedQueries = output.optimizedQueries || []; // ** CORRECT: Use output variable **
+              outputContent = optimizedQueries.map((q: any) => 
+                `最適化クエリ: ${q.query}\n元のクエリ: ${q.originalQuery || 'N/A'}\n目的: ${q.purpose || 'N/A'}`
+              ).join('\n\n');
+            } else {
+              // その他のツールはJSON出力をそのまま表示
+              outputContent = JSON.stringify(output, null, 2); // ** CORRECT: Use output variable **
+            }
+          } catch (formatError) {
+            // 変換エラー時はそのまま表示
+            outputContent = typeof output === 'string' ? output : JSON.stringify(output, null, 2); // ** CORRECT: Use output variable **
+          }
+          
+          reasoningSteps.push({
+            id: nanoid(),
+            timestamp: new Date().toISOString(),
+            type: 'tool_end',
+            title: `${call.toolName} の結果`,
+            content: outputContent,
+            metadata: {
+              toolName: call.toolName, // Use the defined interface field
+              phase: 'planning',
+              currentStep: currentStepIndex,
+              totalSteps: totalStepsEstimate
+            }
+          });
+        } else {
+           // Handle case where toolResult is not found (optional)
+           console.warn(`[ToT Research] Tool result not found for callId: ${call.toolCallId}`);
+           reasoningSteps.push({
+            id: nanoid(),
+            timestamp: new Date().toISOString(),
+            type: 'tool_error',
+            title: `${call.toolName} の結果が見つかりません`,
+            content: `ツール実行結果 (ID: ${call.toolCallId}) を取得できませんでした。`,
+            metadata: {
+              toolName: call.toolName,
+              phase: 'planning',
+              currentStep: currentStepIndex,
+              totalSteps: totalStepsEstimate
+            }
+          });
+        } 
+      });
+    }
+    
+    // 最終統合ステップを追加
+    const finalStepIndex = (result.toolCalls?.length || 0) + 2;
+    // Adjust total steps for the initial step
+    reasoningSteps[0].metadata.totalSteps = finalStepIndex;
+    reasoningSteps.push({
+      id: nanoid(),
+      timestamp: new Date().toISOString(),
+      type: 'integration',
+      title: '研究計画フェーズ完了',
+      content: '複数の思考経路を評価し、最適な調査戦略を選定しました。検索クエリの最適化も完了しました。' ,
+      metadata: {
+        phase: 'planning',
+        currentStep: finalStepIndex,
+        totalSteps: finalStepIndex
+      }
+    });
     
     console.log(`[ToT Research] 計画フェーズ完了: クエリ=${query.substring(0, 50)}...`);
     
-    return result;
+    // 推論ステップをメタデータとして追加
+    const resultWithSteps = {
+      ...result,
+      reasoningSteps: reasoningSteps
+    };
+    
+    // reasoningStepsが返されていることを確認するログ
+    console.log(`[ToT Research] Sending back ${reasoningSteps.length} reasoning steps with the result`);
+    
+    return resultWithSteps;
   } catch (error: unknown) {
     console.error(`[ToT Research] 研究計画フェーズエラー:`, error);
     throw new Error(`研究計画フェーズ実行中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
@@ -410,3 +594,6 @@ ${JSON.stringify(integratedInsights, null, 2)}
     throw new Error(`レポート生成フェーズ実行中にエラーが発生しました: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
+
+// 強化計画フェーズを公開
+export { executeEnhancedPlanningPhase };

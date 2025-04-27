@@ -53,9 +53,10 @@ You will need to use the environment variables [defined in `.env.example`](.env.
 2. Link local instance with Vercel and GitHub accounts (creates `.vercel` directory): `vercel link`
 3. Download your environment variables: `vercel env pull`
 
+## バックエンドワークフロー利用ルール
+詳細は [`MASRA_BACKEND_WORKFLOW_RULES.md`](MASRA_BACKEND_WORKFLOW_RULES.md) をご覧ください。
+
 ```bash
 pnpm install
 pnpm dev
 ```
-
-Your app template should now be running on [localhost:3000](http://localhost:3000/).
