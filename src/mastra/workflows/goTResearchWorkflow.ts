@@ -1,10 +1,13 @@
 import { z } from 'zod';
 // Workflow 型を明示的にインポート
 import { Workflow, Step, WorkflowContext, StepExecutionContext } from '@mastra/core/workflows';
-import { clarityCheckAgent, clarificationPromptAgent, thoughtGeneratorAgent } from '../agents';
-import { processThoughtsWorkflow } from './processThoughtsWorkflow';
+import { clarityCheckAgent, clarificationPromptAgent, thoughtGeneratorAgent, thoughtTransformerAgent } from '../agents';
+import { processThoughtsWorkflow, thoughtEvaluationSchema } from './processThoughtsWorkflow';
 // ★ mastra インスタンスをインポート ★
 import { mastra } from '..';
+
+// ★ ThoughtTransformerAgent の generateSubQuestions 関数と出力スキーマをインポート
+import { generateSubQuestions, subQuestionsOutputSchema } from '../agents/thoughtTransformerAgent';
 
 // ワークフローのトリガースキーマ (ユーザーからの入力)
 const triggerSchema = z.object({
@@ -35,6 +38,17 @@ const initialThoughtsOutputSchema = z.object({
 
 // 型定義を明示的に追加
 type InitialThoughtsOutput = z.infer<typeof initialThoughtsOutputSchema>;
+
+// ★ transformThoughtStep の入力スキーマを定義
+const transformThoughtInputSchema = z.object({
+  selectedThought: z.object({
+    selectedThought: thoughtEvaluationSchema.optional().describe("選択された思考とその評価"),
+  }).describe("processThoughtsWorkflow からの選択された思考"),
+  query: triggerSchema.shape.query.describe("元のユーザーからの質問"),
+});
+
+// ★ transformThoughtStep の出力スキーマを定義 (サブクエスチョンのリスト)
+const transformThoughtOutputSchema = subQuestionsOutputSchema;
 
 // ジェネリックなしの Workflow 型を試す
 export const goTResearchWorkflow: Workflow = new Workflow({
@@ -208,15 +222,62 @@ const initialThoughtsStep = new Step({
   },
 });
 
+// ★ 新しいステップ: transformThoughtStep
+const transformThoughtStep = new Step({
+  id: 'transformThoughtStep',
+  description: '選択された思考を基にサブクエスチョンを生成するステップ',
+  inputSchema: transformThoughtInputSchema,
+  outputSchema: transformThoughtOutputSchema,
+  execute: async ({ context }: StepExecutionContext<typeof transformThoughtInputSchema>) => {
+    const logger = mastra.getLogger();
+    const { selectedThought, query } = context.inputData;
+    
+    // 選択された思考がない場合（エラーなど）
+    if (!selectedThought || !selectedThought.selectedThought) {
+      logger.warn("(TransformThoughtStep) No selected thought to transform. Skipping.");
+      // サブクエスチョンが生成できなかったことを示す空リストを返す
+      return { subQuestions: [] };
+    }
+    
+    const selectedThoughtData = selectedThought.selectedThought;
+    logger.info("(TransformThoughtStep) Transforming thought:", { 
+      thought: selectedThoughtData.thought,
+      score: selectedThoughtData.score,
+      reasoning: selectedThoughtData.reasoning
+    });
+    
+    try {
+      // ThoughtTransformerAgent のヘルパー関数を使用してサブクエスチョンを生成
+      const result = await generateSubQuestions({
+        selectedThought: selectedThoughtData.thought,
+        originalQuery: query,
+      });
+      
+      logger.info("(TransformThoughtStep) Generated sub-questions:", { subQuestions: result.subQuestions });
+      return result;
+    } catch (error) {
+      logger.error("(TransformThoughtStep) Error generating sub-questions:", { error });
+      return { subQuestions: [] }; // エラー時は空のリストを返す
+    }
+  },
+});
+
 // 直線的なワークフロー構造を定義
 goTResearchWorkflow
   .step(clarityCheckStep)
-  // ★★★ 修正点: when 条件を削除 ★★★
   .then(requestClarificationStep)
   .then(initialThoughtsStep)
   .then(processThoughtsWorkflow, {
     variables: {
-      thoughts: { step: initialThoughtsStep, path: 'thoughts' }
+      thoughts: { step: initialThoughtsStep, path: 'thoughts' },
+      originalQuery: { workflow: 'trigger', path: 'query' } // originalQuery パラメータを渡す
+    }
+  })
+  // ★ 新しいステップ: processThoughtsWorkflow の次に transformThoughtStep を実行
+  .then(transformThoughtStep, {
+    variables: {
+      selectedThought: { step: processThoughtsWorkflow, path: '$output' }, // サブワークフローの出力全体を渡す
+      query: { workflow: 'trigger', path: 'query' }  // 元のクエリも渡す
     }
   })
   .commit();

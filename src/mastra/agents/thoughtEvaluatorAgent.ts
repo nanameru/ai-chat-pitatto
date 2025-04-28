@@ -1,4 +1,4 @@
-# src/mastra/agents/thoughtEvaluatorAgent.ts
+// src/mastra/agents/thoughtEvaluatorAgent.ts
 import { Agent } from '@mastra/core/agent';
 import { openai } from '@ai-sdk/openai';
 

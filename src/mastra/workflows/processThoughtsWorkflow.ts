@@ -1,25 +1,25 @@
 // src/mastra/workflows/processThoughtsWorkflow.ts
 import { z } from 'zod';
-import { Workflow, Step, StepExecutionContext, WorkflowContext } from '@mastra/core/workflows';
+import { Workflow, Step, StepExecutionContext } from '@mastra/core/workflows';
 import { thoughtEvaluatorAgent } from '../agents';
 import { mastra } from '..';
 
-// サブワークフローが受け取るデータ型 (メインワークフローから渡される)
+// サブワークフローが受け取るデータ型を元に戻す (originalQuery のみ追加された状態)
 const triggerSchema = z.object({
   thoughts: z.array(z.string()).describe("生成された初期思考のリスト"),
+  originalQuery: z.string().describe("元のユーザーからの質問"),
 });
 
 // 評価結果スキーマ定義を追加
-const thoughtEvaluationSchema = z.object({
+export const thoughtEvaluationSchema = z.object({
   thought: z.string().describe("元の思考内容"),
   score: z.number().min(1).max(10).describe("評価スコア (1-10)"),
   reasoning: z.string().describe("評価理由"),
 });
-const evaluateThoughtsOutputSchema = z.object({
+export const evaluateThoughtsOutputSchema = z.object({
   evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
 });
-type ThoughtEvaluation = z.infer<typeof thoughtEvaluationSchema>;
-type EvaluateThoughtsOutput = z.infer<typeof evaluateThoughtsOutputSchema>;
+export type ThoughtEvaluation = z.infer<typeof thoughtEvaluationSchema>;
 
 // サブワークフローの定義
 export const processThoughtsWorkflow = new Workflow({
@@ -35,10 +35,10 @@ const evaluateThoughtsStep = new Step({
     description: '生成された初期思考を評価する',
     inputSchema: triggerSchema,
     outputSchema: evaluateThoughtsOutputSchema,
-    execute: async ({ context }: StepExecutionContext<typeof triggerSchema, WorkflowContext<typeof triggerSchema>>) => {
+    execute: async ({ context }: StepExecutionContext<typeof triggerSchema>) => {
         const logger = mastra.getLogger();
         const thoughts = context.triggerData.thoughts; 
-        const originalQuery = context.workflow?.triggerData?.query || "不明なクエリ";
+        const originalQuery = context.triggerData.originalQuery;
 
         logger.info("(SubWorkflow - Evaluate) Evaluating thoughts", { count: thoughts.length, originalQuery });
 
@@ -86,37 +86,41 @@ const evaluateThoughtsStep = new Step({
     },
 });
 
-// 例: 次に進むノードを選択するステップ (プレースホルダー)
 const selectNodeStep = new Step({
     id: 'selectNodeStep',
     description: '評価に基づき、次に探索する思考ノードを選択する',
-    inputSchema: evaluateThoughtsOutputSchema, 
+    inputSchema: evaluateThoughtsOutputSchema,
     outputSchema: z.object({
-        selectedThought: thoughtEvaluationSchema.optional().describe("選択された思考とその評価")
+        selectedThought: thoughtEvaluationSchema.optional().describe("選択された思考とその評価"),
     }),
-    execute: async ({ context }: StepExecutionContext<EvaluateThoughtsOutput>) => {
-        const logger = mastra.getLogger(); 
-        const evaluatedThoughts = context.inputData.evaluatedThoughts;
-        logger.info("(SubWorkflow - Select) Received evaluations for node selection", { count: evaluatedThoughts.length });
-        
+    execute: async ({ context }: StepExecutionContext<typeof evaluateThoughtsOutputSchema>) => {
+        const logger = mastra.getLogger();
+        const { evaluatedThoughts } = context.inputData;
+        logger.info("(SubWorkflow - Select) Selecting node", {
+            count: evaluatedThoughts.length,
+        });
+
         let bestThought: ThoughtEvaluation | undefined = undefined;
         if (evaluatedThoughts.length > 0) {
-            evaluatedThoughts.sort((a, b) => b.score - a.score);
+            evaluatedThoughts.sort((a: ThoughtEvaluation, b: ThoughtEvaluation) => b.score - a.score);
             bestThought = evaluatedThoughts[0];
         }
 
-        logger.info("(SubWorkflow - Select) Selected node", { selectedThought: bestThought?.thought, score: bestThought?.score });
+        logger.info("(SubWorkflow - Select) Selected node", { 
+             selectedThought: bestThought?.thought,
+             score: bestThought?.score,
+        });
+
         return { selectedThought: bestThought };
     },
 });
-
 
 // --- サブワークフローの構築 ---
 processThoughtsWorkflow
     .step(evaluateThoughtsStep)
     .then(selectNodeStep, {
         variables: {
-            evaluatedThoughts: { step: evaluateThoughtsStep, path: 'evaluatedThoughts' }
+            evaluatedThoughts: { step: evaluateThoughtsStep, path: 'evaluatedThoughts' },
         }
     })
     .commit();
