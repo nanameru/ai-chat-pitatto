@@ -8,7 +8,7 @@ import {
     thoughtTransformerAgent,
     synthesizerAgent
 } from '../agents';
-import { processThoughtsWorkflow, thoughtEvaluationSchema } from './processThoughtsWorkflow';
+import { processThoughtsWorkflow, thoughtEvaluationSchema, type ThoughtEvaluation } from './processThoughtsWorkflow';
 // ★ mastra インスタンスをインポート ★
 import { mastra } from '..';
 
@@ -319,12 +319,37 @@ const prepareProcessThoughtsInput = new Step({
     outputSchema: prepareProcessThoughtsOutputSchema,
     execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
         const logger = mastra.getLogger();
+        
+        // デバッグログ追加
+        logger.info("--- [DEBUG] prepareProcessThoughtsInput context ---");
+        logger.info(`Steps so far: ${Object.keys(context.steps).join(', ')}`);
+        try {
+            logger.info(`Initial thoughts step result: ${JSON.stringify(context.getStepResult(initialThoughtsStep), null, 2)}`);
+        } catch (e) {
+            logger.error("Failed to stringify initialThoughtsStep result", { error: String(e) });
+        }
+        
+        // 明示的に initialThoughtsStep の結果を取得 (型キャストを使用)
         const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
-        const thoughts = initialThoughtsResult?.thoughts ?? [];
+        
+        // 思考リストを取得
+        let thoughts: string[] = [];
+        if (initialThoughtsResult && Array.isArray(initialThoughtsResult.thoughts)) {
+            thoughts = initialThoughtsResult.thoughts;
+            logger.info(`(PrepareProcessThoughtsInput) Successfully retrieved thoughts from initialThoughtsStep: ${thoughts.length}`);
+        } else {
+            logger.error("(PrepareProcessThoughtsInput) Failed to get thoughts array from initialThoughtsStep", { initialThoughtsResult });
+        }
+        
         // Clarified クエリが存在すればそれを使用。無ければトリガーのクエリをフォールバック
         const clarification = context.getStepResult(requestClarificationStep) as RequestClarificationOutput | null;
         const query = clarification?.clarifiedQuery ?? context.triggerData.query;
-        logger.info("(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow", { thoughtsCount: thoughts.length, query });
+        logger.info("(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow", { 
+            thoughtsCount: thoughts.length, 
+            query,
+            thoughtsExample: thoughts.length > 0 ? thoughts[0] : 'none'
+        });
+        
         return {
             thoughts: thoughts,
             originalQuery: query
@@ -366,7 +391,7 @@ const transformThoughtStep = new Step({
   execute: async ({ context }: StepExecutionContext<typeof transformStepInputType, WorkflowContext<typeof triggerSchema>>) => {
     const logger = mastra.getLogger();
 
-    // ★ デバッグログ追加: 受け取った inputData の内容を確認
+    // ★ デバッグログ追加: 受け取った inputData の内容を確認 (これは残してもOK)
     logger.info("--- [DEBUG] transformThoughtStep received inputData --- ");
     try {
         logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
@@ -376,20 +401,47 @@ const transformThoughtStep = new Step({
     }
     logger.info("--- [DEBUG] End transformThoughtStep received inputData ---");
 
-    // ★ 修正: inputData から直接 selectedThought プロパティを取得
-    let selectedThoughtData = context.inputData?.selectedThought;
-    // Fallback: subワークフローから取得
-    if (!selectedThoughtData) {
-      const subResult = context.getStepResult(processThoughtsWorkflow as any) as any;
-      if (subResult && subResult.selectedThought) {
-        selectedThoughtData = subResult.selectedThought;
-      }
+    // ★★★ 修正: processThoughtsSubWorkflow の結果を取得する手順を改善 ★★★
+    let selectedThoughtData: ThoughtEvaluation | undefined = undefined;
+    
+    try {
+        // サブワークフローの結果をまず取得
+        const subWorkflowResult = context.getStepResult('processThoughtsSubWorkflow');
+        logger.info("(TransformThoughtStep) Raw subWorkflowResult:", { subWorkflowResult });
+        
+        // 可能性のあるデータパスをすべて試す
+        if (subWorkflowResult) {
+            // パターン1: 直接 selectedThought を持つ場合
+            if (subWorkflowResult.selectedThought) {
+                selectedThoughtData = subWorkflowResult.selectedThought;
+                logger.info("(TransformThoughtStep) Found selectedThought directly in subWorkflowResult");
+            }
+            // パターン2: results > selectNodeStep > output 内にある場合
+            else if (subWorkflowResult.results?.selectNodeStep?.output?.selectedThought) {
+                selectedThoughtData = subWorkflowResult.results.selectNodeStep.output.selectedThought;
+                logger.info("(TransformThoughtStep) Found selectedThought in results.selectNodeStep.output");
+            }
+            // パターン3: output > selectedThought 内にある場合
+            else if (subWorkflowResult.output?.selectedThought) {
+                selectedThoughtData = subWorkflowResult.output.selectedThought;
+                logger.info("(TransformThoughtStep) Found selectedThought in output");
+            }
+            // 他にも可能性があればここに追加
+            else {
+                logger.warn("(TransformThoughtStep) Could not find selectedThought in any expected location", { subWorkflowResult });
+            }
+        } else {
+            logger.warn("(TransformThoughtStep) No subWorkflowResult returned from getStepResult");
+        }
+    } catch (e) {
+        logger.error("(TransformThoughtStep) Error retrieving subWorkflowResult", { error: String(e) });
     }
-    const query = context.triggerData.query;
+
+    const query = context.triggerData.query; // これはトリガー時の元のクエリのまま
 
     // ★ 修正: selectedThoughtData 自体の存在を確認
     if (!selectedThoughtData) {
-      logger.warn("(TransformThoughtStep) No valid selected thought received from processThoughtsWorkflow. Skipping.");
+      logger.warn("(TransformThoughtStep) No valid selected thought retrieved. Skipping sub-question generation.");
       return { subQuestions: [] };
     }
 
