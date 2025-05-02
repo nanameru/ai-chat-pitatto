@@ -848,7 +848,7 @@ export function Chat({
             )}
 
             <div className="sticky bottom-0 z-10 bg-background">
-              <form className="flex flex-col px-4 bg-background pb-4 md:pb-6 gap-2 w-full" onSubmit={(e) => e.preventDefault()}>
+              <form className="flex flex-col px-6 md:px-8 bg-background pb-6 md:pb-8 gap-4 w-full" onSubmit={(e) => e.preventDefault()}>
                 {!isReadonly && (
                   <>
                     <MultimodalInput
@@ -1036,7 +1036,7 @@ export function Chat({
                     />}
 
                     {!isArtifactVisible && messages.length === 0 && (
-                      <div className="mb-2">
+                      <div className="mt-8 mb-4">
                         <SuggestedActions
                           chatId={id}
                           append={append}

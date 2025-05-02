@@ -181,7 +181,7 @@ const SidebarHeaderWithToggle = React.forwardRef<
       className={cn(
         'flex items-center justify-between px-3 py-2 border-b border-sidebar-border',
         isCollapsed ? 'flex-col gap-4' : 'flex-row',
-        className
+        className,
       )}
       {...props}
     >
@@ -213,28 +213,7 @@ const SidebarToggle = React.forwardRef<
   HTMLButtonElement,
   React.ComponentProps<'button'>
 >(({ className, ...props }, ref) => {
-  const { state, toggleSidebar } = useSidebar();
-  const isCollapsed = state === 'collapsed';
-
-  return (
-    <Button
-      ref={ref}
-      variant="ghost"
-      size="icon"
-      className={cn(
-        'h-8 w-8 rounded-full p-0 m-2',
-        isCollapsed ? 'mx-auto' : '',
-        className
-      )}
-      onClick={toggleSidebar}
-      {...props}
-    >
-      {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
-      <span className="sr-only">
-        {isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-      </span>
-    </Button>
-  );
+  return null;
 });
 SidebarToggle.displayName = 'SidebarToggle';
 
@@ -288,7 +267,7 @@ const Sidebar = React.forwardRef<
       return (
         <div
           className={cn(
-            'flex h-full w-[--sidebar-width] flex-col bg-sidebar text-sidebar-foreground',
+            'flex h-full w-[--sidebar-width] flex-col bg-[#f9f9f9] text-sidebar-foreground',
             className,
           )}
           ref={ref}
@@ -305,7 +284,7 @@ const Sidebar = React.forwardRef<
           <SheetContent
             data-sidebar="sidebar"
             data-mobile="true"
-            className="w-[--sidebar-width] bg-sidebar p-0 text-sidebar-foreground [&>button]:hidden"
+            className="w-[--sidebar-width] bg-[#f9f9f9] p-0 text-sidebar-foreground [&>button]:hidden"
             style={
               {
                 '--sidebar-width': SIDEBAR_WIDTH_MOBILE,
@@ -335,7 +314,7 @@ const Sidebar = React.forwardRef<
         {/* This is what handles the sidebar gap on desktop */}
         <div
           className={cn(
-            'duration-300 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-in-out',
+            'group-data-[state=expanded]:duration-300 group-data-[state=collapsed]:duration-700 relative h-svh w-[--sidebar-width] bg-transparent transition-[width] ease-in-out',
             'group-data-[collapsible=offcanvas]:w-0',
             'group-data-[side=right]:rotate-180',
             variant === 'floating' || variant === 'inset'
@@ -345,7 +324,7 @@ const Sidebar = React.forwardRef<
         />
         <div
           className={cn(
-            'duration-300 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[left,right,width] ease-in-out md:flex',
+            'group-data-[state=expanded]:duration-300 group-data-[state=collapsed]:duration-700 fixed inset-y-0 z-10 hidden h-svh w-[--sidebar-width] transition-[width] ease-in-out md:flex',
             side === 'left'
               ? 'left-0 group-data-[collapsible=offcanvas]:left-[calc(var(--sidebar-width)*-1)]'
               : 'right-0 group-data-[collapsible=offcanvas]:right-[calc(var(--sidebar-width)*-1)]',
@@ -359,7 +338,7 @@ const Sidebar = React.forwardRef<
         >
           <div
             data-sidebar="sidebar"
-            className="flex h-full w-full flex-col bg-sidebar group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
+            className="flex h-full w-full flex-col bg-[#f9f9f9] group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:border group-data-[variant=floating]:border-sidebar-border group-data-[variant=floating]:shadow"
           >
             <div className="flex flex-col flex-1 gap-4 overflow-hidden">
               {children}
@@ -385,69 +364,10 @@ const SidebarUserMenu = () => {
     router.push('/login');
   };
 
+  // サインアウト機能はドロップダウンメニューに移動
   return (
     <div className="flex flex-col gap-1 p-2">
-      {isCollapsed ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 mx-auto"
-                onClick={() => {
-                  document.documentElement.classList.toggle('dark');
-                }}
-              >
-                <Moon className="h-4 w-4" />
-                <span className="sr-only">ダークモード切替</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              ダークモード切替
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : (
-        <Button
-          variant="ghost"
-          className="w-full justify-start"
-          onClick={() => {
-            document.documentElement.classList.toggle('dark');
-          }}
-        >
-          ダークモード切替
-        </Button>
-      )}
-      
-      {isCollapsed ? (
-        <TooltipProvider>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 mx-auto text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
-                onClick={handleSignOut}
-              >
-                <LogOut className="h-4 w-4" />
-                <span className="sr-only">サインアウト</span>
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent side="right">
-              サインアウト
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      ) : (
-        <Button
-          variant="ghost"
-          className="w-full justify-start text-red-500 hover:text-red-600 hover:bg-red-100 dark:hover:bg-red-900"
-          onClick={handleSignOut}
-        >
-          サインアウト
-        </Button>
-      )}
+      {/* サインアウトボタンを削除 */}
     </div>
   );
 };
@@ -551,7 +471,14 @@ const SidebarFooter = React.forwardRef<
     <div
       ref={ref}
       data-sidebar="footer"
-      className={cn('flex flex-col gap-2 p-2 group-data-[state=collapsed]:items-center', className)}
+      className={cn(
+        'flex flex-col gap-2 p-2',
+        'group-data-[state=collapsed]:items-center',
+        'group-data-[state=collapsed]:gap-1',
+        'group-data-[state=collapsed]:p-1',
+        'group-data-[state=collapsed]:[&_span]:hidden',
+        className,
+      )}
       {...props}
     />
   );
