@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "next dev --turbo --port 4114",
+    "dev": "next dev --turbo --port 3000",
     "build": "tsx lib/db/migrate || true && next build",
     "start": "next start",
     "lint": "next lint && biome lint --write --unsafe",

@@ -47,6 +47,7 @@ export { noteTestAgent } from './noteTestAgent';
 export { thoughtGeneratorAgent } from './thoughtGeneratorAgent';
 export { thoughtEvaluatorAgent } from './thoughtEvaluatorAgent';
 export { thoughtTransformerAgent } from './thoughtTransformerAgent';
+export { synthesizerAgent } from './synthesizerAgent';
 
 export const clarityCheckAgent = new Agent({
   name: 'clarityCheckAgent',

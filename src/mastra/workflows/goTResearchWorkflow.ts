@@ -1,7 +1,13 @@
 import { z } from 'zod';
 // Workflow 型を明示的にインポート
 import { Workflow, Step, WorkflowContext, StepExecutionContext } from '@mastra/core/workflows';
-import { clarityCheckAgent, clarificationPromptAgent, thoughtGeneratorAgent, thoughtTransformerAgent } from '../agents';
+import {
+    clarityCheckAgent,
+    clarificationPromptAgent,
+    thoughtGeneratorAgent,
+    thoughtTransformerAgent,
+    synthesizerAgent
+} from '../agents';
 import { processThoughtsWorkflow, thoughtEvaluationSchema } from './processThoughtsWorkflow';
 // ★ mastra インスタンスをインポート ★
 import { mastra } from '..';
@@ -49,6 +55,68 @@ const transformThoughtInputSchema = z.object({
 
 // ★ transformThoughtStep の出力スキーマを定義 (サブクエスチョンのリスト)
 const transformThoughtOutputSchema = subQuestionsOutputSchema;
+
+// ★ 型定義を追加
+type TransformThoughtOutput = z.infer<typeof transformThoughtOutputSchema>;
+
+// ★ synthesizeStep の入力スキーマを定義
+const synthesizeInputSchema = z.object({
+  initialThoughts: initialThoughtsOutputSchema.shape.thoughts, // initialThoughtsStep の出力から thoughts を取得
+  subQuestions: transformThoughtOutputSchema.shape.subQuestions, // transformThoughtStep の出力から subQuestions を取得
+});
+
+// ★ synthesizeStep の出力スキーマを定義
+const synthesizeOutputSchema = z.object({
+  report: z.string().describe("Synthesized final report in Markdown format."),
+});
+
+// ★ NEW: prepareProcessThoughtsInput の入力スキーマ
+const prepareProcessThoughtsInputSchema = z.object({
+  thoughts: initialThoughtsOutputSchema.shape.thoughts,
+  query: triggerSchema.shape.query,
+});
+
+// ★ NEW: prepareProcessThoughtsInput の出力スキーマ (processThoughtsWorkflow のトリガースキーマに合わせる)
+const prepareProcessThoughtsOutputSchema = z.object({
+  thoughts: z.array(z.string()),
+  originalQuery: z.string(), // processThoughtsWorkflow 側の期待する名前
+});
+
+// ★ NEW: prepareSynthesizeInput の入力スキーマ
+const prepareSynthesizeInputSchema = z.object({
+  initialThoughts: initialThoughtsOutputSchema.shape.thoughts,
+  subQuestions: transformThoughtOutputSchema.shape.subQuestions,
+});
+
+// ★ NEW: prepareSynthesizeInput の出力スキーマ (synthesizeStep の入力スキーマと同じ)
+const prepareSynthesizeOutputSchema = synthesizeInputSchema;
+
+// 文字列入力のためのヘルパー関数を追加
+function reconstructStringFromObjectIfNeeded(input: any): string {
+  if (input === null || input === undefined) {
+    return '';
+  }
+
+  // 入力がオブジェクトで、数値キー（"0", "1", "2"...）を持っているかチェック
+  if (typeof input === 'object' && input !== null) {
+    // 数値キーが連続しているかチェック
+    const keys = Object.keys(input).filter(k => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
+    
+    // キーが連続した数値（"0", "1", "2"...）の場合、文字列として再構築
+    if (keys.length > 0 && keys.every((k, i) => Number(k) === i)) {
+      // 配列に変換して結合
+      return keys.map(k => input[k]).join('');
+    }
+  }
+
+  // すでに文字列の場合はそのまま返す
+  if (typeof input === 'string') {
+    return input;
+  }
+
+  // その他の場合は文字列化
+  return String(input);
+}
 
 // ジェネリックなしの Workflow 型を試す
 export const goTResearchWorkflow: Workflow = new Workflow({
@@ -162,155 +230,275 @@ const requestClarificationStep = new Step({
 // initialThoughtsStep の定義
 const initialThoughtsStep = new Step({
   id: 'initialThoughtsStep',
-  description: '明確な質問に基づき、初期思考を生成するステップ',
+  description: 'ユーザーの質問を基に最初の思考群を生成するステップ',
+  // デバッグのため一時的に any に変更
   inputSchema: z.any().optional(),
   outputSchema: initialThoughtsOutputSchema,
   execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
     const logger = mastra.getLogger();
-    let query = context.triggerData.query; // デフォルトは元のクエリ
 
-    // ★★★ 修正点 ★★★
-    // 1. requestClarificationStep の結果を取得
-    const clarificationStepResult = context.getStepResult(requestClarificationStep) as RequestClarificationOutput | null;
-
-    // 2. clarifiedQuery が存在し、空でなければ、それを使用
-    if (clarificationStepResult?.clarifiedQuery && clarificationStepResult.clarifiedQuery !== '') {
-        logger.info("(InitialThoughtsStep) Using clarified query", { clarifiedQuery: clarificationStepResult.clarifiedQuery });
-        query = clarificationStepResult.clarifiedQuery;
-    } else {
-        // clarifiedQuery がない場合（clarityCheckStep が true だった、またはエラー）は元のクエリを使用
-        logger.info("(InitialThoughtsStep) Using original query (clarification not needed or available)", { query });
-        // query はデフォルト値のまま
-    }
-
-    logger.info("(InitialThoughtsStep) Generating initial thoughts for query", { query });
-    let generatedThoughts: string[] = ["エラー: 初期思考の生成に失敗しました。"];
+    // ★★★ デバッグログ ★★★
+    logger.info('--- [DEBUG] initialThoughtsStep context.inputData ---');
+    logger.info(`typeof context.inputData: ${typeof context.inputData}`);
     try {
-        const agentResponse = await thoughtGeneratorAgent.generate(
-             `与えられた質問「${query}」について、質問内で指定された主要な観点（例：コスト、技術、政策、社会的側面など）それぞれに紐づく形で、調査の出発点となる初期思考を合計5つ程度提案してください。もし質問内に明確な観点が指定されていない場合は、多様な観点から提案してください。JSON配列形式で ["思考1", "思考2", ...] のように答えてください。`
-        );
-        if (agentResponse.text) {
-            try {
-                // ★★★ 追加: Markdownコードブロックを除去 ★★★
-                let responseText = agentResponse.text || '';
-                // 行頭の ```json とそれに続く空白/改行、および末尾の空白/改行と ``` を削除
-                responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-                
-                // ★★★ 修正後のテキストでパース ★★★
-                const parsed = JSON.parse(responseText);
-                if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
-                    generatedThoughts = parsed;
-                } else {
-                   logger.error("(InitialThoughtsStep) Parsed response is not an array of strings", { parsed });
-                   generatedThoughts = ["エラー: エージェントの応答形式が不正です (配列ではありません)。"];
-                }
-            } catch (parseError) {
-                logger.error("(InitialThoughtsStep) Failed to parse thought generator agent response", { error: parseError, responseText: agentResponse.text });
-                generatedThoughts = ["エラー: エージェントの応答をJSONとして解析できませんでした。"];
-            }
-        } else {
-            logger.error("(InitialThoughtsStep) Thought generator agent did not return text");
-            generatedThoughts = ["エラー: エージェントからテキスト応答がありませんでした。"];
-        }
-    } catch (error) {
-        logger.error("(InitialThoughtsStep) Failed to generate initial thoughts", { error });
-        generatedThoughts = ["エラー: 初期思考の生成中に問題が発生しました。"];
+      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
+    } catch (e) {
+      logger.error('context.inputData の JSON 文字列化に失敗:', { error: String(e) });
+      logger.info(`context.inputData (raw): ${String(context.inputData)}`);
+    }
+    logger.info('--- [DEBUG] End initialThoughtsStep context.inputData ---');
+
+    // 入力データから query を取得
+    let query = '';
+    
+    // ★ 文字列処理の修正: 入力が文字列オブジェクトの場合の処理を追加
+    // "0": "文", "1": "字",... の形式から文字列を再構築
+    if (context.inputData) {
+      // 文字列を再構築
+      query = reconstructStringFromObjectIfNeeded(context.inputData);
+      logger.info(`[DEBUG] Reconstructed query: "${query}"`);
     }
 
-    logger.info("(InitialThoughtsStep) Generated initial thoughts", { generatedThoughts });
+    // トリガーデータから取得（初回実行時）
+    if (!query && context.triggerData) {
+      query = context.triggerData.query;
+      logger.info(`[DEBUG] Using trigger query: "${query}"`);
+    }
+
+    // 明確化チェック後の入力がある場合はそれを使用（第2パスの場合）
+    const clarificationResult = context.getStepResult(requestClarificationStep) as RequestClarificationOutput | null;
+    if (clarificationResult && clarificationResult.clarifiedQuery) {
+      query = clarificationResult.clarifiedQuery;
+      logger.info(`[DEBUG] Using clarified query: "${query}"`);
+    }
+
+    if (!query) {
+      logger.error("[ERROR] 質問の取得に失敗しました");
+      return { thoughts: ["エラー: 質問が見つかりませんでした。"] };
+    }
+
+    logger.info(`(InitialThoughts) 生成する思考のクエリ: ${query}`);
+
+    // ★ generate に query を直接渡す
+    const agentResponse = await thoughtGeneratorAgent.generate(query);
+
+    // ★ 結果のパース処理を元に戻す
+    let generatedThoughts: string[] = ["エラー: 初期思考の生成に失敗しました。"];
+    if (agentResponse && agentResponse.text) {
+        try {
+            let responseText = agentResponse.text.trim();
+            // マークダウンのコードブロックを除去
+            responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+            const parsed = JSON.parse(responseText);
+            if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+                generatedThoughts = parsed;
+            } else {
+                logger.error("(InitialThoughts) パース結果が文字列配列ではありません", { parsed });
+                generatedThoughts = ["エラー: エージェントの応答形式が不正です (配列ではありません)。"];
+            }
+        } catch (parseError) {
+            logger.error("(InitialThoughts) エージェント応答のJSONパースに失敗しました", { error: parseError, responseText: agentResponse.text });
+            generatedThoughts = ["エラー: エージェントの応答をJSONとして解析できませんでした。", agentResponse.text];
+        }
+    } else {
+        // ★ logger.error から第二引数を削除
+        logger.error("(InitialThoughts) エージェントからテキスト応答がありませんでした");
+        generatedThoughts = ["エラー: エージェントからテキスト応答がありませんでした。"];
+    }
+
+    logger.info(`(InitialThoughts) 生成された思考: ${generatedThoughts.length}件`);
     return { thoughts: generatedThoughts };
   },
 });
+
+// ★ NEW: prepareProcessThoughtsInput ステップ
+const prepareProcessThoughtsInput = new Step({
+    id: 'prepareProcessThoughtsInput',
+    description: 'processThoughtsWorkflow への入力を準備するステップ',
+    inputSchema: z.any().optional(),
+    outputSchema: prepareProcessThoughtsOutputSchema,
+    execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
+        const logger = mastra.getLogger();
+        const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
+        const thoughts = initialThoughtsResult?.thoughts ?? [];
+        const query = context.triggerData.query;
+        logger.info("(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow", { thoughtsCount: thoughts.length, query });
+        return {
+            thoughts: thoughts,
+            originalQuery: query
+        };
+    },
+});
+
+// ★ NEW: prepareSynthesizeInput ステップ
+const prepareSynthesizeInput = new Step({
+    id: 'prepareSynthesizeInput',
+    description: 'synthesizeStep への入力を準備するステップ',
+    inputSchema: z.any().optional(),
+    outputSchema: prepareSynthesizeOutputSchema,
+    execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
+        const logger = mastra.getLogger();
+        const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
+        const initialThoughts = initialThoughtsResult?.thoughts ?? [];
+        // ★ transformThoughtStep の出力型を明示的に取得
+        const transformResult = context.getStepResult(transformThoughtStep) as z.infer<typeof transformThoughtOutputSchema> | null;
+        const subQuestions = transformResult?.subQuestions ?? [];
+        logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", { initialThoughtsCount: initialThoughts.length, subQuestionsCount: subQuestions.length });
+        return {
+            initialThoughts: initialThoughts,
+            subQuestions: subQuestions,
+        };
+    },
+});
+
+// ★ transformThoughtStep の execute 関数の入力型を事前に定義
+const transformStepInputType = z.object({ selectedThought: thoughtEvaluationSchema.optional() });
 
 // ★ 新しいステップ: transformThoughtStep
 const transformThoughtStep = new Step({
   id: 'transformThoughtStep',
   description: '選択された思考を基にサブクエスチョンを生成するステップ',
-  inputSchema: transformThoughtInputSchema,
+  inputSchema: transformStepInputType, // ★ 事前定義した型を使用
   outputSchema: transformThoughtOutputSchema,
-  execute: async ({ context }: StepExecutionContext<typeof transformThoughtInputSchema>) => {
+  // ★ execute の型パラメータを修正: ステップ自身を参照せず、直接スキーマを指定 -> ★ 事前定義した型を使用
+  execute: async ({ context }: StepExecutionContext<typeof transformStepInputType, WorkflowContext<typeof triggerSchema>>) => {
     const logger = mastra.getLogger();
-    const { selectedThought, query } = context.inputData;
-    
-    // 選択された思考がない場合（エラーなど）
-    if (!selectedThought || !selectedThought.selectedThought) {
-      logger.warn("(TransformThoughtStep) No selected thought to transform. Skipping.");
-      // サブクエスチョンが生成できなかったことを示す空リストを返す
+    const selectedThoughtData = context.inputData.selectedThought;
+    const query = context.triggerData.query;
+
+    if (!selectedThoughtData) {
+      logger.warn("(TransformThoughtStep) No selected thought received from processThoughtsWorkflow. Skipping.");
       return { subQuestions: [] };
     }
-    
-    const selectedThoughtData = selectedThought.selectedThought;
-    logger.info("(TransformThoughtStep) Transforming thought:", { 
+
+    logger.info("(TransformThoughtStep) Transforming thought:", {
       thought: selectedThoughtData.thought,
       score: selectedThoughtData.score,
       reasoning: selectedThoughtData.reasoning
     });
-    
+
     try {
-      // ThoughtTransformerAgent のヘルパー関数を使用してサブクエスチョンを生成
       const result = await generateSubQuestions({
         selectedThought: selectedThoughtData.thought,
         originalQuery: query,
       });
-      
       logger.info("(TransformThoughtStep) Generated sub-questions:", { subQuestions: result.subQuestions });
       return result;
     } catch (error) {
       logger.error("(TransformThoughtStep) Error generating sub-questions:", { error });
-      return { subQuestions: [] }; // エラー時は空のリストを返す
+      return { subQuestions: [] };
     }
   },
 });
 
-// 直線的なワークフロー構造を定義
+// ★ 新しいステップ: synthesizeStep
+const synthesizeStep = new Step({
+  id: 'synthesizeStep',
+  description: '初期思考とサブクエスチョンを統合して最終レポートを生成するステップ',
+  inputSchema: synthesizeInputSchema,
+  outputSchema: synthesizeOutputSchema,
+  execute: async ({ context }: StepExecutionContext<typeof synthesizeInputSchema>) => {
+    const logger = mastra.getLogger();
+
+    // ★★★ デバッグログを追加 ★★★
+    logger.info('--- [DEBUG] synthesizeStep context.inputData ---');
+    logger.info(`typeof context.inputData: ${typeof context.inputData}`);
+    try {
+      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
+    } catch (e) {
+      logger.error('synthesizeStep context.inputData の JSON 文字列化に失敗:', { error: String(e) });
+      logger.info(`synthesizeStep context.inputData (raw): ${String(context.inputData)}`);
+    }
+    logger.info('--- [DEBUG] End synthesizeStep context.inputData ---');
+
+    // 入力からデータを抽出、オブジェクトに変換された文字列の可能性を考慮
+    let initialThoughts: string[] = [];
+    let subQuestions: string[] = [];
+
+    try {
+      // 初期の思考とサブクエスチョンを取得
+      // 可能であれば前のステップから
+      const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
+      if (initialThoughtsResult) {
+        initialThoughts = initialThoughtsResult.thoughts || [];
+      }
+
+      const transformResult = context.getStepResult(transformThoughtStep) as TransformThoughtOutput | null;
+      if (transformResult) {
+        subQuestions = transformResult.subQuestions || [];
+      }
+
+      // InputData から取得 (文字列化された可能性を考慮)
+      if (initialThoughts.length === 0 && context.inputData && context.inputData.initialThoughts) {
+        initialThoughts = Array.isArray(context.inputData.initialThoughts) 
+                         ? context.inputData.initialThoughts 
+                         : [reconstructStringFromObjectIfNeeded(context.inputData.initialThoughts)];
+      }
+
+      if (subQuestions.length === 0 && context.inputData && context.inputData.subQuestions) {
+        subQuestions = Array.isArray(context.inputData.subQuestions) 
+                     ? context.inputData.subQuestions 
+                     : [reconstructStringFromObjectIfNeeded(context.inputData.subQuestions)];
+      }
+
+      logger.info(`[DEBUG] Initial thoughts: ${JSON.stringify(initialThoughts)}`);
+      logger.info(`[DEBUG] SubQuestions: ${JSON.stringify(subQuestions)}`);
+
+      const prompt = `
+以下の情報を統合し、構造化された最終レポートをMarkdown形式で生成してください。
+
+### 初期思考
+${initialThoughts.map(t => `- ${t}`).join('\n')}
+
+### サブクエスチョン
+${subQuestions.map(q => `- ${q}`).join('\n')}
+
+レポート:
+`;
+
+      const result = await synthesizerAgent.generate(prompt);
+      const report = result.text || 'エラー: レポートの生成に失敗しました。';
+      logger.info("(SynthesizeStep) Generated report successfully.");
+      // 最終レポートの内容を詳細にログ出力
+      logger.info("=========== 最終レポート内容 =============");
+      logger.info(report);
+      logger.info("=========== 最終レポート終了 =============");
+      return { report };
+    } catch (error) {
+      // ★ エラーをオブジェクトでラップ
+      logger.error("(SynthesizeStep) Error calling synthesizerAgent:", { error: String(error) });
+      return { report: 'エラー: レポート生成中に問題が発生しました。' };
+    }
+  },
+});
+
+// ★★★ ワークフローチェインの修正 ★★★
 goTResearchWorkflow
   .step(clarityCheckStep)
+  // requestClarificationStep は clarityCheckStep の出力を暗黙的に受け取る
   .then(requestClarificationStep)
+  // initialThoughtsStep は requestClarificationStep の出力を暗黙的に受け取る
   .then(initialThoughtsStep)
+  // ★ 中間ステップ prepareProcessThoughtsInput を挿入
+  .then(prepareProcessThoughtsInput)
+  // ★ processThoughtsWorkflow は prepareProcessThoughtsInput の出力を variables でマッピング
   .then(processThoughtsWorkflow, {
     variables: {
-      thoughts: { step: initialThoughtsStep, path: 'thoughts' },
-      originalQuery: { workflow: 'trigger', path: 'query' } // originalQuery パラメータを渡す
+      // '$output' は直前の prepareProcessThoughtsInput の出力全体を指す
+      trigger: { step: prepareProcessThoughtsInput, path: '$output' }
     }
   })
-  // ★ 新しいステップ: processThoughtsWorkflow の次に transformThoughtStep を実行
-  .then(transformThoughtStep, {
-    variables: {
-      selectedThought: { step: processThoughtsWorkflow, path: '$output' }, // サブワークフローの出力全体を渡す
-      query: { workflow: 'trigger', path: 'query' }  // 元のクエリも渡す
-    }
-  })
+  // ★ transformThoughtStep は processThoughtsWorkflow の出力を暗黙的に受け取る
+  .then(transformThoughtStep)
+  // ★ 中間ステップ prepareSynthesizeInput を挿入
+  .then(prepareSynthesizeInput)
+  // ★ synthesizeStep は prepareSynthesizeInput の出力を暗黙的に受け取る
+  .then(synthesizeStep)
   .commit();
 
-// --- 共通関数: 初期思考生成 ---
+// --- 共通関数: 初期思考生成 (現在は未使用) ---
+/*
 async function generateInitialThoughts(query: string): Promise<string[]> {
-    console.log("(generateInitialThoughts) Generating thoughts for query:", query);
-    let generatedThoughts: string[] = ["エラー: 初期思考の生成に失敗しました。"];
-     try {
-        const agentResponse = await thoughtGeneratorAgent.generate(
-             `与えられた質問「${query}」について、多様な観点からの初期思考を5つ提案してください。JSON配列形式で ["思考1", "思考2", ...] のように答えてください。`
-        );
-        if (agentResponse.text) {
-            try {
-                const parsed = JSON.parse(agentResponse.text);
-                if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
-                    generatedThoughts = parsed;
-                } else {
-                   console.error("(generateInitialThoughts) Parsed response is not an array of strings:", parsed);
-                   generatedThoughts = ["エラー: エージェントの応答形式が不正です (配列ではありません)。"];
-                }
-            } catch (parseError) {
-                console.error("(generateInitialThoughts) Failed to parse thought generator agent response:", parseError, "Response text:", agentResponse.text);
-                generatedThoughts = ["エラー: エージェントの応答をJSONとして解析できませんでした。"];
-            }
-        } else {
-            console.error("(generateInitialThoughts) Thought generator agent did not return text.");
-            generatedThoughts = ["エラー: エージェントからテキスト応答がありませんでした。"];
-        }
-    } catch (error) {
-        console.error("(generateInitialThoughts) Failed to generate initial thoughts:", error);
-        generatedThoughts = ["エラー: 初期思考の生成中に問題が発生しました。"];
-    }
-    console.log("(generateInitialThoughts) Generated thoughts:", generatedThoughts);
-    return generatedThoughts;
-} 
+    // ... (省略) ...
+}
+*/ 
