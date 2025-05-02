@@ -8,6 +8,7 @@ import { toast } from 'sonner';
 import { createClient } from '@/utils/supabase/client';
 import { AuthForm } from '@/components/auth-form';
 import { SubmitButton } from '@/components/submit-button';
+import { DiscordLoginButton } from '@/components/discord-login-button';
 
 export default function Page() {
   const router = useRouter();
@@ -52,6 +53,18 @@ export default function Page() {
         </div>
         <AuthForm action={handleSubmit} defaultEmail={email}>
           <SubmitButton isLoading={isLoading}>Sign In</SubmitButton>
+          
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <span className="w-full border-t" />
+            </div>
+            <div className="relative flex justify-center text-xs uppercase">
+              <span className="bg-background px-2 text-muted-foreground">または</span>
+            </div>
+          </div>
+          
+          <DiscordLoginButton />
+          
           <p className="text-center text-sm text-gray-600 mt-4 dark:text-zinc-400">
             {"Don't have an account? "}
             <Link

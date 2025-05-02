@@ -6,7 +6,7 @@ import { Mastra, Telemetry } from '@mastra/core';
 import { createLogger } from '@mastra/core/logger';
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { weatherTool, webSearchTool } from './tools/1d364dd0-2de8-4440-ab4c-3bae798b13de.mjs';
+import { weatherTool, webSearchTool } from './tools/152337d2-dcf1-41a2-90bc-9d4eb257b182.mjs';
 import { z } from 'zod';
 import { Workflow, Step } from '@mastra/core/workflows';
 import crypto, { randomUUID } from 'crypto';
@@ -267,6 +267,7 @@ const selectNodeStep = new Step({
       selectedThought: bestThought?.thought,
       score: bestThought?.score
     });
+    logger.info("--- [DEBUG] selectNodeStep returning --- ", { selectedThought: bestThought });
     return { selectedThought: bestThought };
   }
 });
@@ -491,7 +492,8 @@ const prepareProcessThoughtsInput = new Step({
     const logger = mastra.getLogger();
     const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
     const thoughts = initialThoughtsResult?.thoughts ?? [];
-    const query = context.triggerData.query;
+    const clarification = context.getStepResult(requestClarificationStep);
+    const query = clarification?.clarifiedQuery ?? context.triggerData.query;
     logger.info("(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow", { thoughtsCount: thoughts.length, query });
     return {
       thoughts,
@@ -527,26 +529,42 @@ const transformThoughtStep = new Step({
   // ★ execute の型パラメータを修正: ステップ自身を参照せず、直接スキーマを指定 -> ★ 事前定義した型を使用
   execute: async ({ context }) => {
     const logger = mastra.getLogger();
-    const selectedThoughtData = context.inputData.selectedThought;
+    logger.info("--- [DEBUG] transformThoughtStep received inputData --- ");
+    try {
+      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
+    } catch (e) {
+      logger.error("transformThoughtStep context.inputData \u306E JSON \u6587\u5B57\u5217\u5316\u306B\u5931\u6557:", { error: String(e) });
+      logger.info(`transformThoughtStep context.inputData (raw): ${String(context.inputData)}`);
+    }
+    logger.info("--- [DEBUG] End transformThoughtStep received inputData ---");
+    let selectedThoughtData = context.inputData?.selectedThought;
+    if (!selectedThoughtData) {
+      const subResult = context.getStepResult(processThoughtsWorkflow);
+      if (subResult && subResult.selectedThought) {
+        selectedThoughtData = subResult.selectedThought;
+      }
+    }
     const query = context.triggerData.query;
     if (!selectedThoughtData) {
-      logger.warn("(TransformThoughtStep) No selected thought received from processThoughtsWorkflow. Skipping.");
+      logger.warn("(TransformThoughtStep) No valid selected thought received from processThoughtsWorkflow. Skipping.");
       return { subQuestions: [] };
     }
     logger.info("(TransformThoughtStep) Transforming thought:", {
+      // ★ 修正: selectedThoughtData から直接プロパティにアクセス
       thought: selectedThoughtData.thought,
       score: selectedThoughtData.score,
       reasoning: selectedThoughtData.reasoning
     });
     try {
       const result = await generateSubQuestions({
+        // ★ 修正: selectedThoughtData.thought を渡す
         selectedThought: selectedThoughtData.thought,
         originalQuery: query
       });
       logger.info("(TransformThoughtStep) Generated sub-questions:", { subQuestions: result.subQuestions });
       return result;
     } catch (error) {
-      logger.error("(TransformThoughtStep) Error generating sub-questions:", { error });
+      logger.error("(TransformThoughtStep) Error generating sub-questions:", { error: String(error) });
       return { subQuestions: [] };
     }
   }

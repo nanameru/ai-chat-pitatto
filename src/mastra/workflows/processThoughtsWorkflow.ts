@@ -111,6 +111,9 @@ const selectNodeStep = new Step({
              score: bestThought?.score,
         });
 
+        // ★ デバッグログ追加: 返却する bestThought の内容を確認
+        logger.info("--- [DEBUG] selectNodeStep returning --- ", { selectedThought: bestThought });
+
         return { selectedThought: bestThought };
     },
 });
