@@ -8,7 +8,11 @@ import {
     thoughtTransformerAgent,
     synthesizerAgent
 } from '../agents';
-import { processThoughtsWorkflow, thoughtEvaluationSchema, type ThoughtEvaluation } from './processThoughtsWorkflow';
+import {
+  processThoughtsWorkflow,
+  // ★ ThoughtEvaluation 型をインポート
+  type ThoughtEvaluation,
+} from './processThoughtsWorkflow';
 // ★ mastra インスタンスをインポート ★
 import { mastra } from '..';
 
@@ -54,15 +58,19 @@ const transformThoughtInputSchema = z.object({
 });
 
 // ★ transformThoughtStep の出力スキーマを定義 (サブクエスチョンのリスト)
-const transformThoughtOutputSchema = subQuestionsOutputSchema;
+const transformThoughtOutputSchema = z.object({
+  selectedThought: z.custom<ThoughtEvaluation>().optional(),
+  subQuestions: z.array(z.string()),
+});
 
 // ★ 型定義を追加
 type TransformThoughtOutput = z.infer<typeof transformThoughtOutputSchema>;
 
 // ★ synthesizeStep の入力スキーマを定義
 const synthesizeInputSchema = z.object({
-  initialThoughts: initialThoughtsOutputSchema.shape.thoughts, // initialThoughtsStep の出力から thoughts を取得
-  subQuestions: transformThoughtOutputSchema.shape.subQuestions, // transformThoughtStep の出力から subQuestions を取得
+  query: z.string(),
+  initialThoughts: z.array(z.string()),
+  subQuestions: z.array(z.string()),
 });
 
 // ★ synthesizeStep の出力スキーマを定義
@@ -329,7 +337,11 @@ const prepareProcessThoughtsInput = new Step({
         
         // initialThoughtsStep から思考リストを取得
         const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-        const reconstructedQuery = getReconstructedQuery(context);
+        
+        // requestClarificationStep の結果を取得
+        const clarificationResult = context.getStepResult(requestClarificationStep);
+        // 元のクエリまたは明確化されたクエリを取得
+        const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
         
         if (!initialThoughtsResult || !initialThoughtsResult.thoughts || !Array.isArray(initialThoughtsResult.thoughts)) {
           logger.error("Failed to retrieve thoughts from initialThoughtsStep");
@@ -358,15 +370,28 @@ const prepareSynthesizeInput = new Step({
     outputSchema: prepareSynthesizeOutputSchema,
     execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
         const logger = mastra.getLogger();
-        const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
+        
+        const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
+        // ★ ステップ名を文字列で指定
+        const transformThoughtResult = context.getStepResult(transformThoughtStep);
+        // requestClarificationStep の結果を取得
+        const clarificationResult = context.getStepResult(requestClarificationStep);
+        // 元のクエリまたは明確化されたクエリを取得
+        const query = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
+
         const initialThoughts = initialThoughtsResult?.thoughts ?? [];
-        // ★ transformThoughtStep の出力型を明示的に取得
-        const transformResult = context.getStepResult(transformThoughtStep) as z.infer<typeof transformThoughtOutputSchema> | null;
-        const subQuestions = transformResult?.subQuestions ?? [];
-        logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", { initialThoughtsCount: initialThoughts.length, subQuestionsCount: subQuestions.length });
-        return {
-            initialThoughts: initialThoughts,
-            subQuestions: subQuestions,
+        const subQuestions = transformThoughtResult?.subQuestions ?? [];
+
+        logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", {
+          initialThoughtsCount: initialThoughts.length,
+          subQuestionsCount: subQuestions.length,
+          query
+        });
+        
+        return { 
+          query: query,
+          initialThoughts: initialThoughts,
+          subQuestions: subQuestions
         };
     },
 });
@@ -383,12 +408,13 @@ const transformThoughtStep = new Step({
   execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
     const logger = mastra.getLogger();
 
-    // サブワークフローの結果にアクセス
-    const processThoughtsResult = context.getStepResult(processThoughtsWorkflow);
+    // サブワークフローの結果にアクセス (★ ステップ名を文字列で指定)
+    const processThoughtsResult = context.getStepResult('processThoughtsWorkflow');
     logger.info(`(TransformThoughtStep) processThoughtsResult: ${JSON.stringify(processThoughtsResult, null, 2)}`);
     
-    // サブワークフローから選択された思考を取得
-    const selectedThought = processThoughtsResult?.selectedThought;
+    // サブワークフローから選択された思考を取得 (型アサーションを使用)
+    // ★ processThoughtsResult の存在確認を追加
+    const selectedThought = processThoughtsResult?.selectedThought as ThoughtEvaluation | undefined;
     
     if (!selectedThought || !selectedThought.thought) {
       logger.warn("(TransformThoughtStep) No valid selected thought retrieved. Skipping sub-question generation.");
@@ -399,17 +425,24 @@ const transformThoughtStep = new Step({
     logger.info(`(TransformThoughtStep) Score: ${selectedThought.score}`);
     logger.info(`(TransformThoughtStep) Reasoning: ${selectedThought.reasoning}`);
     
+    // requestClarificationStep の結果を取得
+    const clarificationResult = context.getStepResult(requestClarificationStep);
+    // 元のクエリまたは明確化されたクエリを取得
+    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
+
     // 選択された思考に基づいてサブクエスチョンを生成
     try {
-      const response = await thoughtTransformerAgent.generate({
-        messages: [
+      // ★ Agent の generate 呼び出しを修正
+      const { text: responseText } = await thoughtTransformerAgent.generate(
+        [
           {
             role: 'system',
             content: `あなたは選択された思考から関連するサブクエスチョンを生成するエキスパートです。与えられた思考をさらに探求するような質問を考えてください。`,
           },
           {
             role: 'user',
-            content: `元の質問: "${getReconstructedQuery(context)}"
+            // ★ reconstructedQuery を使用
+            content: `元の質問: "${reconstructedQuery}"
             
             選択された思考: "${selectedThought.thought}"
             
@@ -423,11 +456,11 @@ const transformThoughtStep = new Step({
               ]
             }`,
           },
-        ],
-      });
+        ]
+      );
       
       // レスポンスからJSONを抽出して解析
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
       const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
       
       if (result && Array.isArray(result.subQuestions)) {
@@ -538,7 +571,9 @@ ${subQuestions.map(q => `- ${q}`).join('\n')}
 goTResearchWorkflow
   .step(clarityCheckStep)
   .then(requestClarificationStep, {
-    when: (context) => !context.getStepResult(clarityCheckStep)?.isClear,
+    // ★ when 条件の context 型を WorkflowContext<typeof triggerSchema> に修正
+    when: (context: WorkflowContext<typeof triggerSchema>) => 
+      !context.getStepResult(clarityCheckStep)?.isClear,
   })
   .then(initialThoughtsStep)
   .then(prepareProcessThoughtsInput)

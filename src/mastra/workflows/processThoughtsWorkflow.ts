@@ -1,6 +1,6 @@
 // src/mastra/workflows/processThoughtsWorkflow.ts
 import { z } from 'zod';
-import { Workflow, Step, StepExecutionContext } from '@mastra/core/workflows';
+import { Workflow, Step, StepExecutionContext, WorkflowContext } from '@mastra/core/workflows';
 import { thoughtEvaluatorAgent } from '../agents';
 import { mastra } from '..';
 
@@ -10,6 +10,9 @@ export const thoughtEvaluationSchema = z.object({
   score: z.number().min(1).max(10).describe("評価スコア (1-10)"),
   reasoning: z.string().describe("評価理由"),
 });
+
+// ★ ThoughtEvaluation 型をエクスポート
+export type ThoughtEvaluation = z.infer<typeof thoughtEvaluationSchema>;
 
 // サブワークフローの出力スキーマを明示的に定義
 export const processThoughtsOutputSchema = z.object({
@@ -22,18 +25,22 @@ const triggerSchema = z.object({
   originalQuery: z.string().describe("元のユーザーからの質問"),
 });
 
+// evaluateThoughtsStep の input/output スキーマ定義
+const evaluateThoughtsInputSchema = z.object({
+  thoughts: z.array(z.string()).describe("評価する思考のリスト"),
+  originalQuery: z.string().describe("元のユーザーからの質問"),
+});
+const evaluateThoughtsOutputSchema = z.object({
+  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
+});
+
 // 評価対象の思考を評価するステップ
 const evaluateThoughtsStep = new Step({
   id: 'evaluateThoughtsStep',
   description: '生成された思考を評価するステップ',
-  inputSchema: z.object({
-    thoughts: z.array(z.string()).describe("評価する思考のリスト"),
-    originalQuery: z.string().describe("元のユーザーからの質問"),
-  }),
-  outputSchema: z.object({
-    evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
-  }),
-  execute: async ({ context }: StepExecutionContext<{thoughts: string[], originalQuery: string}, any>) => {
+  inputSchema: evaluateThoughtsInputSchema,
+  outputSchema: evaluateThoughtsOutputSchema,
+  execute: async ({ context }: StepExecutionContext<typeof evaluateThoughtsInputSchema, any>) => {
     const logger = mastra.getLogger();
 
     logger.info("--- [DEBUG] evaluateThoughtsStep received input data ---");
@@ -53,8 +60,8 @@ const evaluateThoughtsStep = new Step({
     const evaluatedThoughts = [];
     for (const thought of thoughts) {
       try {
-        const response = await thoughtEvaluatorAgent.generate({
-          messages: [
+        const { text: responseText } = await thoughtEvaluatorAgent.generate(
+          [
             {
               role: 'system',
               content: `あなたは思考評価エキスパートです。与えられた思考を評価し、1から10のスコアをつけてください。
@@ -78,12 +85,11 @@ const evaluateThoughtsStep = new Step({
                 "reasoning": "評価理由の説明"
               }`,
             },
-          ],
-        });
+          ]
+        );
 
         try {
-          // レスポンスからJSONを抽出して解析
-          const jsonMatch = response.match(/\{[\s\S]*\}/);
+          const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
           const evaluationResult = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
           
           if (evaluationResult && typeof evaluationResult.score === 'number') {
@@ -118,15 +124,18 @@ const evaluateThoughtsStep = new Step({
   },
 });
 
+// selectNodeStep の input スキーマ定義
+const selectNodeInputSchema = z.object({
+  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
+});
+
 // 最も良い思考を選択するステップ
 const selectNodeStep = new Step({
   id: 'selectNodeStep',
   description: '評価結果から最も良い思考を選択するステップ',
-  inputSchema: z.object({
-    evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("評価された思考のリスト"),
-  }),
+  inputSchema: selectNodeInputSchema,
   outputSchema: processThoughtsOutputSchema,
-  execute: async ({ context }: StepExecutionContext<{evaluatedThoughts: Array<{thought: string, score: number, reasoning: string}>}, any>) => {
+  execute: async ({ context }: StepExecutionContext<typeof selectNodeInputSchema, any>) => {
     const logger = mastra.getLogger();
     
     const evaluatedThoughts = context.inputData.evaluatedThoughts || [];
@@ -167,3 +176,5 @@ export const processThoughtsWorkflow = new Workflow({
 .step(evaluateThoughtsStep)
 .then(selectNodeStep)
 .commit();
+
+// ... コメントは省略 ...
