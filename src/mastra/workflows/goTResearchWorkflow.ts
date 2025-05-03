@@ -12,9 +12,11 @@ import {
   processThoughtsWorkflow,
   // ★ ThoughtEvaluation 型をインポート
   type ThoughtEvaluation,
+  // ★ thoughtEvaluationSchema をインポート
+  thoughtEvaluationSchema,
 } from './processThoughtsWorkflow';
-// ★ mastra インスタンスをインポート ★
-import { mastra } from '..';
+// ★ getLogger をインポート ★
+import { getLogger } from '..';
 
 // ★ ThoughtTransformerAgent の generateSubQuestions 関数と出力スキーマをインポート
 import { generateSubQuestions, subQuestionsOutputSchema } from '../agents/thoughtTransformerAgent';
@@ -52,6 +54,7 @@ type InitialThoughtsOutput = z.infer<typeof initialThoughtsOutputSchema>;
 // ★ transformThoughtStep の入力スキーマを定義
 const transformThoughtInputSchema = z.object({
   selectedThought: z.object({
+    // ★ インポートしたスキーマを使用
     selectedThought: thoughtEvaluationSchema.optional().describe("選択された思考とその評価"),
   }).describe("processThoughtsWorkflow からの選択された思考"),
   query: triggerSchema.shape.query.describe("元のユーザーからの質問"),
@@ -139,7 +142,7 @@ const clarityCheckStep = new Step({
   inputSchema: triggerSchema,
   outputSchema: clarityCheckOutputSchema,
   execute: async ({ context }: StepExecutionContext<typeof triggerSchema>) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     logger.info("(ClarityCheckStep) Checking clarity for query", { query: context.triggerData.query });
     try {
         const result = await clarityCheckAgent.generate(
@@ -173,7 +176,7 @@ const requestClarificationStep = new Step({
   inputSchema: z.any().optional(),
   outputSchema: requestClarificationOutputSchema,
   execute: async ({ context, suspend }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     // ★★★ デバッグ用: context の内容をログ出力 ★★★
     console.log("--- RequestClarificationStep Context Start ---");
     console.log(JSON.stringify(context, null, 2));
@@ -243,7 +246,7 @@ const initialThoughtsStep = new Step({
   inputSchema: z.any().optional(),
   outputSchema: initialThoughtsOutputSchema,
   execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
 
     // ★★★ デバッグログ ★★★
     logger.info('--- [DEBUG] initialThoughtsStep context.inputData ---');
@@ -329,7 +332,7 @@ const prepareProcessThoughtsInput = new Step({
       originalQuery: z.string(),
     }),
     execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-        const logger = mastra.getLogger();
+        const logger = getLogger();
         
         // デバッグログ追加
         logger.info("--- [DEBUG] prepareProcessThoughtsInput context ---");
@@ -369,7 +372,7 @@ const prepareSynthesizeInput = new Step({
     inputSchema: z.any().optional(),
     outputSchema: prepareSynthesizeOutputSchema,
     execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-        const logger = mastra.getLogger();
+        const logger = getLogger();
         
         const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
         // ★ ステップ名を文字列で指定
@@ -396,9 +399,6 @@ const prepareSynthesizeInput = new Step({
     },
 });
 
-// ★ transformThoughtStep の execute 関数の入力型を事前に定義
-const transformStepInputType = z.object({ selectedThought: thoughtEvaluationSchema.optional() });
-
 // ★ 新しいステップ: transformThoughtStep
 const transformThoughtStep = new Step({
   id: 'transformThoughtStep',
@@ -406,19 +406,35 @@ const transformThoughtStep = new Step({
   inputSchema: z.any(), // 入力は processThoughtsWorkflow の結果
   outputSchema: transformThoughtOutputSchema,
   execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
 
-    // サブワークフローの結果にアクセス (★ ステップ名を文字列で指定)
+    // サブワークフローの結果にアクセス
     const processThoughtsResult = context.getStepResult('processThoughtsWorkflow');
-    logger.info(`(TransformThoughtStep) processThoughtsResult: ${JSON.stringify(processThoughtsResult, null, 2)}`);
     
-    // サブワークフローから選択された思考を取得 (型アサーションを使用)
-    // ★ processThoughtsResult の存在確認を追加
-    const selectedThought = processThoughtsResult?.selectedThought as ThoughtEvaluation | undefined;
+    // ★★★ デバッグログ強化: 取得した結果オブジェクトの中身を確認 ★★★
+    logger.info("(TransformThoughtStep) Detailed processThoughtsResult:", { 
+      keys: processThoughtsResult ? Object.keys(processThoughtsResult) : 'null', 
+      hasResultProp: processThoughtsResult?.hasOwnProperty('result'),
+      resultProp: processThoughtsResult?.result,
+      raw: processThoughtsResult 
+    });
     
+    // selectedThought を取得するロジックを修正
+    let selectedThought: ThoughtEvaluation | undefined = undefined;
+    if (processThoughtsResult && typeof processThoughtsResult === 'object' && processThoughtsResult.result) {
+        // result プロパティが存在し、その中に selectedThought があれば取得
+        selectedThought = processThoughtsResult.result.selectedThought as ThoughtEvaluation | undefined;
+        logger.info("(TransformThoughtStep) Attempted to get selectedThought from processThoughtsResult.result");
+    } else {
+        logger.warn("(TransformThoughtStep) processThoughtsResult or processThoughtsResult.result is missing or invalid.");
+    }
+    
+    // ★ デバッグログ追加: 取得試行後の selectedThought の値を確認
+    logger.info("(TransformThoughtStep) Value of selectedThought after extraction attempt:", { selectedThought });
+
     if (!selectedThought || !selectedThought.thought) {
-      logger.warn("(TransformThoughtStep) No valid selected thought retrieved. Skipping sub-question generation.");
-      return { subQuestions: [] };
+      logger.warn("(TransformThoughtStep) No valid selected thought found after extraction. Skipping sub-question generation.");
+      return { selectedThought: undefined, subQuestions: [] }; 
     }
     
     logger.info(`(TransformThoughtStep) Selected thought: ${selectedThought.thought}`);
@@ -493,7 +509,7 @@ const synthesizeStep = new Step({
   inputSchema: synthesizeInputSchema,
   outputSchema: synthesizeOutputSchema,
   execute: async ({ context }: StepExecutionContext<typeof synthesizeInputSchema>) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
 
     // ★★★ デバッグログを追加 ★★★
     logger.info('--- [DEBUG] synthesizeStep context.inputData ---');
@@ -571,9 +587,12 @@ ${subQuestions.map(q => `- ${q}`).join('\n')}
 goTResearchWorkflow
   .step(clarityCheckStep)
   .then(requestClarificationStep, {
-    // ★ when 条件の context 型を WorkflowContext<typeof triggerSchema> に修正
-    when: (context: WorkflowContext<typeof triggerSchema>) => 
-      !context.getStepResult(clarityCheckStep)?.isClear,
+    // ★ when 条件を async に修正
+    when: async ({ context }: { context: WorkflowContext<typeof triggerSchema> }) => {
+      // ★ 結果取得を await する必要はない
+      const clarityResult = context.getStepResult(clarityCheckStep);
+      return !clarityResult?.isClear;
+    },
   })
   .then(initialThoughtsStep)
   .then(prepareProcessThoughtsInput)

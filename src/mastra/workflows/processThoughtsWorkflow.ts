@@ -2,7 +2,7 @@
 import { z } from 'zod';
 import { Workflow, Step, StepExecutionContext, WorkflowContext } from '@mastra/core/workflows';
 import { thoughtEvaluatorAgent } from '../agents';
-import { mastra } from '..';
+import { getLogger } from '..';
 
 // 評価結果スキーマ定義を追加（他のスキーマより先に定義）
 export const thoughtEvaluationSchema = z.object({
@@ -40,21 +40,21 @@ const evaluateThoughtsStep = new Step({
   description: '生成された思考を評価するステップ',
   inputSchema: evaluateThoughtsInputSchema,
   outputSchema: evaluateThoughtsOutputSchema,
-  execute: async ({ context }: StepExecutionContext<typeof evaluateThoughtsInputSchema, any>) => {
-    const logger = mastra.getLogger();
+  execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
+    const logger = getLogger();
 
-    logger.info("--- [DEBUG] evaluateThoughtsStep received input data ---");
-    logger.info(`context.inputData: ${JSON.stringify(context.inputData, null, 2)}`);
+    logger.info("--- [DEBUG] evaluateThoughtsStep received context ---");
+    logger.info(`context.triggerData: ${JSON.stringify(context.triggerData, null, 2)}`);
     
-    const thoughts = context.inputData.thoughts || [];
-    const originalQuery = context.inputData.originalQuery || "";
+    const thoughts = context.triggerData.thoughts || [];
+    const originalQuery = context.triggerData.originalQuery || "";
 
     if (!thoughts || !Array.isArray(thoughts) || thoughts.length === 0) {
-      logger.error("(SubWorkflow - Evaluate) No valid thoughts array found in input");
+      logger.error("(SubWorkflow - Evaluate) No valid thoughts array found in triggerData");
       return { evaluatedThoughts: [] };
     }
 
-    logger.info(`(SubWorkflow - Evaluate) Evaluating ${thoughts.length} thoughts`);
+    logger.info(`(SubWorkflow - Evaluate) Evaluating ${thoughts.length} thoughts from triggerData`);
     
     // 思考評価ロジック
     const evaluatedThoughts = [];
@@ -135,21 +135,22 @@ const selectNodeStep = new Step({
   description: '評価結果から最も良い思考を選択するステップ',
   inputSchema: selectNodeInputSchema,
   outputSchema: processThoughtsOutputSchema,
-  execute: async ({ context }: StepExecutionContext<typeof selectNodeInputSchema, any>) => {
-    const logger = mastra.getLogger();
+  execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
+    const logger = getLogger();
     
-    const evaluatedThoughts = context.inputData.evaluatedThoughts || [];
+    const evaluateStepResult = context.getStepResult(evaluateThoughtsStep);
+    const evaluatedThoughts = evaluateStepResult?.evaluatedThoughts || [];
+
     logger.info(`(SubWorkflow - Select) Selecting node from ${evaluatedThoughts.length} evaluated thoughts`);
     
     if (!evaluatedThoughts || evaluatedThoughts.length === 0) {
       logger.warn("(SubWorkflow - Select) No thoughts to select from");
-      return {};
+      return { selectedThought: undefined };
     }
     
-    // 最高スコアの思考を選択
-    let bestThought = evaluatedThoughts[0];
+    let bestThought: ThoughtEvaluation | undefined = evaluatedThoughts[0];
     for (const thought of evaluatedThoughts) {
-      if (thought.score > bestThought.score) {
+      if (thought.score > (bestThought?.score || -1)) {
         bestThought = thought;
       }
     }
@@ -163,7 +164,8 @@ const selectNodeStep = new Step({
 export const processThoughtsWorkflow = new Workflow({
   name: 'processThoughtsWorkflow',
   triggerSchema: triggerSchema,
-  mastra,
+  // ★ mastra インスタンスの指定を削除
+  // mastra,
   
   // 結果スキーマとマッピングを追加
   result: {

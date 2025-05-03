@@ -6,7 +6,7 @@ import { Mastra, Telemetry } from '@mastra/core';
 import { createLogger } from '@mastra/core/logger';
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
-import { weatherTool, webSearchTool } from './tools/152337d2-dcf1-41a2-90bc-9d4eb257b182.mjs';
+import { weatherTool, webSearchTool } from './tools/c1d9055f-f962-4f2f-a963-16290db4125b.mjs';
 import { z } from 'zod';
 import { Workflow, Step } from '@mastra/core/workflows';
 import crypto, { randomUUID } from 'crypto';
@@ -53,24 +53,9 @@ z.object({
   selectedThought: z.string().describe("\u73FE\u5728\u6CE8\u76EE\u3057\u3066\u3044\u308B\u601D\u8003"),
   originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
 });
-const subQuestionsOutputSchema = z.object({
+z.object({
   subQuestions: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306E\u30EA\u30B9\u30C8")
 });
-const generateSubQuestionsPrompt = (input) => `
-\u3042\u306A\u305F\u306F\u512A\u79C0\u306A\u30EA\u30B5\u30FC\u30C1\u30E3\u30FC\u3067\u3059\u3002\u4EE5\u4E0B\u306E\u60C5\u5831\u306B\u57FA\u3065\u3044\u3066\u3001\u601D\u8003\u3092\u3055\u3089\u306B\u6DF1\u6398\u308A\u3059\u308B\u305F\u3081\u306E\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-\u5143\u306E\u8CEA\u554F:
-"${input.originalQuery}"
-
-\u73FE\u5728\u6CE8\u76EE\u3057\u3066\u3044\u308B\u601D\u8003:
-"${input.selectedThought}"
-
-\u3053\u306E\u601D\u8003\u304B\u3089\u6D3E\u751F\u3059\u308B\u3001\u8ABF\u67FB\u3092\u9032\u3081\u308B\u4E0A\u3067\u6B21\u306B\u660E\u3089\u304B\u306B\u3059\u308B\u3079\u304D\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u30923\u3064\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-\u5404\u8CEA\u554F\u306F\u3001\u5177\u4F53\u7684\u3067\u7126\u70B9\u3092\u7D5E\u308A\u3001\u53EF\u80FD\u3067\u3042\u308C\u3070\u7279\u5B9A\u306E\u60C5\u5831\u6E90\uFF08\u4F8B: Web\u691C\u7D22\u3001\u8AD6\u6587\u691C\u7D22\u3001\u5C02\u9580\u5BB6\u3078\u306E\u8CEA\u554F\uFF09\u3067\u306E\u8ABF\u67FB\u3092\u5FF5\u982D\u306B\u7F6E\u3044\u305F\u5F62\u306B\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-\u51FA\u529B\u306F\u5FC5\u305A\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u306E\u914D\u5217\u3067\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044:
-["\u8CEA\u554F1", "\u8CEA\u554F2", "\u8CEA\u554F3"]
-`;
 const thoughtTransformerAgent = new Agent({
   name: "thoughtTransformerAgent",
   description: "\u5165\u529B\u3055\u308C\u305F\u601D\u8003\u306B\u57FA\u3065\u3044\u3066\u3001\u8ABF\u67FB\u3092\u6DF1\u6398\u308A\u3059\u308B\u305F\u3081\u306E\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3002",
@@ -78,36 +63,6 @@ const thoughtTransformerAgent = new Agent({
   model: openai("gpt-4o-mini")
   // モデルは適宜選択
 });
-async function generateSubQuestions(input) {
-  const logger = (await Promise.resolve().then(function () { return index; })).mastra.getLogger();
-  const prompt = generateSubQuestionsPrompt(input);
-  logger.info("(ThoughtTransformerAgent) Generating sub-questions with prompt:", { prompt });
-  try {
-    const response = await thoughtTransformerAgent.generate(prompt);
-    if (!response.text) {
-      logger.error("(ThoughtTransformerAgent) Agent returned no text.");
-      throw new Error("Agent returned no text.");
-    }
-    try {
-      let responseText = response.text.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-      const parsedJson = JSON.parse(responseText);
-      if (Array.isArray(parsedJson) && parsedJson.every((item) => typeof item === "string")) {
-        const result = { subQuestions: parsedJson };
-        logger.info("(ThoughtTransformerAgent) Sub-questions generated successfully.", { subQuestions: result.subQuestions });
-        return result;
-      } else {
-        logger.error("(ThoughtTransformerAgent) Agent response is not an array of strings.", { responseText });
-        throw new Error("Agent response is not an array of strings.");
-      }
-    } catch (parseError) {
-      logger.error("(ThoughtTransformerAgent) Failed to parse agent response JSON.", { error: parseError, responseText: response.text });
-      throw new Error(`Failed to parse agent response JSON: ${parseError}`);
-    }
-  } catch (error) {
-    logger.error("(ThoughtTransformerAgent) Error during agent generation.", { error });
-    return { subQuestions: [] };
-  }
-}
 
 const synthesizerAgent = new Agent({
   // エージェントの名前 (識別子)
@@ -174,108 +129,144 @@ const clarificationPromptAgent = new Agent({
   instructions: `\u3042\u306A\u305F\u306F\u8CEA\u554F\u306E\u660E\u78BA\u5316\u3092\u652F\u63F4\u3059\u308B\u5C02\u9580\u5BB6\u3067\u3059\u3002\u4E0D\u660E\u78BA\u306A\u8CEA\u554F\u306B\u5BFE\u3057\u3066\u3001\u30E6\u30FC\u30B6\u30FC\u304C\u3088\u308A\u660E\u78BA\u306B\u8CEA\u554F\u3092\u518D\u69CB\u7BC9\u3067\u304D\u308B\u3088\u3046\u306A\u8CEA\u554F\u6587\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002`
 });
 
-const triggerSchema$1 = z.object({
-  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8"),
-  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
-});
 const thoughtEvaluationSchema = z.object({
   thought: z.string().describe("\u5143\u306E\u601D\u8003\u5185\u5BB9"),
   score: z.number().min(1).max(10).describe("\u8A55\u4FA1\u30B9\u30B3\u30A2 (1-10)"),
   reasoning: z.string().describe("\u8A55\u4FA1\u7406\u7531")
 });
+const processThoughtsOutputSchema = z.object({
+  selectedThought: thoughtEvaluationSchema.optional().describe("\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3068\u305D\u306E\u8A55\u4FA1")
+});
+const triggerSchema$1 = z.object({
+  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8"),
+  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
+});
+const evaluateThoughtsInputSchema = z.object({
+  thoughts: z.array(z.string()).describe("\u8A55\u4FA1\u3059\u308B\u601D\u8003\u306E\u30EA\u30B9\u30C8"),
+  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
+});
 const evaluateThoughtsOutputSchema = z.object({
   evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("\u8A55\u4FA1\u3055\u308C\u305F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
 });
-const processThoughtsWorkflow = new Workflow({
-  name: "processThoughtsSubWorkflow",
-  // サブワークフロー固有の名前
-  triggerSchema: triggerSchema$1
-});
 const evaluateThoughtsStep = new Step({
   id: "evaluateThoughtsStep",
-  description: "\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u3092\u8A55\u4FA1\u3059\u308B",
-  inputSchema: triggerSchema$1,
+  description: "\u751F\u6210\u3055\u308C\u305F\u601D\u8003\u3092\u8A55\u4FA1\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
+  inputSchema: evaluateThoughtsInputSchema,
   outputSchema: evaluateThoughtsOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
-    const thoughts = context.triggerData.thoughts;
-    const originalQuery = context.triggerData.originalQuery;
-    logger.info("(SubWorkflow - Evaluate) Evaluating thoughts", { count: thoughts.length, originalQuery });
+    const logger = getLogger();
+    logger.info("--- [DEBUG] evaluateThoughtsStep received context ---");
+    logger.info(`context.triggerData: ${JSON.stringify(context.triggerData, null, 2)}`);
+    const thoughts = context.triggerData.thoughts || [];
+    const originalQuery = context.triggerData.originalQuery || "";
+    if (!thoughts || !Array.isArray(thoughts) || thoughts.length === 0) {
+      logger.error("(SubWorkflow - Evaluate) No valid thoughts array found in triggerData");
+      return { evaluatedThoughts: [] };
+    }
+    logger.info(`(SubWorkflow - Evaluate) Evaluating ${thoughts.length} thoughts from triggerData`);
     const evaluatedThoughts = [];
     for (const thought of thoughts) {
-      logger.info(`(SubWorkflow - Evaluate) Evaluating thought: "${thought}"`);
       try {
-        const prompt = `\u5143\u306E\u8CEA\u554F:\u300C${originalQuery}\u300D
-
-\u3053\u306E\u8CEA\u554F\u306B\u5BFE\u3059\u308B\u4EE5\u4E0B\u306E\u601D\u8003\uFF08\u30A2\u30A4\u30C7\u30A2\uFF09\u3092\u8A55\u4FA1\u3057\u3066\u304F\u3060\u3055\u3044:
-\u300C${thought}\u300D
-
-\u8A55\u4FA1\u7D50\u679C\u306F\u5FC5\u305A {"score": number (1-10), "reasoning": "\u8A55\u4FA1\u7406\u7531"} \u306EJSON\u5F62\u5F0F\u3067\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044\u3002`;
-        const agentResponse = await thoughtEvaluatorAgent.generate(prompt);
-        if (agentResponse.text) {
-          try {
-            let responseText = agentResponse.text.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-            const parsed = JSON.parse(responseText);
-            const validation = thoughtEvaluationSchema.pick({ score: true, reasoning: true }).safeParse(parsed);
-            if (validation.success) {
-              evaluatedThoughts.push({
-                thought,
-                score: validation.data.score,
-                reasoning: validation.data.reasoning
-              });
-              logger.info(`(SubWorkflow - Evaluate) Evaluation successful`, { thought, score: validation.data.score });
-            } else {
-              logger.error(`(SubWorkflow - Evaluate) Agent response validation failed`, { thought, responseText, error: validation.error });
-              evaluatedThoughts.push({ thought, score: 0, reasoning: "\u8A55\u4FA1\u5F62\u5F0F\u30A8\u30E9\u30FC" });
+        const { text: responseText } = await thoughtEvaluatorAgent.generate(
+          [
+            {
+              role: "system",
+              content: `\u3042\u306A\u305F\u306F\u601D\u8003\u8A55\u4FA1\u30A8\u30AD\u30B9\u30D1\u30FC\u30C8\u3067\u3059\u3002\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\u3092\u8A55\u4FA1\u3057\u30011\u304B\u308910\u306E\u30B9\u30B3\u30A2\u3092\u3064\u3051\u3066\u304F\u3060\u3055\u3044\u3002
+              \u8A55\u4FA1\u57FA\u6E96:
+              - \u5143\u306E\u8CEA\u554F\u306B\u95A2\u9023\u3057\u3066\u3044\u308B\u3053\u3068
+              - \u6D1E\u5BDF\u529B\u304C\u3042\u308B\u3053\u3068
+              - \u5177\u4F53\u7684\u3067\u3042\u308B\u3053\u3068
+              - \u30AA\u30EA\u30B8\u30CA\u30EA\u30C6\u30A3\u304C\u3042\u308B\u3053\u3068`
+            },
+            {
+              role: "user",
+              content: `\u5143\u306E\u8CEA\u554F: "${originalQuery}"
+              
+              \u8A55\u4FA1\u3059\u308B\u601D\u8003: "${thought}"
+              
+              \u3053\u306E\u601D\u8003\u30921\u304B\u308910\u306E\u30B9\u30B1\u30FC\u30EB\u3067\u8A55\u4FA1\u3057\u3001\u305D\u306E\u7406\u7531\u3092\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+              JSON\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044:
+              {
+                "thought": "\u601D\u8003\u306E\u5185\u5BB9",
+                "score": \u8A55\u4FA1\u30B9\u30B3\u30A2\uFF08\u6570\u50241-10\uFF09,
+                "reasoning": "\u8A55\u4FA1\u7406\u7531\u306E\u8AAC\u660E"
+              }`
             }
-          } catch (parseError) {
-            logger.error(`(SubWorkflow - Evaluate) Failed to parse agent response`, { thought, responseText: agentResponse.text, error: parseError });
-            evaluatedThoughts.push({ thought, score: 0, reasoning: "\u8A55\u4FA1\u30D1\u30FC\u30B9\u30A8\u30E9\u30FC" });
+          ]
+        );
+        try {
+          const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
+          const evaluationResult = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+          if (evaluationResult && typeof evaluationResult.score === "number") {
+            evaluatedThoughts.push({
+              thought,
+              score: evaluationResult.score,
+              reasoning: evaluationResult.reasoning || ""
+            });
+            logger.info(`(SubWorkflow - Evaluate) Evaluated thought: ${thought} with score ${evaluationResult.score}`);
+          } else {
+            logger.warn(`(SubWorkflow - Evaluate) Failed to parse evaluation result as JSON`);
+            evaluatedThoughts.push({
+              thought,
+              score: 5,
+              reasoning: "\u8A55\u4FA1\u7D50\u679C\u306E\u30D1\u30FC\u30B9\u306B\u5931\u6557\u3057\u307E\u3057\u305F"
+            });
           }
-        } else {
-          logger.error(`(SubWorkflow - Evaluate) Agent returned no text`, { thought });
-          evaluatedThoughts.push({ thought, score: 0, reasoning: "\u8A55\u4FA1\u5FDC\u7B54\u306A\u3057" });
+        } catch (e) {
+          logger.error(`(SubWorkflow - Evaluate) Error parsing evaluation result: ${e}`);
+          evaluatedThoughts.push({
+            thought,
+            score: 5,
+            reasoning: "\u8A55\u4FA1\u7D50\u679C\u306E\u30D1\u30FC\u30B9\u306B\u5931\u6557\u3057\u307E\u3057\u305F"
+          });
         }
-      } catch (agentError) {
-        logger.error(`(SubWorkflow - Evaluate) Error calling evaluation agent`, { thought, error: agentError });
-        evaluatedThoughts.push({ thought, score: 0, reasoning: "\u8A55\u4FA1\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u30A8\u30E9\u30FC" });
+      } catch (e) {
+        logger.error(`(SubWorkflow - Evaluate) Error evaluating thought: ${e}`);
       }
     }
-    logger.info("(SubWorkflow - Evaluate) Finished evaluating thoughts", { count: evaluatedThoughts.length });
     return { evaluatedThoughts };
   }
 });
+const selectNodeInputSchema = z.object({
+  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("\u8A55\u4FA1\u3055\u308C\u305F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
+});
 const selectNodeStep = new Step({
   id: "selectNodeStep",
-  description: "\u8A55\u4FA1\u306B\u57FA\u3065\u304D\u3001\u6B21\u306B\u63A2\u7D22\u3059\u308B\u601D\u8003\u30CE\u30FC\u30C9\u3092\u9078\u629E\u3059\u308B",
-  inputSchema: evaluateThoughtsOutputSchema,
-  outputSchema: z.object({
-    selectedThought: thoughtEvaluationSchema.optional().describe("\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3068\u305D\u306E\u8A55\u4FA1")
-  }),
+  description: "\u8A55\u4FA1\u7D50\u679C\u304B\u3089\u6700\u3082\u826F\u3044\u601D\u8003\u3092\u9078\u629E\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
+  inputSchema: selectNodeInputSchema,
+  outputSchema: processThoughtsOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
-    const { evaluatedThoughts } = context.inputData;
-    logger.info("(SubWorkflow - Select) Selecting node", {
-      count: evaluatedThoughts.length
-    });
-    let bestThought = void 0;
-    if (evaluatedThoughts.length > 0) {
-      evaluatedThoughts.sort((a, b) => b.score - a.score);
-      bestThought = evaluatedThoughts[0];
+    const logger = getLogger();
+    const evaluateStepResult = context.getStepResult(evaluateThoughtsStep);
+    const evaluatedThoughts = evaluateStepResult?.evaluatedThoughts || [];
+    logger.info(`(SubWorkflow - Select) Selecting node from ${evaluatedThoughts.length} evaluated thoughts`);
+    if (!evaluatedThoughts || evaluatedThoughts.length === 0) {
+      logger.warn("(SubWorkflow - Select) No thoughts to select from");
+      return { selectedThought: void 0 };
     }
-    logger.info("(SubWorkflow - Select) Selected node", {
-      selectedThought: bestThought?.thought,
-      score: bestThought?.score
-    });
-    logger.info("--- [DEBUG] selectNodeStep returning --- ", { selectedThought: bestThought });
+    let bestThought = evaluatedThoughts[0];
+    for (const thought of evaluatedThoughts) {
+      if (thought.score > (bestThought?.score || -1)) {
+        bestThought = thought;
+      }
+    }
+    logger.info(`(SubWorkflow - Select) Final output`);
     return { selectedThought: bestThought };
   }
 });
-processThoughtsWorkflow.step(evaluateThoughtsStep).then(selectNodeStep, {
-  variables: {
-    evaluatedThoughts: { step: evaluateThoughtsStep, path: "evaluatedThoughts" }
+const processThoughtsWorkflow = new Workflow({
+  name: "processThoughtsWorkflow",
+  triggerSchema: triggerSchema$1,
+  // ★ mastra インスタンスの指定を削除
+  // mastra,
+  // 結果スキーマとマッピングを追加
+  result: {
+    schema: processThoughtsOutputSchema,
+    mapping: {
+      selectedThought: { step: selectNodeStep, path: "selectedThought" }
+    }
   }
-}).commit();
+}).step(evaluateThoughtsStep).then(selectNodeStep).commit();
 
 const triggerSchema = z.object({
   query: z.string().describe("The initial question from the user.")
@@ -292,16 +283,19 @@ const initialThoughtsOutputSchema = z.object({
 });
 z.object({
   selectedThought: z.object({
+    // ★ インポートしたスキーマを使用
     selectedThought: thoughtEvaluationSchema.optional().describe("\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3068\u305D\u306E\u8A55\u4FA1")
   }).describe("processThoughtsWorkflow \u304B\u3089\u306E\u9078\u629E\u3055\u308C\u305F\u601D\u8003"),
   query: triggerSchema.shape.query.describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
 });
-const transformThoughtOutputSchema = subQuestionsOutputSchema;
+const transformThoughtOutputSchema = z.object({
+  selectedThought: z.custom().optional(),
+  subQuestions: z.array(z.string())
+});
 const synthesizeInputSchema = z.object({
-  initialThoughts: initialThoughtsOutputSchema.shape.thoughts,
-  // initialThoughtsStep の出力から thoughts を取得
-  subQuestions: transformThoughtOutputSchema.shape.subQuestions
-  // transformThoughtStep の出力から subQuestions を取得
+  query: z.string(),
+  initialThoughts: z.array(z.string()),
+  subQuestions: z.array(z.string())
 });
 const synthesizeOutputSchema = z.object({
   report: z.string().describe("Synthesized final report in Markdown format.")
@@ -310,7 +304,7 @@ z.object({
   thoughts: initialThoughtsOutputSchema.shape.thoughts,
   query: triggerSchema.shape.query
 });
-const prepareProcessThoughtsOutputSchema = z.object({
+z.object({
   thoughts: z.array(z.string()),
   originalQuery: z.string()
   // processThoughtsWorkflow 側の期待する名前
@@ -345,7 +339,7 @@ const clarityCheckStep = new Step({
   inputSchema: triggerSchema,
   outputSchema: clarityCheckOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     logger.info("(ClarityCheckStep) Checking clarity for query", { query: context.triggerData.query });
     try {
       const result = await clarityCheckAgent.generate(
@@ -378,7 +372,7 @@ const requestClarificationStep = new Step({
   inputSchema: z.any().optional(),
   outputSchema: requestClarificationOutputSchema,
   execute: async ({ context, suspend }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     console.log("--- RequestClarificationStep Context Start ---");
     console.log(JSON.stringify(context, null, 2));
     console.log("--- RequestClarificationStep Context End ---");
@@ -429,7 +423,7 @@ const initialThoughtsStep = new Step({
   inputSchema: z.any().optional(),
   outputSchema: initialThoughtsOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     logger.info("--- [DEBUG] initialThoughtsStep context.inputData ---");
     logger.info(`typeof context.inputData: ${typeof context.inputData}`);
     try {
@@ -487,17 +481,30 @@ const prepareProcessThoughtsInput = new Step({
   id: "prepareProcessThoughtsInput",
   description: "processThoughtsWorkflow \u3078\u306E\u5165\u529B\u3092\u6E96\u5099\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
   inputSchema: z.any().optional(),
-  outputSchema: prepareProcessThoughtsOutputSchema,
+  outputSchema: z.object({
+    thoughts: z.array(z.string()),
+    originalQuery: z.string()
+  }),
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
+    logger.info("--- [DEBUG] prepareProcessThoughtsInput context ---");
+    logger.info(`Steps so far: ${Object.keys(context.steps).join(", ")}`);
     const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-    const thoughts = initialThoughtsResult?.thoughts ?? [];
-    const clarification = context.getStepResult(requestClarificationStep);
-    const query = clarification?.clarifiedQuery ?? context.triggerData.query;
-    logger.info("(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow", { thoughtsCount: thoughts.length, query });
+    const clarificationResult = context.getStepResult(requestClarificationStep);
+    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
+    if (!initialThoughtsResult || !initialThoughtsResult.thoughts || !Array.isArray(initialThoughtsResult.thoughts)) {
+      logger.error("Failed to retrieve thoughts from initialThoughtsStep");
+      return { thoughts: [], originalQuery: reconstructedQuery };
+    }
+    const thoughts = initialThoughtsResult.thoughts;
+    logger.info(`(PrepareProcessThoughtsInput) Successfully retrieved thoughts from initialThoughtsStep: ${thoughts.length}`);
+    logger.info(`(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow`);
+    logger.info(`thoughtsCount: ${thoughts.length}`);
+    logger.info(`query: "${reconstructedQuery}"`);
+    logger.info(`thoughtsExample: "${thoughts.length > 0 ? thoughts[0] : ""}"`);
     return {
       thoughts,
-      originalQuery: query
+      originalQuery: reconstructedQuery
     };
   }
 });
@@ -507,65 +514,104 @@ const prepareSynthesizeInput = new Step({
   inputSchema: z.any().optional(),
   outputSchema: prepareSynthesizeOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
+    const transformThoughtResult = context.getStepResult(transformThoughtStep);
+    const clarificationResult = context.getStepResult(requestClarificationStep);
+    const query = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
     const initialThoughts = initialThoughtsResult?.thoughts ?? [];
-    const transformResult = context.getStepResult(transformThoughtStep);
-    const subQuestions = transformResult?.subQuestions ?? [];
-    logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", { initialThoughtsCount: initialThoughts.length, subQuestionsCount: subQuestions.length });
+    const subQuestions = transformThoughtResult?.subQuestions ?? [];
+    logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", {
+      initialThoughtsCount: initialThoughts.length,
+      subQuestionsCount: subQuestions.length,
+      query
+    });
     return {
+      query,
       initialThoughts,
       subQuestions
     };
   }
 });
-const transformStepInputType = z.object({ selectedThought: thoughtEvaluationSchema.optional() });
 const transformThoughtStep = new Step({
   id: "transformThoughtStep",
   description: "\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3092\u57FA\u306B\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: transformStepInputType,
-  // ★ 事前定義した型を使用
+  inputSchema: z.any(),
+  // 入力は processThoughtsWorkflow の結果
   outputSchema: transformThoughtOutputSchema,
-  // ★ execute の型パラメータを修正: ステップ自身を参照せず、直接スキーマを指定 -> ★ 事前定義した型を使用
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
-    logger.info("--- [DEBUG] transformThoughtStep received inputData --- ");
-    try {
-      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
-    } catch (e) {
-      logger.error("transformThoughtStep context.inputData \u306E JSON \u6587\u5B57\u5217\u5316\u306B\u5931\u6557:", { error: String(e) });
-      logger.info(`transformThoughtStep context.inputData (raw): ${String(context.inputData)}`);
-    }
-    logger.info("--- [DEBUG] End transformThoughtStep received inputData ---");
-    let selectedThoughtData = context.inputData?.selectedThought;
-    if (!selectedThoughtData) {
-      const subResult = context.getStepResult(processThoughtsWorkflow);
-      if (subResult && subResult.selectedThought) {
-        selectedThoughtData = subResult.selectedThought;
-      }
-    }
-    const query = context.triggerData.query;
-    if (!selectedThoughtData) {
-      logger.warn("(TransformThoughtStep) No valid selected thought received from processThoughtsWorkflow. Skipping.");
-      return { subQuestions: [] };
-    }
-    logger.info("(TransformThoughtStep) Transforming thought:", {
-      // ★ 修正: selectedThoughtData から直接プロパティにアクセス
-      thought: selectedThoughtData.thought,
-      score: selectedThoughtData.score,
-      reasoning: selectedThoughtData.reasoning
+    const logger = getLogger();
+    const processThoughtsResult = context.getStepResult("processThoughtsWorkflow");
+    logger.info("(TransformThoughtStep) Detailed processThoughtsResult:", {
+      keys: processThoughtsResult ? Object.keys(processThoughtsResult) : "null",
+      hasResultProp: processThoughtsResult?.hasOwnProperty("result"),
+      resultProp: processThoughtsResult?.result,
+      raw: processThoughtsResult
     });
+    let selectedThought = void 0;
+    if (processThoughtsResult && typeof processThoughtsResult === "object" && processThoughtsResult.result) {
+      selectedThought = processThoughtsResult.result.selectedThought;
+      logger.info("(TransformThoughtStep) Attempted to get selectedThought from processThoughtsResult.result");
+    } else {
+      logger.warn("(TransformThoughtStep) processThoughtsResult or processThoughtsResult.result is missing or invalid.");
+    }
+    logger.info("(TransformThoughtStep) Value of selectedThought after extraction attempt:", { selectedThought });
+    if (!selectedThought || !selectedThought.thought) {
+      logger.warn("(TransformThoughtStep) No valid selected thought found after extraction. Skipping sub-question generation.");
+      return { selectedThought: void 0, subQuestions: [] };
+    }
+    logger.info(`(TransformThoughtStep) Selected thought: ${selectedThought.thought}`);
+    logger.info(`(TransformThoughtStep) Score: ${selectedThought.score}`);
+    logger.info(`(TransformThoughtStep) Reasoning: ${selectedThought.reasoning}`);
+    const clarificationResult = context.getStepResult(requestClarificationStep);
+    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
     try {
-      const result = await generateSubQuestions({
-        // ★ 修正: selectedThoughtData.thought を渡す
-        selectedThought: selectedThoughtData.thought,
-        originalQuery: query
-      });
-      logger.info("(TransformThoughtStep) Generated sub-questions:", { subQuestions: result.subQuestions });
-      return result;
-    } catch (error) {
-      logger.error("(TransformThoughtStep) Error generating sub-questions:", { error: String(error) });
-      return { subQuestions: [] };
+      const { text: responseText } = await thoughtTransformerAgent.generate(
+        [
+          {
+            role: "system",
+            content: `\u3042\u306A\u305F\u306F\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u304B\u3089\u95A2\u9023\u3059\u308B\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30A8\u30AD\u30B9\u30D1\u30FC\u30C8\u3067\u3059\u3002\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\u3092\u3055\u3089\u306B\u63A2\u6C42\u3059\u308B\u3088\u3046\u306A\u8CEA\u554F\u3092\u8003\u3048\u3066\u304F\u3060\u3055\u3044\u3002`
+          },
+          {
+            role: "user",
+            // ★ reconstructedQuery を使用
+            content: `\u5143\u306E\u8CEA\u554F: "${reconstructedQuery}"
+            
+            \u9078\u629E\u3055\u308C\u305F\u601D\u8003: "${selectedThought.thought}"
+            
+            \u3053\u306E\u601D\u8003\u306B\u95A2\u9023\u3059\u308B\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u30923\u3064\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
+            JSON\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044:
+            {
+              "subQuestions": [
+                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F31",
+                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F32",
+                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F33"
+              ]
+            }`
+          }
+        ]
+      );
+      const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
+      const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+      if (result && Array.isArray(result.subQuestions)) {
+        logger.info(`(TransformThoughtStep) Generated ${result.subQuestions.length} sub-questions`);
+        return {
+          selectedThought,
+          subQuestions: result.subQuestions
+        };
+      } else {
+        logger.warn(`(TransformThoughtStep) Failed to parse sub-questions as JSON`);
+        return {
+          selectedThought,
+          subQuestions: []
+        };
+      }
+    } catch (e) {
+      logger.error(`(TransformThoughtStep) Error generating sub-questions: ${e}`);
+      return {
+        selectedThought,
+        subQuestions: []
+      };
     }
   }
 });
@@ -575,7 +621,7 @@ const synthesizeStep = new Step({
   inputSchema: synthesizeInputSchema,
   outputSchema: synthesizeOutputSchema,
   execute: async ({ context }) => {
-    const logger = mastra.getLogger();
+    const logger = getLogger();
     logger.info("--- [DEBUG] synthesizeStep context.inputData ---");
     logger.info(`typeof context.inputData: ${typeof context.inputData}`);
     try {
@@ -628,10 +674,16 @@ ${subQuestions.map((q) => `- ${q}`).join("\n")}
     }
   }
 });
-goTResearchWorkflow.step(clarityCheckStep).then(requestClarificationStep).then(initialThoughtsStep).then(prepareProcessThoughtsInput).then(processThoughtsWorkflow, {
+goTResearchWorkflow.step(clarityCheckStep).then(requestClarificationStep, {
+  // ★ when 条件を async に修正
+  when: async ({ context }) => {
+    const clarityResult = context.getStepResult(clarityCheckStep);
+    return !clarityResult?.isClear;
+  }
+}).then(initialThoughtsStep).then(prepareProcessThoughtsInput).then(processThoughtsWorkflow, {
   variables: {
-    // '$output' は直前の prepareProcessThoughtsInput の出力全体を指す
-    trigger: { step: prepareProcessThoughtsInput, path: "$output" }
+    thoughts: { step: prepareProcessThoughtsInput, path: "thoughts" },
+    originalQuery: { step: prepareProcessThoughtsInput, path: "originalQuery" }
   }
 }).then(transformThoughtStep).then(prepareSynthesizeInput).then(synthesizeStep).commit();
 
@@ -651,11 +703,7 @@ const mastra = new Mastra({
     level: "info"
   })
 });
-
-var index = /*#__PURE__*/Object.freeze({
-  __proto__: null,
-  mastra: mastra
-});
+const getLogger = () => mastra.getLogger();
 
 // src/utils/filepath.ts
 var getFilePath = (options) => {

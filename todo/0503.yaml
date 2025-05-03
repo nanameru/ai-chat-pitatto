@@ -1,0 +1,64 @@
+# ピタッとAI 高度検索システム開発 (2024/05/03)
+
+matrix:
+  quadrant_1: # 重要度: 高, 緊急度: 高
+    title: '第1象限 (最優先: 重要度 高, 緊急度 高)'
+    items:
+      - id: setup_x_api
+        description: 'X API セットアップ (課金・APIキー取得)'
+        status: 'pending_user' # ユーザー作業待ち
+        notes: 'これが完了しないとX検索ツール実装に進めない'
+      - id: confirm_brave_key
+        description: 'BRAVE_API_KEY 環境変数の設定確認'
+        status: 'pending_user' # ユーザー確認待ち
+      - id: implement_web_search_tool
+        description: 'Web検索ツール(webSearchTool)の最終確認'
+        status: 'done' # 既存ツール確認済み
+      - id: implement_x_search_tool
+        description: 'X API検索ツールの実装 (xSearchTool)'
+        status: 'blocked' # setup_x_api 待ち
+        depends_on: setup_x_api
+      - id: design_got_workflow
+        description: 'Graph of Thought (GoT) ベース検索ワークフローの設計'
+        status: 'todo'
+      - id: implement_got_workflow
+        description: 'GoTベース検索ワークフローの実装'
+        status: 'todo'
+        depends_on: [implement_web_search_tool, implement_x_search_tool]
+      - id: integrate_search_agent
+        description: '検索エージェントへのGoTワークフロー統合'
+        status: 'todo'
+        depends_on: implement_got_workflow
+      - id: test_search_system
+        description: '全体テストと動作確認'
+        status: 'todo'
+        depends_on: integrate_search_agent
+      - id: integrate_frontend
+        description: '作成したワークフローをフロントエンドに接続'
+        status: 'todo'
+        depends_on: implement_got_workflow # ワークフロー実装後に実施
+
+  quadrant_2: # 重要度: 高, 緊急度: 低
+    title: '第2象限 (計画的に: 重要度 高, 緊急度 低)'
+    items:
+      - id: integrate_discord
+        description: 'ピタッとAIサービスとDiscord (discordapp/ボット) を連携'
+        status: 'todo'
+        notes: '詳細は別途検討'
+
+  quadrant_3: # 重要度: 低, 緊急度: 高
+    title: '第3象限 (後回し/依頼: 重要度 低, 緊急度 高)'
+    items: [] # 現状、該当タスクなし
+
+  quadrant_4: # 重要度: 低, 緊急度: 低
+    title: '第4象限 (見送り/再検討: 重要度 低, 緊急度 低)'
+    items:
+      - id: personalize_search
+        description: 'パーソナライズ機能の実装検討'
+        status: 'deferred' # 優先度低のため延期
+        notes: 'メモリー機能などを活用'
+
+# 注意事項
+# - X API のセットアップ完了後、implement_x_search_tool の status を 'todo' に変更してください。
+# - BRAVE_API_KEY の設定が確認できたら、confirm_brave_key の status を 'done' に変更してください。
+# - status: todo (未着手), pending_user (ユーザー待ち), blocked (他タスク待ち), in_progress (進行中), done (完了), deferred (延期)
