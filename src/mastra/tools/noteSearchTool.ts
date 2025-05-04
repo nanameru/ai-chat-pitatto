@@ -1,24 +1,20 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { getLogger } from '..';
 
-// Web検索ツールのためのインターフェース (note検索でも利用)
-interface BraveSearchResponse {
-  web: {
-    results: Array<{
-      title: string;
-      url: string;
-      description: string;
-      // Brave Search APIが返す可能性のある追加フィールド
-      profile?: { name: string; url: string; img: string }; 
-      page_age?: string;
-    }>;
-    total_results_estimation?: number;
-  };
+// Tavily Search APIのレスポンス型
+interface TavilySearchResponse {
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+  }>;
+  answer?: string;
 }
 
 export const noteSearchTool = createTool({
-  id: 'note-search', // IDを変更
-  description: '指定されたクエリでnote.com上の記事を検索します (Web検索経由)', // 説明を変更
+  id: 'note-search',
+  description: '指定されたクエリでnote.com上の記事を検索します',
   inputSchema: z.object({
     query: z.string().describe('検索キーワードやタグ'),
     count: z.number().int().min(1).max(10).optional().default(5).describe('取得する結果数 (デフォルト5, 最大10)'),
@@ -35,53 +31,117 @@ export const noteSearchTool = createTool({
   }),
   execute: async ({ context }) => {
     const { query, count = 5 } = context;
+    const logger = getLogger();
     
-    const apiKey = process.env.BRAVE_API_KEY;
+    logger.info(`(noteSearchTool) 検索クエリの実行: "${query}", 取得件数: ${count}`);
+    
+    const apiKey = process.env.TAVILY_API_KEY;
     
     if (!apiKey) {
-      throw new Error('環境変数 BRAVE_API_KEY が設定されていません');
+      const errorMsg = '環境変数 TAVILY_API_KEY が設定されていません';
+      logger.error(`(noteSearchTool) API_KEY不足エラー: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
     const limitedCount = Math.min(count, 10); 
 
-    // 検索ドメインを "site:note.com" に変更
-    const siteScopedQuery = `site:note.com ${query}`; 
+    // 検索ドメインを指定
+    const siteScopedQuery = `note ${query}`; 
     
-    const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(siteScopedQuery)}&count=${limitedCount}`;
-    console.log(`Executing Note search via Brave: ${searchUrl}`); // ログメッセージを変更
+    logger.info(`(noteSearchTool) Tavily Search APIリクエスト開始: "${siteScopedQuery}"`);
+    
+    try {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: siteScopedQuery,
+          max_results: limitedCount,
+          search_depth: 'basic',
+          include_answer: false,
+          include_domains: ['note.com']
+        })
+      });
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey
+      logger.info(`(noteSearchTool) APIレスポンス受信: ステータスコード=${response.status}`);
+      
+      if (!response.ok) {
+        const responseText = await response.text().catch(e => `テキスト取得失敗: ${e.message}`);
+        const errorMsg = `Tavily Search APIエラー: ${response.status} ${response.statusText}. レスポンス: ${responseText}`;
+        logger.error(`(noteSearchTool) APIエラー: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Brave Search APIエラー (Note Search): ${response.status} ${response.statusText}`); // エラーメッセージを変更
-    }
+      logger.info(`(noteSearchTool) APIレスポンスのJSONパース開始`);
+      const data = await response.json() as TavilySearchResponse;
+      logger.info(`(noteSearchTool) JSONパース完了`);
 
-    const data = await response.json() as BraveSearchResponse;
+      if (!data.results || data.results.length === 0) {
+        logger.info(`(noteSearchTool) 検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResultsEstimation: 0
+        };
+      }
 
-    if (!data.web || !data.web.results || data.web.results.length === 0) {
+      // note.com 関連の結果をフィルタリング（念のため）
+      const noteResults = data.results.filter(result => 
+        result.url.includes('note.com')
+      );
+
+      if (noteResults.length === 0) {
+        logger.info(`(noteSearchTool) note関連の検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResultsEstimation: 0
+        };
+      }
+
+      const results = noteResults.map(result => {
+        // 著者名と公開日を抽出する処理（仮の実装）
+        // Tavilyでは直接メタデータが取得できないため、単純な実装にする
+        let authorName = undefined;
+        let publishedDate = undefined;
+        
+        // URL から著者名を推測する（例: note.com/username/... の形式から）
+        const urlMatch = result.url.match(/note\.com\/([^\/]+)/);
+        if (urlMatch && urlMatch[1]) {
+          authorName = urlMatch[1];
+        }
+        
+        return {
+          title: result.title,
+          url: result.url,
+          description: result.content,
+          authorName,
+          publishedDate
+        };
+      });
+      
+      logger.info(`(noteSearchTool) 検索成功: ${results.length}件の結果を取得`);
+      
       return {
-        results: [],
-        totalResultsEstimation: 0
+        results,
+        totalResultsEstimation: results.length
       };
+    } catch (error) {
+      // エラーの詳細情報を記録
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      logger.error(`(noteSearchTool) 検索実行中のエラー: ${errorMessage}`);
+      if (errorStack) {
+        logger.error(`(noteSearchTool) エラースタック: ${errorStack}`);
+      }
+      
+      // 環境変数の状態をログに出力（API_KEYは一部マスク）
+      const maskedApiKey = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'undefined';
+      logger.error(`(noteSearchTool) 環境変数状態: TAVILY_API_KEY=${maskedApiKey}`);
+      
+      throw error;
     }
-
-    const results = data.web.results.map(result => ({
-        title: result.title,
-        url: result.url,
-        description: result.description,
-        authorName: result.profile?.name, 
-        publishedDate: result.page_age 
-    }));
-
-    return {
-      results: results,
-      totalResultsEstimation: data.web.total_results_estimation
-    };
   },
 }); 

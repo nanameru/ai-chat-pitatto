@@ -1,24 +1,20 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { getLogger } from '..';
 
-// Web検索ツールのためのインターフェース (Medium検索でも利用)
-interface BraveSearchResponse {
-  web: {
-    results: Array<{
-      title: string;
-      url: string;
-      description: string;
-      // Brave Search APIが返す可能性のある追加フィールド
-      profile?: { name: string; url: string; img: string }; 
-      page_age?: string;
-    }>;
-    total_results_estimation?: number;
-  };
+// Tavily Search APIのレスポンス型
+interface TavilySearchResponse {
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+  }>;
+  answer?: string;
 }
 
 export const mediumSearchTool = createTool({
   id: 'medium-search',
-  description: '指定されたクエリでMedium.com上の記事を検索します (Web検索経由)',
+  description: '指定されたクエリでMedium.com上の記事を検索します',
   inputSchema: z.object({
     query: z.string().describe('検索キーワードやタグ'),
     count: z.number().int().min(1).max(10).optional().default(5).describe('取得する結果数 (デフォルト5, 最大10)'),
@@ -28,7 +24,6 @@ export const mediumSearchTool = createTool({
       title: z.string().describe('記事タイトル'),
       url: z.string().describe('記事URL'),
       description: z.string().describe('記事の抜粋や説明'),
-      // 追加情報 (取得できれば)
       authorName: z.string().optional().describe('著者名 (取得できた場合)'), 
       publishedDate: z.string().optional().describe('公開日 (取得できた場合)')
     })),
@@ -36,55 +31,117 @@ export const mediumSearchTool = createTool({
   }),
   execute: async ({ context }) => {
     const { query, count = 5 } = context;
+    const logger = getLogger();
+
+    logger.info(`(mediumSearchTool) 検索クエリの実行: "${query}", 取得件数: ${count}`);
     
-    const apiKey = process.env.BRAVE_API_KEY;
+    const apiKey = process.env.TAVILY_API_KEY;
     
     if (!apiKey) {
-      throw new Error('環境変数 BRAVE_API_KEY が設定されていません');
+      const errorMsg = '環境変数 TAVILY_API_KEY が設定されていません';
+      logger.error(`(mediumSearchTool) API_KEY不足エラー: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
-    // count の上限を設定 (WebSearchToolと同様)
-    const limitedCount = Math.min(count, 10); 
+    const limitedCount = Math.min(count, 10);
 
-    // ユーザーのクエリの前に "site:medium.com " を追加
-    const siteScopedQuery = `site:medium.com ${query}`;
+    // 検索ドメインを指定
+    const siteScopedQuery = `medium ${query}`;
     
-    const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(siteScopedQuery)}&count=${limitedCount}`;
-    console.log(`Executing Medium search via Brave: ${searchUrl}`);
+    logger.info(`(mediumSearchTool) Tavily Search APIリクエスト開始: "${siteScopedQuery}"`);
+    
+    try {
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: siteScopedQuery,
+          max_results: limitedCount,
+          search_depth: 'basic',
+          include_answer: false,
+          include_domains: ['medium.com']
+        })
+      });
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey
+      logger.info(`(mediumSearchTool) APIレスポンス受信: ステータスコード=${response.status}`);
+      
+      if (!response.ok) {
+        const responseText = await response.text().catch(e => `テキスト取得失敗: ${e.message}`);
+        const errorMsg = `Tavily Search APIエラー: ${response.status} ${response.statusText}. レスポンス: ${responseText}`;
+        logger.error(`(mediumSearchTool) APIエラー: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Brave Search APIエラー (Medium Search): ${response.status} ${response.statusText}`);
-    }
+      logger.info(`(mediumSearchTool) APIレスポンスのJSONパース開始`);
+      const data = await response.json() as TavilySearchResponse;
+      logger.info(`(mediumSearchTool) JSONパース完了`);
 
-    const data = await response.json() as BraveSearchResponse;
+      if (!data.results || data.results.length === 0) {
+        logger.info(`(mediumSearchTool) 検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResultsEstimation: 0
+        };
+      }
 
-    if (!data.web || !data.web.results || data.web.results.length === 0) {
+      // medium.com 関連の結果をフィルタリング（念のため）
+      const mediumResults = data.results.filter(result => 
+        result.url.includes('medium.com')
+      );
+
+      if (mediumResults.length === 0) {
+        logger.info(`(mediumSearchTool) Medium関連の検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResultsEstimation: 0
+        };
+      }
+
+      const results = mediumResults.map(result => {
+        // 著者名と公開日を抽出する処理（仮の実装）
+        // Tavilyでは直接メタデータが取得できないため、単純な実装にする
+        let authorName = undefined;
+        let publishedDate = undefined;
+        
+        // URL から著者名を推測（例：medium.com/@username... の形式から）
+        const urlMatch = result.url.match(/medium\.com\/@([^\/]+)/);
+        if (urlMatch && urlMatch[1]) {
+          authorName = urlMatch[1];
+        }
+        
+        return {
+          title: result.title,
+          url: result.url,
+          description: result.content,
+          authorName,
+          publishedDate
+        };
+      });
+      
+      logger.info(`(mediumSearchTool) 検索成功: ${results.length}件の結果を取得`);
+      
       return {
-        results: [],
-        totalResultsEstimation: 0
+        results,
+        totalResultsEstimation: results.length
       };
+    } catch (error) {
+      // エラーの詳細情報を記録
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      logger.error(`(mediumSearchTool) 検索実行中のエラー: ${errorMessage}`);
+      if (errorStack) {
+        logger.error(`(mediumSearchTool) エラースタック: ${errorStack}`);
+      }
+      
+      // 環境変数の状態をログに出力（API_KEYは一部マスク）
+      const maskedApiKey = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'undefined';
+      logger.error(`(mediumSearchTool) 環境変数状態: TAVILY_API_KEY=${maskedApiKey}`);
+      
+      throw error;
     }
-
-    // 結果を整形 (著者名や日付は取得できれば追加)
-    const results = data.web.results.map(result => ({
-        title: result.title,
-        url: result.url,
-        description: result.description,
-        authorName: result.profile?.name, // profile情報があれば著者名を取得
-        publishedDate: result.page_age // page_ageがあれば公開日として利用
-    }));
-
-    return {
-      results: results,
-      totalResultsEstimation: data.web.total_results_estimation
-    };
   },
 }); 

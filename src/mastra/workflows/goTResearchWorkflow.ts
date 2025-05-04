@@ -17,9 +17,8 @@ import {
 } from './processThoughtsWorkflow';
 // ★ getLogger をインポート ★
 import { getLogger } from '..';
-
-// ★ ThoughtTransformerAgent の generateSubQuestions 関数と出力スキーマをインポート
-import { generateSubQuestions, subQuestionsOutputSchema } from '../agents/thoughtTransformerAgent';
+// ★ Node.js の標準ユーティリティを追加 ★
+import { inspect } from 'util';
 
 // ワークフローのトリガースキーマ (ユーザーからの入力)
 const triggerSchema = z.object({
@@ -72,8 +71,13 @@ type TransformThoughtOutput = z.infer<typeof transformThoughtOutputSchema>;
 // ★ synthesizeStep の入力スキーマを定義
 const synthesizeInputSchema = z.object({
   query: z.string(),
-  initialThoughts: z.array(z.string()),
   subQuestions: z.array(z.string()),
+  bestThought: z.any().optional(),
+  searchResults: z.array(z.object({
+    source: z.string(),
+    query: z.string(),
+    results: z.array(z.any()),
+  })).optional(),
 });
 
 // ★ synthesizeStep の出力スキーマを定義
@@ -95,12 +99,51 @@ const prepareProcessThoughtsOutputSchema = z.object({
 
 // ★ NEW: prepareSynthesizeInput の入力スキーマ
 const prepareSynthesizeInputSchema = z.object({
-  initialThoughts: initialThoughtsOutputSchema.shape.thoughts,
-  subQuestions: transformThoughtOutputSchema.shape.subQuestions,
+  query: z.string(),
+  subQuestions: z.array(z.string()),
+  selectedThought: z.any().optional(),
 });
 
 // ★ NEW: prepareSynthesizeInput の出力スキーマ (synthesizeStep の入力スキーマと同じ)
 const prepareSynthesizeOutputSchema = synthesizeInputSchema;
+
+// ★ NEW: prepareSynthesizeInput ステップ
+const prepareSynthesizeInput = new Step({
+    id: 'prepareSynthesizeInput',
+    description: 'synthesizeStep への入力を準備するステップ',
+    inputSchema: z.any().optional(),
+    outputSchema: synthesizeInputSchema,
+    execute: async ({ context }: StepExecutionContext<any>) => {
+        const logger = getLogger();
+        
+        // ループからの最終結果を取得 (researchCycleStep の最後の実行結果)
+        const cycleResult = context.getStepResult(researchCycleStep);
+        const clarificationResult = context.getStepResult(requestClarificationStep);
+        
+        // 元のクエリまたは明確化されたクエリを取得
+        const query = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
+        const subQuestions = cycleResult?.subQuestions ?? [];
+        // cycleResultのselectedThoughtを取得
+        const bestThought = cycleResult?.selectedThought;
+        // 検索結果も取得
+        const searchResults = cycleResult?.searchResults ?? [];
+
+        logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", {
+          subQuestionsCount: subQuestions.length,
+          query,
+          selectedThought: JSON.stringify(bestThought),
+          searchResultsCount: searchResults.length
+        });
+        
+        // ★★★ 修正: synthesizeInputSchemaに完全に一致する形式でデータを返す
+        return { 
+          query, 
+          subQuestions, 
+          bestThought,
+          searchResults
+        };
+  },
+});
 
 // 文字列入力のためのヘルパー関数を追加
 function reconstructStringFromObjectIfNeeded(input: any): string {
@@ -299,22 +342,22 @@ const initialThoughtsStep = new Step({
         try {
             let responseText = agentResponse.text.trim();
             // マークダウンのコードブロックを除去
-            responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
-            const parsed = JSON.parse(responseText);
-            if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
-                generatedThoughts = parsed;
-            } else {
+                responseText = responseText.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+                const parsed = JSON.parse(responseText);
+                if (Array.isArray(parsed) && parsed.every(item => typeof item === 'string')) {
+                    generatedThoughts = parsed;
+                } else {
                 logger.error("(InitialThoughts) パース結果が文字列配列ではありません", { parsed });
-                generatedThoughts = ["エラー: エージェントの応答形式が不正です (配列ではありません)。"];
-            }
-        } catch (parseError) {
+                   generatedThoughts = ["エラー: エージェントの応答形式が不正です (配列ではありません)。"];
+                }
+            } catch (parseError) {
             logger.error("(InitialThoughts) エージェント応答のJSONパースに失敗しました", { error: parseError, responseText: agentResponse.text });
             generatedThoughts = ["エラー: エージェントの応答をJSONとして解析できませんでした。", agentResponse.text];
-        }
-    } else {
+            }
+        } else {
         // ★ logger.error から第二引数を削除
         logger.error("(InitialThoughts) エージェントからテキスト応答がありませんでした");
-        generatedThoughts = ["エラー: エージェントからテキスト応答がありませんでした。"];
+            generatedThoughts = ["エラー: エージェントからテキスト応答がありませんでした。"];
     }
 
     logger.info(`(InitialThoughts) 生成された思考: ${generatedThoughts.length}件`);
@@ -365,252 +408,224 @@ const prepareProcessThoughtsInput = new Step({
     },
 });
 
-// ★ NEW: prepareSynthesizeInput ステップ
-const prepareSynthesizeInput = new Step({
-    id: 'prepareSynthesizeInput',
-    description: 'synthesizeStep への入力を準備するステップ',
-    inputSchema: z.any().optional(),
-    outputSchema: prepareSynthesizeOutputSchema,
-    execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
+// synthesizeStep の定義
+const synthesizeStep = new Step({
+  id: 'synthesizeStep',
+  description: '最終レポートを生成するステップ',
+  inputSchema: synthesizeInputSchema,
+  outputSchema: synthesizeOutputSchema,
+  execute: async ({ context }) => {
+    const logger = getLogger();
+    logger.info("(SynthesizeStep) Generating final report");
+    
+    // デバッグ情報
+    logger.info("(SynthesizeStep) Debug info - query=\"" + context.triggerData.query + 
+        "\", subQuestionsCount=" + context.triggerData.subQuestions.length + 
+        ", bestThought=" + JSON.stringify(context.triggerData.bestThought) +
+        ", searchResultsCount=" + (context.triggerData.searchResults?.length || 0));
+    
+    try {
+      const searchResults = context.triggerData.searchResults || [];
+      // 検索結果の有無に応じてプロンプトを調整
+      let prompt = '';
+      
+      if (searchResults && searchResults.length > 0) {
+        // 検索結果がある場合、それらの情報を含める
+        prompt = `以下の情報に基づいて、ユーザーの質問に対する包括的な最終レポートをマークダウン形式で作成してください。
+
+ユーザーの質問: "${context.triggerData.query}"
+
+選択された主要な思考: ${context.triggerData.bestThought ? JSON.stringify(context.triggerData.bestThought) : "情報なし"}
+
+サブクエスチョン: 
+${context.triggerData.subQuestions.map((q: string, i: number) => `${i+1}. ${q}`).join('\n')}
+
+検索結果:
+${searchResults.map((result: any, i: number) => 
+  `検索ソース: ${result.source}
+  検索クエリ: "${result.query}"
+  結果件数: ${result.results.length}件
+  主要な結果:
+  ${result.results.slice(0, 3).map((item: any, j: number) => 
+    `- タイトル: ${item.title || '不明'}
+     URL: ${item.url || '不明'}
+     説明: ${item.description || item.content || '不明'}`
+  ).join('\n  ')}`
+).join('\n\n')}
+
+これらの情報を統合し、以下の構成で最終レポートを作成してください:
+1. 概要: 質問とその背景について簡潔に説明
+2. 主要な思考の詳細分析: 選択された思考の重要性と意味を分析
+3. 収集された証拠と情報: 検索で見つかった関連情報を要約
+4. 結論と洞察: 質問に対する総合的な見解や洞察
+5. 今後の調査方向（サブクエスチョン）: 挙げられたサブクエスチョンを今後の調査方向として提示
+
+レポートは事実に基づき、情報ソースを適切に参照し、バランスの取れた見解を提供してください。`;
+      } else {
+        // 検索結果がない場合、より一般的なプロンプト
+        prompt = `以下の情報に基づいて、ユーザーの質問に対する包括的な最終レポートをマークダウン形式で作成してください。
+
+ユーザーの質問: "${context.triggerData.query}"
+
+選択された主要な思考: ${context.triggerData.bestThought ? JSON.stringify(context.triggerData.bestThought) : "情報なし"}
+
+サブクエスチョン: 
+${context.triggerData.subQuestions.map((q: string, i: number) => `${i+1}. ${q}`).join('\n')}
+
+これらの情報を統合し、以下の構成で最終レポートを作成してください:
+1. 概要: 質問とその背景について簡潔に説明
+2. 主要な思考の詳細分析: 選択された思考の重要性と意味を分析
+3. 収集された証拠と情報: 現時点では外部情報が限られていることを説明
+4. 結論と洞察: 質問に対する総合的な見解や洞察
+5. 今後の調査方向（サブクエスチョン）: 挙げられたサブクエスチョンを今後の調査方向として提示
+
+レポートは事実に基づき、バランスの取れた見解を提供してください。`;
+      }
+      
+      const result = await synthesizerAgent.generate(prompt);
+      
+      if (result.text) {
+        logger.info("(SynthesizeStep) Generated report successfully.");
+        // 最終レポートの内容をログに出力
+        logger.info("=========== 最終レポート内容 =============");
+        logger.info("```markdown\n" + result.text + "\n```");
+        logger.info("=========== 最終レポート終了 =============");
+        return { report: result.text };
+      } else {
+        logger.error("(SynthesizeStep) Agent did not return text");
+        return { report: "エラー: レポート生成中に問題が発生しました。" };
+      }
+    } catch (error) {
+      logger.error("(SynthesizeStep) Error generating report", { error });
+      return { report: "エラー: レポート生成中にエラーが発生しました。" };
+    }
+  },
+});
+
+// ループ内で実行されるステップ (researchCycleStep の定義は変更なし)
+const researchCycleStep = new Step({
+    id: 'researchCycleStep',
+    description: 'ループ内で検索を実行し、思考を更新するステップ',
+    inputSchema: z.any(), // ループの状態を受け取る
+    outputSchema: z.any(), // 更新されたループの状態を返す
+    execute: async ({ context }: StepExecutionContext<any>) => {
         const logger = getLogger();
-        
-        const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-        // ★ ステップ名を文字列で指定
-        const transformThoughtResult = context.getStepResult(transformThoughtStep);
-        // requestClarificationStep の結果を取得
-        const clarificationResult = context.getStepResult(requestClarificationStep);
-        // 元のクエリまたは明確化されたクエリを取得
-        const query = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
+        const loopData = context.inputData; // .while から渡される accumulatedData
+        // ★ 修正: inspectの結果をオブジェクトに入れる ★
+        logger.info('[DEBUG] researchCycleStep execute - START', { inspectedLoopData: inspect(loopData, { depth: null }) });
 
-        const initialThoughts = initialThoughtsResult?.thoughts ?? [];
-        const subQuestions = transformThoughtResult?.subQuestions ?? [];
+        let currentSearchResults: any[] = [];
+        let nextSubQuestionsForLoop: string[] = [];
+        let currentBestThought = loopData.bestThought;
 
-        logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", {
-          initialThoughtsCount: initialThoughts.length,
-          subQuestionsCount: subQuestions.length,
-          query
-        });
-        
-        return { 
-          query: query,
-          initialThoughts: initialThoughts,
-          subQuestions: subQuestions
+        // 1. サブクエスチョンに基づいて検索を実行
+        if (loopData.subQuestions && loopData.subQuestions.length > 0) {
+            // ★ ログ修正: 文字列ではなくオブジェクトを渡す ★
+            logger.info('[DEBUG] researchCycleStep - Performing search for subQuestions:', { subQuestions: loopData.subQuestions });
+            const searchPromises = loopData.subQuestions.map(async (subQuery: string) => {
+                try {
+                    // thoughtTransformerAgent を使って検索ツールを呼び出す
+                    // (注意: ここでは thoughtTransformerAgent が検索ツールを呼び出す前提)
+                    const agentResponse = await thoughtTransformerAgent.generate(
+                        `Based on the original query "${loopData.query}" and the current thought ${JSON.stringify(loopData.selectedThought)}, perform a web search for the sub-question: "${subQuery}". Use the available search tool.`
+                    );
+
+                    // toolResults から検索結果を抽出する (エージェントの応答形式に依存)
+                    const searchToolResult = agentResponse.toolResults?.find(tr => tr.toolName === 'webSearchTool'); // 仮のツール名
+                    if (searchToolResult?.result) {
+                        // ★ ログ修正: 文字列ではなくオブジェクトを渡す ★
+                        logger.info(`[DEBUG] researchCycleStep - Search successful for subQuery: "${subQuery}"`, { subQuery: subQuery });
+                        return { source: 'webSearchTool', query: subQuery, results: searchToolResult.result };
+                    } else {
+                        logger.warn(`[DEBUG] researchCycleStep - No search result found in agent response for subQuery: "${subQuery}"`, { subQuery: subQuery, agentResponse });
+                        return { source: 'webSearchTool', query: subQuery, results: [] }; // 結果なし
+                    }
+                } catch (error) {
+                    logger.error(`[DEBUG] researchCycleStep - Error searching for subQuery: "${subQuery}"`, { subQuery: subQuery, error });
+                    return { source: 'webSearchTool', query: subQuery, results: [] }; // エラー時も空配列
+                }
+            });
+            currentSearchResults = await Promise.all(searchPromises);
+            logger.info('[DEBUG] researchCycleStep - Completed searches', { currentSearchResults });
+        } else {
+            logger.info('[DEBUG] researchCycleStep - No subQuestions to search for this cycle.');
+        }
+
+        // 2. (オプション) 検索結果に基づいて思考を更新・評価する
+        // ここで再度 thoughtGeneratorAgent や processThoughtsWorkflow を呼び出すことも可能
+        // 今回はシンプルにするため、既存の bestThought を維持
+        logger.info('[DEBUG] researchCycleStep - Maintaining current best thought', { currentBestThought });
+
+
+        // 3. 次のループのためのサブクエスチョンを生成 (必要なら)
+        // 例: 検索結果が不十分なら新しいサブクエスチョンを生成
+        // ここでは簡単化のため、次のサブクエスチョンは生成しない (ループは回数で終了)
+        logger.info('[DEBUG] researchCycleStep - No generation of next subQuestions in this simplified version.');
+        nextSubQuestionsForLoop = []; // 次のサブクエスチョンは空
+
+
+        const output = {
+            searchResults: currentSearchResults, // このサイクルでの検索結果
+            bestThought: currentBestThought,     // 更新された思考 (今回は維持)
+            nextSubQuestions: nextSubQuestionsForLoop // 次のサイクルで使うサブクエスチョン
         };
+        // ★ 修正: inspectの結果をオブジェクトに入れる ★
+        logger.info('[DEBUG] researchCycleStep execute - END', { inspectedOutput: inspect(output, { depth: null }) });
+        return output;
     },
 });
 
-// ★ 新しいステップ: transformThoughtStep
-const transformThoughtStep = new Step({
-  id: 'transformThoughtStep',
-  description: '選択された思考を基にサブクエスチョンを生成するステップ',
-  inputSchema: z.any(), // 入力は processThoughtsWorkflow の結果
-  outputSchema: transformThoughtOutputSchema,
-  execute: async ({ context }: StepExecutionContext<any, WorkflowContext<typeof triggerSchema>>) => {
-    const logger = getLogger();
-
-    // サブワークフローの結果にアクセス
-    const processThoughtsResult = context.getStepResult('processThoughtsWorkflow');
-    
-    // ★★★ デバッグログ強化: 取得した結果オブジェクトの中身を確認 ★★★
-    logger.info("(TransformThoughtStep) Detailed processThoughtsResult:", { 
-      keys: processThoughtsResult ? Object.keys(processThoughtsResult) : 'null', 
-      hasResultProp: processThoughtsResult?.hasOwnProperty('result'),
-      resultProp: processThoughtsResult?.result,
-      raw: processThoughtsResult 
-    });
-    
-    // selectedThought を取得するロジックを修正
-    let selectedThought: ThoughtEvaluation | undefined = undefined;
-    if (processThoughtsResult && typeof processThoughtsResult === 'object' && processThoughtsResult.result) {
-        // result プロパティが存在し、その中に selectedThought があれば取得
-        selectedThought = processThoughtsResult.result.selectedThought as ThoughtEvaluation | undefined;
-        logger.info("(TransformThoughtStep) Attempted to get selectedThought from processThoughtsResult.result");
-    } else {
-        logger.warn("(TransformThoughtStep) processThoughtsResult or processThoughtsResult.result is missing or invalid.");
-    }
-    
-    // ★ デバッグログ追加: 取得試行後の selectedThought の値を確認
-    logger.info("(TransformThoughtStep) Value of selectedThought after extraction attempt:", { selectedThought });
-
-    if (!selectedThought || !selectedThought.thought) {
-      logger.warn("(TransformThoughtStep) No valid selected thought found after extraction. Skipping sub-question generation.");
-      return { selectedThought: undefined, subQuestions: [] }; 
-    }
-    
-    logger.info(`(TransformThoughtStep) Selected thought: ${selectedThought.thought}`);
-    logger.info(`(TransformThoughtStep) Score: ${selectedThought.score}`);
-    logger.info(`(TransformThoughtStep) Reasoning: ${selectedThought.reasoning}`);
-    
-    // requestClarificationStep の結果を取得
-    const clarificationResult = context.getStepResult(requestClarificationStep);
-    // 元のクエリまたは明確化されたクエリを取得
-    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
-
-    // 選択された思考に基づいてサブクエスチョンを生成
-    try {
-      // ★ Agent の generate 呼び出しを修正
-      const { text: responseText } = await thoughtTransformerAgent.generate(
-        [
-          {
-            role: 'system',
-            content: `あなたは選択された思考から関連するサブクエスチョンを生成するエキスパートです。与えられた思考をさらに探求するような質問を考えてください。`,
-          },
-          {
-            role: 'user',
-            // ★ reconstructedQuery を使用
-            content: `元の質問: "${reconstructedQuery}"
-            
-            選択された思考: "${selectedThought.thought}"
-            
-            この思考に関連する具体的なサブクエスチョンを3つ生成してください。
-            JSONフォーマットで回答してください:
-            {
-              "subQuestions": [
-                "サブクエスチョン1",
-                "サブクエスチョン2",
-                "サブクエスチョン3"
-              ]
-            }`,
-          },
-        ]
-      );
-      
-      // レスポンスからJSONを抽出して解析
-      const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
-      const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-      
-      if (result && Array.isArray(result.subQuestions)) {
-        logger.info(`(TransformThoughtStep) Generated ${result.subQuestions.length} sub-questions`);
-        return { 
-          selectedThought: selectedThought,
-          subQuestions: result.subQuestions 
-        };
-      } else {
-        logger.warn(`(TransformThoughtStep) Failed to parse sub-questions as JSON`);
-        return { 
-          selectedThought: selectedThought,
-          subQuestions: [] 
-        };
-      }
-    } catch (e) {
-      logger.error(`(TransformThoughtStep) Error generating sub-questions: ${e}`);
-      return { 
-        selectedThought: selectedThought,
-        subQuestions: [] 
-      };
-    }
-  },
-});
-
-// ★ 新しいステップ: synthesizeStep
-const synthesizeStep = new Step({
-  id: 'synthesizeStep',
-  description: '初期思考とサブクエスチョンを統合して最終レポートを生成するステップ',
-  inputSchema: synthesizeInputSchema,
-  outputSchema: synthesizeOutputSchema,
-  execute: async ({ context }: StepExecutionContext<typeof synthesizeInputSchema>) => {
-    const logger = getLogger();
-
-    // ★★★ デバッグログを追加 ★★★
-    logger.info('--- [DEBUG] synthesizeStep context.inputData ---');
-    logger.info(`typeof context.inputData: ${typeof context.inputData}`);
-    try {
-      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
-    } catch (e) {
-      logger.error('synthesizeStep context.inputData の JSON 文字列化に失敗:', { error: String(e) });
-      logger.info(`synthesizeStep context.inputData (raw): ${String(context.inputData)}`);
-    }
-    logger.info('--- [DEBUG] End synthesizeStep context.inputData ---');
-
-    // 入力からデータを抽出、オブジェクトに変換された文字列の可能性を考慮
-    let initialThoughts: string[] = [];
-    let subQuestions: string[] = [];
-
-    try {
-      // 初期の思考とサブクエスチョンを取得
-      // 可能であれば前のステップから
-      const initialThoughtsResult = context.getStepResult(initialThoughtsStep) as InitialThoughtsOutput | null;
-      if (initialThoughtsResult) {
-        initialThoughts = initialThoughtsResult.thoughts || [];
-      }
-
-      const transformResult = context.getStepResult(transformThoughtStep) as TransformThoughtOutput | null;
-      if (transformResult) {
-        subQuestions = transformResult.subQuestions || [];
-      }
-
-      // InputData から取得 (文字列化された可能性を考慮)
-      if (initialThoughts.length === 0 && context.inputData && context.inputData.initialThoughts) {
-        initialThoughts = Array.isArray(context.inputData.initialThoughts) 
-                         ? context.inputData.initialThoughts 
-                         : [reconstructStringFromObjectIfNeeded(context.inputData.initialThoughts)];
-      }
-
-      if (subQuestions.length === 0 && context.inputData && context.inputData.subQuestions) {
-        subQuestions = Array.isArray(context.inputData.subQuestions) 
-                     ? context.inputData.subQuestions 
-                     : [reconstructStringFromObjectIfNeeded(context.inputData.subQuestions)];
-      }
-
-      logger.info(`[DEBUG] Initial thoughts: ${JSON.stringify(initialThoughts)}`);
-      logger.info(`[DEBUG] SubQuestions: ${JSON.stringify(subQuestions)}`);
-
-      const prompt = `
-以下の情報を統合し、構造化された最終レポートをMarkdown形式で生成してください。
-
-### 初期思考
-${initialThoughts.map(t => `- ${t}`).join('\n')}
-
-### サブクエスチョン
-${subQuestions.map(q => `- ${q}`).join('\n')}
-
-レポート:
-`;
-
-      const result = await synthesizerAgent.generate(prompt);
-      const report = result.text || 'エラー: レポートの生成に失敗しました。';
-      logger.info("(SynthesizeStep) Generated report successfully.");
-      // 最終レポートの内容を詳細にログ出力
-      logger.info("=========== 最終レポート内容 =============");
-      logger.info(report);
-      logger.info("=========== 最終レポート終了 =============");
-      return { report };
-    } catch (error) {
-      // ★ エラーをオブジェクトでラップ
-      logger.error("(SynthesizeStep) Error calling synthesizerAgent:", { error: String(error) });
-      return { report: 'エラー: レポート生成中に問題が発生しました。' };
-    }
-  },
-});
-
-// ★★★ ワークフローチェインの修正 ★★★
+// ★★★ ワークフローチェインの修正 (ループ構造導入) ★★★
 goTResearchWorkflow
   .step(clarityCheckStep)
   .then(requestClarificationStep, {
-    // ★ when 条件を async に修正
-    when: async ({ context }: { context: WorkflowContext<typeof triggerSchema> }) => {
-      // ★ 結果取得を await する必要はない
+    when: async ({ context }) => {
       const clarityResult = context.getStepResult(clarityCheckStep);
       return !clarityResult?.isClear;
     },
   })
-  .then(initialThoughtsStep)
-  .then(prepareProcessThoughtsInput)
-  // processThoughtsWorkflow をサブワークフローとして正しく呼び出す
-  .then(processThoughtsWorkflow, {
-    variables: {
-      thoughts: { step: prepareProcessThoughtsInput, path: "thoughts" },
-      originalQuery: { step: prepareProcessThoughtsInput, path: "originalQuery" }
+  // ★ ループ前のステップは削除/シンプル化
+  // --- .while ループ --- 
+  .while(
+    // 第一引数: 条件判定関数
+    async ({ context }: { context: WorkflowContext<any, any> }) => {
+      // 直前のループステップの結果を取得
+      const cycleResult = context.getStepResult(researchCycleStep);
+      const logger = getLogger();
+      
+      // 詳細なデバッグログ
+      logger.info(`(.while condition) cycleResult: ${JSON.stringify(cycleResult)}`);
+      
+      // 型安全にプロパティをアクセス (cycleResult が any 型のため)
+      const score = cycleResult && typeof cycleResult === 'object' && 'score' in cycleResult 
+         ? cycleResult.score as number | undefined
+         : undefined;
+      const threshold = 7; // ループ継続の閾値
+      
+      // スコアがない場合は最初のループなので、必ず実行する
+      // (初回はcycleResultがundefined)
+      const isFirstRun = cycleResult === undefined || score === undefined;
+      
+      // ★★★ 修正: isFirstRun を単独変数で確実に評価 ★★★
+      if (isFirstRun) {
+        logger.info(`(.while condition) First run detected, will continue loop`);
+        return true;
+      }
+      
+      // それ以降はスコアに基づいて判断
+      const shouldContinue = score !== undefined && score < threshold;
+      logger.info(`(.while condition) isFirstRun: ${isFirstRun}, Score: ${score}, Threshold: ${threshold}, Should continue? ${shouldContinue}`);
+      return shouldContinue;
+    },
+    // 第二引数: 繰り返すステップ
+    researchCycleStep,
+    // 第三引数: 変数マッピング
+    {
+      // researchCycleStep に渡す変数
+      query: { step: requestClarificationStep, path: "clarifiedQuery" }
     }
-  })
-  .then(transformThoughtStep)
+  )
+  // --- ループ終了後 --- 
   .then(prepareSynthesizeInput)
   .then(synthesizeStep)
-  .commit();
-
-// --- 共通関数: 初期思考生成 (現在は未使用) ---
-/*
-async function generateInitialThoughts(query: string): Promise<string[]> {
-    // ... (省略) ...
-}
-*/ 
+  .commit(); 

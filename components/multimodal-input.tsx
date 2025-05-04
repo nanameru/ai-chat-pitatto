@@ -184,9 +184,6 @@ function PureMultimodalInput({
 
   const [isWebSearchEnabled, setIsWebSearchEnabled] = useLocalStorage('isWebSearchEnabled', false);
   
-  // Deep Researchのローディング状態を管理する状態変数を追加
-  const [isDeepResearchLoading, setIsDeepResearchLoading] = useState(false);
-  
   // WebSearch機能の状態変更をより確実に行うためのハンドラ関数
   const handleWebSearchToggleInternal = useCallback((newState: boolean) => {
     console.log(`[PureMultimodalInput] WebSearch状態を変更: ${isWebSearchEnabled} → ${newState}`);
@@ -229,170 +226,6 @@ function PureMultimodalInput({
       }
     }, 0);
   }, [isWebSearchEnabled, setIsWebSearchEnabled]);
-
-  /**
-   * Mastra Deep Research Agent V2を実行する関数
-   * @param query ユーザーの入力クエリ
-   * @param chatId チャットID
-   * @param modelId 選択されたモデルID
-   * @param clarificationResponse 明確化質問に対するユーザーの回答（オプション）
-   */
-  const executeDeepResearchAgent = async (query: string, chatId: string, modelId: string, clarificationResponse?: string) => {
-    console.log('[Deep Research] executeDeepResearchAgent 開始:', { query, chatId, modelId, clarificationResponse });
-    setIsDeepResearchLoading(true);
-
-    try {
-      // ★ 修正: Vercel AI SDK が期待する形式に合わせる ★
-      const newUserMessage: Message = {
-        id: nanoid(), // 新しいメッセージID
-        role: 'user' as const,
-        content: clarificationResponse ? `${query}\n\n[Clarification Response]:\n${clarificationResponse}` : query, // 明確化応答も内容に含める
-        createdAt: new Date()
-      };
-
-      // 既存の messages 配列に新しいユーザーメッセージを追加
-      const messagesToSend = [...messages, newUserMessage];
-
-      // APIに送信するリクエストボディ
-      const requestBody = {
-        messages: messagesToSend, // ★ messages 配列を含める ★
-        chatId: chatId,
-        model: modelId, // ★ モデルIDも追加 (API側で受け取れるように変更済み) ★
-        // clarificationResponse は messages に含めたので不要
-      };
-      console.log('[Deep Research] APIリクエストを開始 (Body修正版):', { query, chatId, modelId: modelId, clarificationResponse, bodySize: JSON.stringify(requestBody).length }); // ログ更新
-      console.log('[Deep Research] API Request Body:', requestBody); // ログはそのまま
-
-      const response = await fetch('/api/deep-research', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody), // 修正されたボディを送信
-      });
-
-      if (!response.ok) {
-        // ★ エラーレスポンスの詳細を取得しようと試みる
-        let errorDetails = `APIエラー: ${response.status} ${response.statusText}`;
-        try {
-          const errorJson = await response.json();
-          errorDetails = errorJson.error || errorJson.details || errorDetails;
-        } catch (e) {
-          // JSONパース失敗時は元のエラーメッセージを使用
-        }
-        throw new Error(errorDetails);
-      }
-
-      // ★ ストリーミング応答の処理 ★
-      if (!response.body) {
-        throw new Error('APIからの応答が空です。');
-      }
-
-      // ヘッダーに基づいて処理を分岐
-      const isDataStream = response.headers.get('X-Experimental-Stream-Data') === 'true';
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-
-      if (isDataStream) {
-        console.log('[Deep Research] データストリームを受信 (明確化メッセージ)');
-        let done = false;
-        let streamedData = '';
-        while (!done) {
-          const { value, done: readerDone } = await reader.read();
-          done = readerDone;
-          if (value) {
-            streamedData += decoder.decode(value, { stream: true });
-          }
-        }
-        // ストリーム全体のデータをパース
-        try {
-          const data = JSON.parse(streamedData);
-          if (data.type === 'clarification' && data.message) {
-            console.log('[Deep Research] 明確化メッセージを処理:', data.message);
-            await append({
-              id: nanoid(),
-              content: data.message,
-              role: 'assistant' as const,
-              createdAt: new Date()
-            });
-            setClarificationMode({ active: true, originalQuery: data.originalQuery || query });
-            setInput('');
-          } else {
-            console.error('[Deep Research] 不明なデータストリーム形式:', data);
-            throw new Error('APIから不明なデータ形式が返されました。');
-          }
-        } catch (e) {
-          console.error('[Deep Research] データストリームのJSONパースに失敗:', e, '受信データ:', streamedData);
-          throw new Error('API応答の解析に失敗しました。');
-        }
-
-      } else {
-        console.log('[Deep Research] テキストストリームを受信 (最終結果)');
-        // ★ 最終結果のテキストストリームを直接appendで処理
-        // Vercel SDK の内部処理に近い形でストリームを読み取る
-        let accumulatedText = '';
-        let messageId = nanoid(); // メッセージIDを生成
-        let firstChunk = true;
-
-        while (true) {
-          const { value, done } = await reader.read();
-          if (done) break;
-
-          const textChunk = decoder.decode(value, { stream: true });
-          accumulatedText += textChunk;
-
-          // append または update を使用してUIを更新
-          // useChat フックは直接使えないため、appendを模倣する
-          // 既存のメッセージを更新する機能が必要になる可能性がある
-          // ここでは単純に追記し続けるが、パフォーマンスに影響する可能性あり
-          if (firstChunk) {
-            await append({
-              id: messageId,
-              content: accumulatedText,
-              role: 'assistant' as const,
-              createdAt: new Date()
-            });
-            firstChunk = false;
-          } else {
-            // 既存メッセージを更新するロジック (setMessagesなどが必要)
-            // 現状のappendは新規追加しかできないため、擬似的に更新
-            // ※ 本来は useChat の setMessages を使うべき
-            const currentMessages = messages; // 親コンポーネントから渡される messages
-            const updatedMessages = currentMessages.map(msg => 
-              msg.id === messageId ? { ...msg, content: accumulatedText } : msg
-            );
-            // ここで setMessages(updatedMessages) を呼び出す必要がある
-            // しかし、この関数には setMessages が渡されていないため、
-            // 既存のappendを呼び出すことで暫定対応 (UI上は複数メッセージに見える可能性)
-             await append({ // ← 本来は既存メッセージ更新
-               id: messageId + '-' + nanoid(4), // ID重複回避のため一時的なID生成
-               content: textChunk, // 差分だけ送る (UI側で結合表示が必要)
-               role: 'assistant' as const,
-               createdAt: new Date()
-             }, { data: { isUpdate: true, targetId: messageId }}); // 更新フラグ（UI側での対応が必要）
-             // ↑ このappendの使い方は正しくない可能性が高い。
-             // 最終的には useChat フックと連携するようにリファクタリングが必要。
-          }
-        }
-        console.log('[Deep Research] テキストストリーム完了');
-        setClarificationMode({ active: false, originalQuery: '' });
-      }
-
-    } catch (error) {
-      console.error('[Deep Research] 実行中にエラーが発生:', error);
-      // ★ UIにエラーを表示する処理 (例: appendでエラーメッセージ表示)
-      const errorMessage = error instanceof Error ? error.message : '不明なエラーが発生しました。';
-      await append({
-        id: nanoid(),
-        content: `エラー: ${errorMessage}`,
-        role: 'assistant',
-        createdAt: new Date(),
-        annotations: [{ type: 'error', data: { details: errorMessage } }] // エラー情報付与
-      });
-      // エラーを再スローしない (UIに表示済みのため)
-      // throw error;
-    } finally {
-      setIsDeepResearchLoading(false);
-    }
-  };
 
   const handleXSearchToggle = useCallback(() => {
     const oldState = isXSearchEnabled;
@@ -447,13 +280,13 @@ function PureMultimodalInput({
       // Deep Researchモードが有効になった場合は自動的にMastraエージェントを実行
       if (newState && input.trim()) {
         console.log(`[Deep Research] モード切替時に自動実行を開始`);
-        executeDeepResearchAgent(input, chatId, selectedModelId)
-          .then(() => {
-            console.log(`[Deep Research] モード切替時の自動実行が完了しました`);
-          })
-          .catch((error) => {
-            console.error(`[Deep Research] モード切替時の自動実行中にエラーが発生しました:`, error);
-          });
+        // executeDeepResearchAgent(input, chatId, selectedModelId)
+        //   .then(() => {
+        //     console.log(`[Deep Research] モード切替時の自動実行が完了しました`);
+        //   })
+        //   .catch((error) => {
+        //     console.error(`[Deep Research] モード切替時の自動実行中にエラーが発生しました:`, error);
+        //   });
       } else if (newState) {
         console.log(`[Deep Research] 入力が空のため、自動実行をスキップしました`);
         // toast.info('入力を入力して送信するとDeep Researchが実行されます', { duration: 5000 }); // 削除: 使用方法メッセージ
@@ -627,7 +460,7 @@ function PureMultimodalInput({
             // ★★★ 修正ここまで ★★★
 
             // Deep Research Agentを呼び出してAIの応答を取得・表示
-            await executeDeepResearchAgent(clarificationMode.originalQuery, chatId, selectedModelId, currentInput);
+            // await executeDeepResearchAgent(clarificationMode.originalQuery, chatId, selectedModelId, currentInput);
 
             // 処理成功後に明確化モードを解除
             setClarificationMode({ active: false, originalQuery: '' });
@@ -682,7 +515,7 @@ function PureMultimodalInput({
           
           try {
             // Deep Research Agent V2を実行
-            await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
+            // await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
             return;
           } catch (error) {
             console.error('[Deep Research] 処理中にエラーが発生:', error);
@@ -847,7 +680,7 @@ function PureMultimodalInput({
           
           try {
             // Mastra Deep Research Agent V2を実行
-            await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
+            // await executeDeepResearchAgent(currentInput, chatId, selectedModelId);
           } catch (error) {
             console.error('[Deep Research] Deep Research処理でエラーが発生:', error);
             // toast.error('Deep Research処理に失敗しました', { duration: 5000 }); // 削除: 完了メッセージ
@@ -1120,16 +953,6 @@ function PureMultimodalInput({
           <SuggestedActions append={append} chatId={chatId} />
         )}
 
-      {/* Deep Researchのローディング表示（既存のUIの上部に配置） - 削除
-      {isDeepResearchLoading && (
-        <div className="absolute -top-14 w-full flex justify-center">
-          <div className="bg-blue-50 text-blue-700 px-4 py-2 rounded-md flex items-center">
-            <span className="animate-pulse mr-2">●</span>
-            詳細な調査を実行中...
-          </div>
-        </div>
-      )} */}
-
       <input
         type="file"
         className="fixed -top-4 -left-4 size-0.5 opacity-0 pointer-events-none"
@@ -1198,12 +1021,12 @@ function PureMultimodalInput({
             isEnabled={isWebSearchEnabled} 
             onToggle={handleWebSearchToggleInternal} 
           />
-          <XSearchButton
+          {/* <XSearchButton
             initialValue={isXSearchEnabled}
             onXSearchToggle={onXSearchToggle || ((enabled, silentMode) => {
               console.log('[MultimodalInput] onXSearchToggle が未定義のため、デフォルト処理を実行します');
             })}
-          />
+          /> */}
           {messages.length > 0 && onShowSearchResults && (
             <Tooltip>
               <TooltipTrigger asChild>
@@ -1280,7 +1103,6 @@ const PureWebSearchButton = memo(function PureWebSearchButton({
   onToggle: (newState: boolean) => void;
 }) {
   // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
-  // 親コンポーネントから渡されたisEnabledを初期値として使用
   const [clientSideEnabled, setClientSideEnabled] = useState(false);
   
   // マウント後、親から渡された値に合わせて状態を更新
@@ -1403,121 +1225,6 @@ const WebSearchButton = memo(function WebSearchButton({
   />;
 });
 WebSearchButton.displayName = 'WebSearchButton';
-
-const PureXSearchButton = memo(function PureXSearchButton({
-  initialValue = false,
-  onXSearchToggle
-}: {
-  initialValue?: boolean;
-  onXSearchToggle: (enabled: boolean, silentMode?: boolean) => void;
-}) {
-  // クライアント側の状態を管理（サーバーレンダリング用にデフォルト値はfalse）
-  const [clientSideEnabled, setClientSideEnabled] = useState(initialValue);
-  
-  // マウント後、propsの値に合わせて状態を更新
-  // クライアントサイドでのみ状態を更新
-  useEffect(() => {
-    // ハイドレーション後に状態を更新
-    const timer = setTimeout(() => {
-      setClientSideEnabled(initialValue);
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [initialValue]);
-  
-  // ボタンの状態を視覚的に表示するためのクラス
-  // 注意: サーバーサイドレンダリングとクライアントサイドレンダリングで一致させるため
-  // 動的な値を使わず、固定のクラス名を使用する
-  const buttonClass = "h-8 px-4 rounded-full text-sm border flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 hover:bg-gray-100 border border-gray-200";
-  
-  const handleButtonClick = useCallback((e: React.MouseEvent<HTMLButtonElement>) => {
-    e.preventDefault();
-    
-    // 現在の状態を取得
-    const currentState = clientSideEnabled;
-    const newState = !currentState;
-    
-    console.log(`[PureXSearchButton] ボタンがクリックされました: ${currentState ? 'Deep Researchモード' : '通常チャットモード'} → ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
-    
-    // 即座に状態を更新して視覚的なフィードバックを提供
-    setClientSideEnabled(newState);
-    
-    // LocalStorageに即座に保存
-    try {
-      window.localStorage.setItem('searchMode', JSON.stringify(newState));
-    } catch (error) {
-      // エラーログは表示しない
-    }
-    
-    // カスタムイベントを即座に発火（親コンポーネントのコールバックより先に）
-    try {
-      const event = new CustomEvent('xsearch-mode-changed', { 
-        detail: { 
-          enabled: newState,
-          previous: currentState,
-          timestamp: new Date().toISOString(),
-          force: true,
-          immediate: true,
-          source: 'button-click',
-          resetChat: true, // useChatを確実に初期化するフラグ
-          silentMode: true // ログを抑制するフラグ
-        } 
-      });
-      window.dispatchEvent(event);
-    } catch (error) {
-      // エラーログは表示しない
-    }
-    
-    // 親コンポーネントのハンドラを呼び出し
-    onXSearchToggle(newState, true);
-    
-    // 状態が確実に更新されたことを確認
-    console.log(`[PureXSearchButton] モード切替完了: ${newState ? 'Deep Researchモード' : '通常チャットモード'}`);
-    
-    // LocalStorageの値を確認（デバッグ用）
-    setTimeout(() => {
-      const currentStorageValue = window.localStorage.getItem('searchMode');
-      console.log(`[PureXSearchButton] 状態確認: LocalStorage=${currentStorageValue}, ローカル状態=${newState}`);
-    }, 0);
-  }, [clientSideEnabled, onXSearchToggle]);
-  
-  const onClick = useCallback(() => {
-    // 親コンポーネントのコールバックを呼び出し
-    onXSearchToggle(clientSideEnabled, true); // silentModeフラグを追加
-  }, [clientSideEnabled, onXSearchToggle]);
-  
-  return (
-    <TooltipProvider>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            type="button"
-            onClick={handleButtonClick}
-            disabled={false}
-            suppressHydrationWarning
-            className={typeof window !== 'undefined' ? cx(
-              "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200",
-              clientSideEnabled
-                ? "bg-blue-100 text-blue-700 hover:bg-blue-200 border-transparent"
-                : "bg-white text-gray-700 hover:bg-gray-100 border border-gray-200"
-            ) : "h-8 px-4 rounded-full text-sm flex items-center gap-2 transition-colors duration-200 bg-white text-gray-700 border border-gray-200"}
-            aria-label="Deep Research"
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0 self-center" style={{ transform: 'translateY(-1px)' }}>
-              <path fillRule="evenodd" clipRule="evenodd" d="M8.40706 4.92939L8.5 4H9.5L9.59294 4.92939C9.82973 7.29734 11.7027 9.17027 14.0706 9.40706L15 9.5V10.5L14.0706 10.5929C11.7027 10.8297 9.82973 12.7027 9.59294 15.0706L9.5 16H8.5L8.40706 15.0706C8.17027 12.7027 6.29734 10.8297 3.92939 10.5929L3 10.5V9.5L3.92939 9.40706C6.29734 9.17027 8.17027 7.29734 8.40706 4.92939Z" fill="currentColor"/>
-            </svg>
-            <span>Deep Research</span>
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent>{clientSideEnabled ? "Deep Researchモード中 - クリックで通常モードに戻す" : "Deep Researchモードに切り替え"}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-});
-
-PureXSearchButton.displayName = 'PureXSearchButton';
-
-const XSearchButton = memo(PureXSearchButton);
-XSearchButton.displayName = 'XSearchButton';
 
 const PureAttachmentsButton = memo(function PureAttachmentsButton({
   fileInputRef,

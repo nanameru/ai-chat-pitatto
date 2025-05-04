@@ -2,708 +2,25 @@ import { evaluate } from '@mastra/core/eval';
 import { registerHook, AvailableHooks } from '@mastra/core/hooks';
 import { TABLE_EVALS } from '@mastra/core/storage';
 import { checkEvalStorageFields } from '@mastra/core/utils';
-import { Mastra, Telemetry } from '@mastra/core';
-import { createLogger } from '@mastra/core/logger';
-import { openai } from '@ai-sdk/openai';
-import { Agent } from '@mastra/core/agent';
-import { weatherTool, webSearchTool } from './tools/c1d9055f-f962-4f2f-a963-16290db4125b.mjs';
-import { z } from 'zod';
-import { Workflow, Step } from '@mastra/core/workflows';
+import { m as mastra } from './index2.mjs';
 import crypto, { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
-import { dirname } from 'path';
 import { join } from 'path/posix';
-import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer } from 'http';
 import { Http2ServerRequest } from 'http2';
 import { Readable } from 'stream';
 import { createReadStream, lstatSync } from 'fs';
-import { RuntimeContext } from '@mastra/core/di';
+import { Telemetry } from '@mastra/core';
+import { RuntimeContext } from '@mastra/core/runtime-context';
+import { Agent } from '@mastra/core/agent';
+import { z } from 'zod';
 import { isVercelTool } from '@mastra/core/tools';
 import { ReadableStream as ReadableStream$1 } from 'node:stream/web';
+import '@mastra/core/logger';
+import '@ai-sdk/openai';
+import '@mastra/core/workflows';
+import 'util';
 import 'buffer';
-
-const thoughtGeneratorAgent = new Agent({
-  name: "Thought Generator Agent",
-  instructions: `
-\u3042\u306A\u305F\u306F\u30EA\u30B5\u30FC\u30C1\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u3044\u3066\u3001\u305D\u306E\u8CEA\u554F\u306B\u3064\u3044\u3066\u8ABF\u67FB\u3059\u308B\u305F\u3081\u306E\u591A\u69D8\u306A\u521D\u671F\u601D\u8003\u3001\u7570\u306A\u308B\u8996\u70B9\u3001\u307E\u305F\u306F\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u8907\u6570\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-\u51FA\u529B\u306F\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u306E\u914D\u5217\u3068\u3057\u3066\u304F\u3060\u3055\u3044:
-\`\`\`json
-[
-  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 1",
-  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 2",
-  "..."
-]
-\`\`\`
-\u4ED6\u306E\u30C6\u30AD\u30B9\u30C8\u306F\u542B\u3081\u305A\u3001JSON\u914D\u5217\u306E\u307F\u3092\u51FA\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-`,
-  model: openai("gpt-4o-mini"),
-  outputSchema: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u601D\u8003\u3001\u8996\u70B9\u3001\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306E\u30EA\u30B9\u30C8")
-});
-
-const thoughtEvaluatorAgent = new Agent({
-  name: "thoughtEvaluatorAgent",
-  // model: openai('gpt-4o-mini'), // より低コストなモデルでも良いかも
-  model: openai("gpt-4o"),
-  instructions: `\u3042\u306A\u305F\u306F\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\uFF08\u30A2\u30A4\u30C7\u30A2\uFF09\u3092\u8A55\u4FA1\u3059\u308B\u5C02\u9580\u5BB6\u3067\u3059\u3002\u601D\u8003\u304C\u5143\u306E\u8CEA\u554F\u306B\u5BFE\u3057\u3066\u3069\u308C\u3060\u3051\u95A2\u9023\u6027\u304C\u9AD8\u304F\u3001\u30E6\u30CB\u30FC\u30AF\u3067\u3001\u5B9F\u73FE\u53EF\u80FD\u3067\u3001\u305D\u3057\u3066\u6700\u7D42\u7684\u306A\u6D1E\u5BDF\u306B\u3064\u306A\u304C\u308B\u53EF\u80FD\u6027\u304C\u3042\u308B\u304B\u3092\u8A55\u4FA1\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A55\u4FA1\u7D50\u679C\u306F\u5FC5\u305A\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u3067\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044: {"score": number (1-10), "reasoning": "\u8A55\u4FA1\u7406\u7531\u3092\u7C21\u6F54\u306B"}`
-});
-
-z.object({
-  selectedThought: z.string().describe("\u73FE\u5728\u6CE8\u76EE\u3057\u3066\u3044\u308B\u601D\u8003"),
-  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
-});
-z.object({
-  subQuestions: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306E\u30EA\u30B9\u30C8")
-});
-const thoughtTransformerAgent = new Agent({
-  name: "thoughtTransformerAgent",
-  description: "\u5165\u529B\u3055\u308C\u305F\u601D\u8003\u306B\u57FA\u3065\u3044\u3066\u3001\u8ABF\u67FB\u3092\u6DF1\u6398\u308A\u3059\u308B\u305F\u3081\u306E\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u3002",
-  instructions: "\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\u3068\u5143\u306E\u8CEA\u554F\u306B\u57FA\u3065\u304D\u3001\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3057\u3001\u6307\u5B9A\u3055\u308C\u305FJSON\u5F62\u5F0F\u3067\u51FA\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002",
-  model: openai("gpt-4o-mini")
-  // モデルは適宜選択
-});
-
-const synthesizerAgent = new Agent({
-  // エージェントの名前 (識別子)
-  name: "Synthesizer Agent",
-  // 使用する言語モデル (他のエージェントに合わせて gpt-4o-mini を使用)
-  model: openai("gpt-4o-mini"),
-  // エージェントへの指示 (GoTの Synthesize の役割を意識)
-  instructions: `
-\u3042\u306A\u305F\u306F\u3001\u30EA\u30B5\u30FC\u30C1\u7D50\u679C\u3092\u7D71\u5408\u3059\u308B\u5C02\u9580\u5BB6\u3067\u3059\u3002
-\u4E0E\u3048\u3089\u308C\u305F\u8907\u6570\u306E\u60C5\u5831\uFF08\u521D\u671F\u601D\u8003\u3001\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306A\u3069\uFF09\u3092\u5206\u6790\u3057\u3001\u69CB\u9020\u5316\u3055\u308C\u305F\u6700\u7D42\u30EC\u30DD\u30FC\u30C8\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-\u30EC\u30DD\u30FC\u30C8\u306F\u8AAD\u8005\u304C\u7406\u89E3\u3057\u3084\u3059\u3044\u3088\u3046\u306B\u3001\u8981\u70B9\u3092\u660E\u78BA\u306B\u3057\u3001\u8AD6\u7406\u7684\u306A\u6D41\u308C\u3067\u8A18\u8FF0\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-\u51FA\u529B\u306F Markdown \u5F62\u5F0F\u306E\u6587\u5B57\u5217\u306E\u307F\u3068\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-`
-  // 出力の形式を Zod で定義 (シンプルなレポート文字列)
-  // responseSchema: z.object({
-  //   report: z.string().describe('Markdown formatted final report synthesizing the inputs'),
-  // }),
-  // このエージェントは外部ツールを使わない想定なので、tools は指定しません。
-});
-
-new Agent({
-  name: "Weather Agent",
-  instructions: `
-      You are a helpful weather assistant that provides accurate weather information.
-
-      Your primary function is to help users get weather details for specific locations. When responding:
-      - Always ask for a location if none is provided
-      - If the location name isn't in English, please translate it
-      - If giving a location with multiple parts (e.g. "New York, NY"), use the most relevant part (e.g. "New York")
-      - Include relevant details like humidity, wind conditions, and precipitation
-      - Keep responses concise but informative
-
-      Use the weatherTool to fetch current weather data.
-`,
-  model: openai("gpt-4o"),
-  tools: { weatherTool }
-});
-new Agent({
-  name: "Web Search Agent",
-  instructions: `
-      You are a helpful web search assistant that provides relevant information from the internet.
-      
-      Your primary function is to help users find information on the web. When responding:
-      - Extract the main search intent from the user's query
-      - If the query is ambiguous, ask for clarification
-      - Provide a concise summary of the search results
-      - Include relevant URLs for further reading
-      - If no results are found, suggest alternative search queries
-      - Use markdown formatting to make your responses readable and well-structured
-      
-      Use the webSearchTool to fetch search results from the Brave Search API.
-  `,
-  model: openai("gpt-4o"),
-  tools: { webSearchTool }
-});
-const clarityCheckAgent = new Agent({
-  name: "clarityCheckAgent",
-  model: openai("gpt-4o-mini"),
-  instructions: `\u3042\u306A\u305F\u306F\u8CEA\u554F\u306E\u660E\u78BA\u3055\u3092\u8A55\u4FA1\u3059\u308B\u5C02\u9580\u5BB6\u3067\u3059\u3002\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u304C\u660E\u78BA\u304B\u4E0D\u660E\u78BA\u304B\u3092\u5224\u65AD\u3057\u3001\u7406\u7531\u3068\u3068\u3082\u306B\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u8A55\u4FA1\u7D50\u679C\u306F\u5FC5\u305A\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u3067\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044: {"isClear": boolean, "reasoning": "\u8A55\u4FA1\u7406\u7531\u3092\u7C21\u6F54\u306B"}`
-});
-const clarificationPromptAgent = new Agent({
-  name: "clarificationPromptAgent",
-  model: openai("gpt-4o-mini"),
-  instructions: `\u3042\u306A\u305F\u306F\u8CEA\u554F\u306E\u660E\u78BA\u5316\u3092\u652F\u63F4\u3059\u308B\u5C02\u9580\u5BB6\u3067\u3059\u3002\u4E0D\u660E\u78BA\u306A\u8CEA\u554F\u306B\u5BFE\u3057\u3066\u3001\u30E6\u30FC\u30B6\u30FC\u304C\u3088\u308A\u660E\u78BA\u306B\u8CEA\u554F\u3092\u518D\u69CB\u7BC9\u3067\u304D\u308B\u3088\u3046\u306A\u8CEA\u554F\u6587\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002`
-});
-
-const thoughtEvaluationSchema = z.object({
-  thought: z.string().describe("\u5143\u306E\u601D\u8003\u5185\u5BB9"),
-  score: z.number().min(1).max(10).describe("\u8A55\u4FA1\u30B9\u30B3\u30A2 (1-10)"),
-  reasoning: z.string().describe("\u8A55\u4FA1\u7406\u7531")
-});
-const processThoughtsOutputSchema = z.object({
-  selectedThought: thoughtEvaluationSchema.optional().describe("\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3068\u305D\u306E\u8A55\u4FA1")
-});
-const triggerSchema$1 = z.object({
-  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8"),
-  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
-});
-const evaluateThoughtsInputSchema = z.object({
-  thoughts: z.array(z.string()).describe("\u8A55\u4FA1\u3059\u308B\u601D\u8003\u306E\u30EA\u30B9\u30C8"),
-  originalQuery: z.string().describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
-});
-const evaluateThoughtsOutputSchema = z.object({
-  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("\u8A55\u4FA1\u3055\u308C\u305F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
-});
-const evaluateThoughtsStep = new Step({
-  id: "evaluateThoughtsStep",
-  description: "\u751F\u6210\u3055\u308C\u305F\u601D\u8003\u3092\u8A55\u4FA1\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: evaluateThoughtsInputSchema,
-  outputSchema: evaluateThoughtsOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    logger.info("--- [DEBUG] evaluateThoughtsStep received context ---");
-    logger.info(`context.triggerData: ${JSON.stringify(context.triggerData, null, 2)}`);
-    const thoughts = context.triggerData.thoughts || [];
-    const originalQuery = context.triggerData.originalQuery || "";
-    if (!thoughts || !Array.isArray(thoughts) || thoughts.length === 0) {
-      logger.error("(SubWorkflow - Evaluate) No valid thoughts array found in triggerData");
-      return { evaluatedThoughts: [] };
-    }
-    logger.info(`(SubWorkflow - Evaluate) Evaluating ${thoughts.length} thoughts from triggerData`);
-    const evaluatedThoughts = [];
-    for (const thought of thoughts) {
-      try {
-        const { text: responseText } = await thoughtEvaluatorAgent.generate(
-          [
-            {
-              role: "system",
-              content: `\u3042\u306A\u305F\u306F\u601D\u8003\u8A55\u4FA1\u30A8\u30AD\u30B9\u30D1\u30FC\u30C8\u3067\u3059\u3002\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\u3092\u8A55\u4FA1\u3057\u30011\u304B\u308910\u306E\u30B9\u30B3\u30A2\u3092\u3064\u3051\u3066\u304F\u3060\u3055\u3044\u3002
-              \u8A55\u4FA1\u57FA\u6E96:
-              - \u5143\u306E\u8CEA\u554F\u306B\u95A2\u9023\u3057\u3066\u3044\u308B\u3053\u3068
-              - \u6D1E\u5BDF\u529B\u304C\u3042\u308B\u3053\u3068
-              - \u5177\u4F53\u7684\u3067\u3042\u308B\u3053\u3068
-              - \u30AA\u30EA\u30B8\u30CA\u30EA\u30C6\u30A3\u304C\u3042\u308B\u3053\u3068`
-            },
-            {
-              role: "user",
-              content: `\u5143\u306E\u8CEA\u554F: "${originalQuery}"
-              
-              \u8A55\u4FA1\u3059\u308B\u601D\u8003: "${thought}"
-              
-              \u3053\u306E\u601D\u8003\u30921\u304B\u308910\u306E\u30B9\u30B1\u30FC\u30EB\u3067\u8A55\u4FA1\u3057\u3001\u305D\u306E\u7406\u7531\u3092\u8AAC\u660E\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-              JSON\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044:
-              {
-                "thought": "\u601D\u8003\u306E\u5185\u5BB9",
-                "score": \u8A55\u4FA1\u30B9\u30B3\u30A2\uFF08\u6570\u50241-10\uFF09,
-                "reasoning": "\u8A55\u4FA1\u7406\u7531\u306E\u8AAC\u660E"
-              }`
-            }
-          ]
-        );
-        try {
-          const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
-          const evaluationResult = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-          if (evaluationResult && typeof evaluationResult.score === "number") {
-            evaluatedThoughts.push({
-              thought,
-              score: evaluationResult.score,
-              reasoning: evaluationResult.reasoning || ""
-            });
-            logger.info(`(SubWorkflow - Evaluate) Evaluated thought: ${thought} with score ${evaluationResult.score}`);
-          } else {
-            logger.warn(`(SubWorkflow - Evaluate) Failed to parse evaluation result as JSON`);
-            evaluatedThoughts.push({
-              thought,
-              score: 5,
-              reasoning: "\u8A55\u4FA1\u7D50\u679C\u306E\u30D1\u30FC\u30B9\u306B\u5931\u6557\u3057\u307E\u3057\u305F"
-            });
-          }
-        } catch (e) {
-          logger.error(`(SubWorkflow - Evaluate) Error parsing evaluation result: ${e}`);
-          evaluatedThoughts.push({
-            thought,
-            score: 5,
-            reasoning: "\u8A55\u4FA1\u7D50\u679C\u306E\u30D1\u30FC\u30B9\u306B\u5931\u6557\u3057\u307E\u3057\u305F"
-          });
-        }
-      } catch (e) {
-        logger.error(`(SubWorkflow - Evaluate) Error evaluating thought: ${e}`);
-      }
-    }
-    return { evaluatedThoughts };
-  }
-});
-const selectNodeInputSchema = z.object({
-  evaluatedThoughts: z.array(thoughtEvaluationSchema).describe("\u8A55\u4FA1\u3055\u308C\u305F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
-});
-const selectNodeStep = new Step({
-  id: "selectNodeStep",
-  description: "\u8A55\u4FA1\u7D50\u679C\u304B\u3089\u6700\u3082\u826F\u3044\u601D\u8003\u3092\u9078\u629E\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: selectNodeInputSchema,
-  outputSchema: processThoughtsOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    const evaluateStepResult = context.getStepResult(evaluateThoughtsStep);
-    const evaluatedThoughts = evaluateStepResult?.evaluatedThoughts || [];
-    logger.info(`(SubWorkflow - Select) Selecting node from ${evaluatedThoughts.length} evaluated thoughts`);
-    if (!evaluatedThoughts || evaluatedThoughts.length === 0) {
-      logger.warn("(SubWorkflow - Select) No thoughts to select from");
-      return { selectedThought: void 0 };
-    }
-    let bestThought = evaluatedThoughts[0];
-    for (const thought of evaluatedThoughts) {
-      if (thought.score > (bestThought?.score || -1)) {
-        bestThought = thought;
-      }
-    }
-    logger.info(`(SubWorkflow - Select) Final output`);
-    return { selectedThought: bestThought };
-  }
-});
-const processThoughtsWorkflow = new Workflow({
-  name: "processThoughtsWorkflow",
-  triggerSchema: triggerSchema$1,
-  // ★ mastra インスタンスの指定を削除
-  // mastra,
-  // 結果スキーマとマッピングを追加
-  result: {
-    schema: processThoughtsOutputSchema,
-    mapping: {
-      selectedThought: { step: selectNodeStep, path: "selectedThought" }
-    }
-  }
-}).step(evaluateThoughtsStep).then(selectNodeStep).commit();
-
-const triggerSchema = z.object({
-  query: z.string().describe("The initial question from the user.")
-});
-const clarityCheckOutputSchema = z.object({
-  isClear: z.boolean(),
-  reasoning: z.string().optional()
-});
-const requestClarificationOutputSchema = z.object({
-  clarifiedQuery: z.string().describe("\u30E6\u30FC\u30B6\u30FC\u306B\u3088\u3063\u3066\u660E\u78BA\u5316\u3055\u308C\u305F\u8CEA\u554F")
-});
-const initialThoughtsOutputSchema = z.object({
-  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
-});
-z.object({
-  selectedThought: z.object({
-    // ★ インポートしたスキーマを使用
-    selectedThought: thoughtEvaluationSchema.optional().describe("\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3068\u305D\u306E\u8A55\u4FA1")
-  }).describe("processThoughtsWorkflow \u304B\u3089\u306E\u9078\u629E\u3055\u308C\u305F\u601D\u8003"),
-  query: triggerSchema.shape.query.describe("\u5143\u306E\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u306E\u8CEA\u554F")
-});
-const transformThoughtOutputSchema = z.object({
-  selectedThought: z.custom().optional(),
-  subQuestions: z.array(z.string())
-});
-const synthesizeInputSchema = z.object({
-  query: z.string(),
-  initialThoughts: z.array(z.string()),
-  subQuestions: z.array(z.string())
-});
-const synthesizeOutputSchema = z.object({
-  report: z.string().describe("Synthesized final report in Markdown format.")
-});
-z.object({
-  thoughts: initialThoughtsOutputSchema.shape.thoughts,
-  query: triggerSchema.shape.query
-});
-z.object({
-  thoughts: z.array(z.string()),
-  originalQuery: z.string()
-  // processThoughtsWorkflow 側の期待する名前
-});
-z.object({
-  initialThoughts: initialThoughtsOutputSchema.shape.thoughts,
-  subQuestions: transformThoughtOutputSchema.shape.subQuestions
-});
-const prepareSynthesizeOutputSchema = synthesizeInputSchema;
-function reconstructStringFromObjectIfNeeded(input) {
-  if (input === null || input === void 0) {
-    return "";
-  }
-  if (typeof input === "object" && input !== null) {
-    const keys = Object.keys(input).filter((k) => !isNaN(Number(k))).sort((a, b) => Number(a) - Number(b));
-    if (keys.length > 0 && keys.every((k, i) => Number(k) === i)) {
-      return keys.map((k) => input[k]).join("");
-    }
-  }
-  if (typeof input === "string") {
-    return input;
-  }
-  return String(input);
-}
-const goTResearchWorkflow = new Workflow({
-  name: "goTResearchWorkflow",
-  triggerSchema
-});
-const clarityCheckStep = new Step({
-  id: "clarityCheckStep",
-  description: "\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: triggerSchema,
-  outputSchema: clarityCheckOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    logger.info("(ClarityCheckStep) Checking clarity for query", { query: context.triggerData.query });
-    try {
-      const result = await clarityCheckAgent.generate(
-        `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${context.triggerData.query}\u300D\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3057\u3001\u7406\u7531\u3068\u3068\u3082\u306BJSON\u5F62\u5F0F\u3067 {"isClear": boolean, "reasoning": string} \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002\u660E\u78BA\u306A\u5834\u5408\u306F reasoning \u306F\u7701\u7565\u53EF\u80FD\u3067\u3059\u3002`
-      );
-      if (result.text) {
-        try {
-          const parsed = JSON.parse(result.text);
-          logger.info("(ClarityCheckStep) Parsed agent response", { parsed });
-          const isClear = typeof parsed.isClear === "boolean" ? parsed.isClear : false;
-          const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : void 0;
-          return { isClear, reasoning };
-        } catch (parseError) {
-          logger.error("(ClarityCheckStep) Failed to parse agent response JSON", { error: parseError, responseText: result.text });
-          return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
-        }
-      } else {
-        logger.error("(ClarityCheckStep) Agent did not return text");
-        return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
-      }
-    } catch (agentError) {
-      logger.error("(ClarityCheckStep) Error calling clarityCheckAgent", { error: agentError });
-      return { isClear: false, reasoning: "\u660E\u78BA\u6027\u30C1\u30A7\u30C3\u30AF\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u547C\u3073\u51FA\u3057\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002" };
-    }
-  }
-});
-const requestClarificationStep = new Step({
-  id: "requestClarificationStep",
-  description: "\u8CEA\u554F\u304C\u4E0D\u660E\u78BA\u306A\u5834\u5408\u306B\u660E\u78BA\u5316\u8981\u6C42\u3092\u751F\u6210\u3057\u3001\u4E00\u6642\u505C\u6B62\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any().optional(),
-  outputSchema: requestClarificationOutputSchema,
-  execute: async ({ context, suspend }) => {
-    const logger = getLogger();
-    console.log("--- RequestClarificationStep Context Start ---");
-    console.log(JSON.stringify(context, null, 2));
-    console.log("--- RequestClarificationStep Context End ---");
-    const isResuming = context.isResume !== void 0;
-    if (isResuming) {
-      logger.info("(RequestClarificationStep) Workflow is resuming.");
-      let clarifiedQuery = "";
-      if (context.inputData && typeof context.inputData === "object" && Object.keys(context.inputData).length > 0) {
-        try {
-          clarifiedQuery = Object.values(context.inputData).join("");
-          logger.info("(RequestClarificationStep) Reconstructed clarified query from inputData", { clarifiedQuery });
-        } catch (e) {
-          logger.error("(RequestClarificationStep) Failed to reconstruct query from inputData", { inputData: context.inputData, error: e });
-          clarifiedQuery = "\u30A8\u30E9\u30FC: \u518D\u958B\u30C7\u30FC\u30BF\u306E\u51E6\u7406\u306B\u5931\u6557";
-        }
-      } else {
-        logger.warn("(RequestClarificationStep) Resumed but inputData seems empty or invalid.", { inputData: context.inputData });
-        clarifiedQuery = "\u30A8\u30E9\u30FC: \u518D\u958B\u30C7\u30FC\u30BF\u304C\u7A7A\u307E\u305F\u306F\u4E0D\u6B63";
-      }
-      return { clarifiedQuery };
-    }
-    const clarityCheckResult = context.getStepResult(clarityCheckStep);
-    if (clarityCheckResult?.isClear === true) {
-      logger.info("(RequestClarificationStep) Query is clear. Skipping clarification and passing original query.", { query: context.triggerData.query });
-      return { clarifiedQuery: context.triggerData.query };
-    }
-    const reasoning = clarityCheckResult?.reasoning;
-    const originalQuery = context.triggerData.query;
-    logger.info("(RequestClarificationStep) Query is unclear (initial run). Generating clarification prompt...");
-    const prompt = `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${originalQuery}\u300D\u306F\u4E0D\u660E\u78BA\u3060\u3068\u5224\u65AD\u3055\u308C\u307E\u3057\u305F\u3002\u7406\u7531: ${reasoning || "\u63D0\u793A\u3055\u308C\u3066\u3044\u307E\u305B\u3093"}\u3002\u30E6\u30FC\u30B6\u30FC\u306B\u8CEA\u554F\u5185\u5BB9\u306E\u660E\u78BA\u5316\u3092\u4FC3\u3059\u3001\u4E01\u5BE7\u3067\u5177\u4F53\u7684\u306A\u8CEA\u554F\u6587\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002`;
-    let generatedClarificationQuestion = "\u30A8\u30E9\u30FC: \u8CEA\u554F\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002";
-    try {
-      const agentResponse = await clarificationPromptAgent.generate(prompt);
-      generatedClarificationQuestion = agentResponse.text || generatedClarificationQuestion;
-    } catch (error) {
-      logger.error("(RequestClarificationStep) Failed to generate clarification prompt", { error });
-    }
-    logger.info("(RequestClarificationStep) Generated question", { generatedClarificationQuestion });
-    await suspend({ clarificationPrompt: generatedClarificationQuestion });
-    logger.info("(RequestClarificationStep) Workflow suspended, waiting for clarification.");
-    return { clarifiedQuery: "" };
-  }
-});
-const initialThoughtsStep = new Step({
-  id: "initialThoughtsStep",
-  description: "\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u3092\u57FA\u306B\u6700\u521D\u306E\u601D\u8003\u7FA4\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  // デバッグのため一時的に any に変更
-  inputSchema: z.any().optional(),
-  outputSchema: initialThoughtsOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    logger.info("--- [DEBUG] initialThoughtsStep context.inputData ---");
-    logger.info(`typeof context.inputData: ${typeof context.inputData}`);
-    try {
-      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
-    } catch (e) {
-      logger.error("context.inputData \u306E JSON \u6587\u5B57\u5217\u5316\u306B\u5931\u6557:", { error: String(e) });
-      logger.info(`context.inputData (raw): ${String(context.inputData)}`);
-    }
-    logger.info("--- [DEBUG] End initialThoughtsStep context.inputData ---");
-    let query = "";
-    if (context.inputData) {
-      query = reconstructStringFromObjectIfNeeded(context.inputData);
-      logger.info(`[DEBUG] Reconstructed query: "${query}"`);
-    }
-    if (!query && context.triggerData) {
-      query = context.triggerData.query;
-      logger.info(`[DEBUG] Using trigger query: "${query}"`);
-    }
-    const clarificationResult = context.getStepResult(requestClarificationStep);
-    if (clarificationResult && clarificationResult.clarifiedQuery) {
-      query = clarificationResult.clarifiedQuery;
-      logger.info(`[DEBUG] Using clarified query: "${query}"`);
-    }
-    if (!query) {
-      logger.error("[ERROR] \u8CEA\u554F\u306E\u53D6\u5F97\u306B\u5931\u6557\u3057\u307E\u3057\u305F");
-      return { thoughts: ["\u30A8\u30E9\u30FC: \u8CEA\u554F\u304C\u898B\u3064\u304B\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"] };
-    }
-    logger.info(`(InitialThoughts) \u751F\u6210\u3059\u308B\u601D\u8003\u306E\u30AF\u30A8\u30EA: ${query}`);
-    const agentResponse = await thoughtGeneratorAgent.generate(query);
-    let generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002"];
-    if (agentResponse && agentResponse.text) {
-      try {
-        let responseText = agentResponse.text.trim();
-        responseText = responseText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-        const parsed = JSON.parse(responseText);
-        if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-          generatedThoughts = parsed;
-        } else {
-          logger.error("(InitialThoughts) \u30D1\u30FC\u30B9\u7D50\u679C\u304C\u6587\u5B57\u5217\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093", { parsed });
-          generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059 (\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093)\u3002"];
-        }
-      } catch (parseError) {
-        logger.error("(InitialThoughts) \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u5FDC\u7B54\u306EJSON\u30D1\u30FC\u30B9\u306B\u5931\u6557\u3057\u307E\u3057\u305F", { error: parseError, responseText: agentResponse.text });
-        generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092JSON\u3068\u3057\u3066\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002", agentResponse.text];
-      }
-    } else {
-      logger.error("(InitialThoughts) \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F");
-      generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
-    }
-    logger.info(`(InitialThoughts) \u751F\u6210\u3055\u308C\u305F\u601D\u8003: ${generatedThoughts.length}\u4EF6`);
-    return { thoughts: generatedThoughts };
-  }
-});
-const prepareProcessThoughtsInput = new Step({
-  id: "prepareProcessThoughtsInput",
-  description: "processThoughtsWorkflow \u3078\u306E\u5165\u529B\u3092\u6E96\u5099\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any().optional(),
-  outputSchema: z.object({
-    thoughts: z.array(z.string()),
-    originalQuery: z.string()
-  }),
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    logger.info("--- [DEBUG] prepareProcessThoughtsInput context ---");
-    logger.info(`Steps so far: ${Object.keys(context.steps).join(", ")}`);
-    const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-    const clarificationResult = context.getStepResult(requestClarificationStep);
-    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
-    if (!initialThoughtsResult || !initialThoughtsResult.thoughts || !Array.isArray(initialThoughtsResult.thoughts)) {
-      logger.error("Failed to retrieve thoughts from initialThoughtsStep");
-      return { thoughts: [], originalQuery: reconstructedQuery };
-    }
-    const thoughts = initialThoughtsResult.thoughts;
-    logger.info(`(PrepareProcessThoughtsInput) Successfully retrieved thoughts from initialThoughtsStep: ${thoughts.length}`);
-    logger.info(`(PrepareProcessThoughtsInput) Preparing inputs for processThoughtsWorkflow`);
-    logger.info(`thoughtsCount: ${thoughts.length}`);
-    logger.info(`query: "${reconstructedQuery}"`);
-    logger.info(`thoughtsExample: "${thoughts.length > 0 ? thoughts[0] : ""}"`);
-    return {
-      thoughts,
-      originalQuery: reconstructedQuery
-    };
-  }
-});
-const prepareSynthesizeInput = new Step({
-  id: "prepareSynthesizeInput",
-  description: "synthesizeStep \u3078\u306E\u5165\u529B\u3092\u6E96\u5099\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any().optional(),
-  outputSchema: prepareSynthesizeOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-    const transformThoughtResult = context.getStepResult(transformThoughtStep);
-    const clarificationResult = context.getStepResult(requestClarificationStep);
-    const query = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
-    const initialThoughts = initialThoughtsResult?.thoughts ?? [];
-    const subQuestions = transformThoughtResult?.subQuestions ?? [];
-    logger.info("(PrepareSynthesizeInput) Preparing inputs for synthesizeStep", {
-      initialThoughtsCount: initialThoughts.length,
-      subQuestionsCount: subQuestions.length,
-      query
-    });
-    return {
-      query,
-      initialThoughts,
-      subQuestions
-    };
-  }
-});
-const transformThoughtStep = new Step({
-  id: "transformThoughtStep",
-  description: "\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u3092\u57FA\u306B\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any(),
-  // 入力は processThoughtsWorkflow の結果
-  outputSchema: transformThoughtOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    const processThoughtsResult = context.getStepResult("processThoughtsWorkflow");
-    logger.info("(TransformThoughtStep) Detailed processThoughtsResult:", {
-      keys: processThoughtsResult ? Object.keys(processThoughtsResult) : "null",
-      hasResultProp: processThoughtsResult?.hasOwnProperty("result"),
-      resultProp: processThoughtsResult?.result,
-      raw: processThoughtsResult
-    });
-    let selectedThought = void 0;
-    if (processThoughtsResult && typeof processThoughtsResult === "object" && processThoughtsResult.result) {
-      selectedThought = processThoughtsResult.result.selectedThought;
-      logger.info("(TransformThoughtStep) Attempted to get selectedThought from processThoughtsResult.result");
-    } else {
-      logger.warn("(TransformThoughtStep) processThoughtsResult or processThoughtsResult.result is missing or invalid.");
-    }
-    logger.info("(TransformThoughtStep) Value of selectedThought after extraction attempt:", { selectedThought });
-    if (!selectedThought || !selectedThought.thought) {
-      logger.warn("(TransformThoughtStep) No valid selected thought found after extraction. Skipping sub-question generation.");
-      return { selectedThought: void 0, subQuestions: [] };
-    }
-    logger.info(`(TransformThoughtStep) Selected thought: ${selectedThought.thought}`);
-    logger.info(`(TransformThoughtStep) Score: ${selectedThought.score}`);
-    logger.info(`(TransformThoughtStep) Reasoning: ${selectedThought.reasoning}`);
-    const clarificationResult = context.getStepResult(requestClarificationStep);
-    const reconstructedQuery = clarificationResult?.clarifiedQuery ?? context.triggerData.query;
-    try {
-      const { text: responseText } = await thoughtTransformerAgent.generate(
-        [
-          {
-            role: "system",
-            content: `\u3042\u306A\u305F\u306F\u9078\u629E\u3055\u308C\u305F\u601D\u8003\u304B\u3089\u95A2\u9023\u3059\u308B\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u751F\u6210\u3059\u308B\u30A8\u30AD\u30B9\u30D1\u30FC\u30C8\u3067\u3059\u3002\u4E0E\u3048\u3089\u308C\u305F\u601D\u8003\u3092\u3055\u3089\u306B\u63A2\u6C42\u3059\u308B\u3088\u3046\u306A\u8CEA\u554F\u3092\u8003\u3048\u3066\u304F\u3060\u3055\u3044\u3002`
-          },
-          {
-            role: "user",
-            // ★ reconstructedQuery を使用
-            content: `\u5143\u306E\u8CEA\u554F: "${reconstructedQuery}"
-            
-            \u9078\u629E\u3055\u308C\u305F\u601D\u8003: "${selectedThought.thought}"
-            
-            \u3053\u306E\u601D\u8003\u306B\u95A2\u9023\u3059\u308B\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u30923\u3064\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-            JSON\u30D5\u30A9\u30FC\u30DE\u30C3\u30C8\u3067\u56DE\u7B54\u3057\u3066\u304F\u3060\u3055\u3044:
-            {
-              "subQuestions": [
-                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F31",
-                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F32",
-                "\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F33"
-              ]
-            }`
-          }
-        ]
-      );
-      const jsonMatch = responseText?.match(/\{[\s\S]*\}/);
-      const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
-      if (result && Array.isArray(result.subQuestions)) {
-        logger.info(`(TransformThoughtStep) Generated ${result.subQuestions.length} sub-questions`);
-        return {
-          selectedThought,
-          subQuestions: result.subQuestions
-        };
-      } else {
-        logger.warn(`(TransformThoughtStep) Failed to parse sub-questions as JSON`);
-        return {
-          selectedThought,
-          subQuestions: []
-        };
-      }
-    } catch (e) {
-      logger.error(`(TransformThoughtStep) Error generating sub-questions: ${e}`);
-      return {
-        selectedThought,
-        subQuestions: []
-      };
-    }
-  }
-});
-const synthesizeStep = new Step({
-  id: "synthesizeStep",
-  description: "\u521D\u671F\u601D\u8003\u3068\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u7D71\u5408\u3057\u3066\u6700\u7D42\u30EC\u30DD\u30FC\u30C8\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: synthesizeInputSchema,
-  outputSchema: synthesizeOutputSchema,
-  execute: async ({ context }) => {
-    const logger = getLogger();
-    logger.info("--- [DEBUG] synthesizeStep context.inputData ---");
-    logger.info(`typeof context.inputData: ${typeof context.inputData}`);
-    try {
-      logger.info(`context.inputData (JSON): ${JSON.stringify(context.inputData, null, 2)}`);
-    } catch (e) {
-      logger.error("synthesizeStep context.inputData \u306E JSON \u6587\u5B57\u5217\u5316\u306B\u5931\u6557:", { error: String(e) });
-      logger.info(`synthesizeStep context.inputData (raw): ${String(context.inputData)}`);
-    }
-    logger.info("--- [DEBUG] End synthesizeStep context.inputData ---");
-    let initialThoughts = [];
-    let subQuestions = [];
-    try {
-      const initialThoughtsResult = context.getStepResult(initialThoughtsStep);
-      if (initialThoughtsResult) {
-        initialThoughts = initialThoughtsResult.thoughts || [];
-      }
-      const transformResult = context.getStepResult(transformThoughtStep);
-      if (transformResult) {
-        subQuestions = transformResult.subQuestions || [];
-      }
-      if (initialThoughts.length === 0 && context.inputData && context.inputData.initialThoughts) {
-        initialThoughts = Array.isArray(context.inputData.initialThoughts) ? context.inputData.initialThoughts : [reconstructStringFromObjectIfNeeded(context.inputData.initialThoughts)];
-      }
-      if (subQuestions.length === 0 && context.inputData && context.inputData.subQuestions) {
-        subQuestions = Array.isArray(context.inputData.subQuestions) ? context.inputData.subQuestions : [reconstructStringFromObjectIfNeeded(context.inputData.subQuestions)];
-      }
-      logger.info(`[DEBUG] Initial thoughts: ${JSON.stringify(initialThoughts)}`);
-      logger.info(`[DEBUG] SubQuestions: ${JSON.stringify(subQuestions)}`);
-      const prompt = `
-\u4EE5\u4E0B\u306E\u60C5\u5831\u3092\u7D71\u5408\u3057\u3001\u69CB\u9020\u5316\u3055\u308C\u305F\u6700\u7D42\u30EC\u30DD\u30FC\u30C8\u3092Markdown\u5F62\u5F0F\u3067\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-### \u521D\u671F\u601D\u8003
-${initialThoughts.map((t) => `- ${t}`).join("\n")}
-
-### \u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3
-${subQuestions.map((q) => `- ${q}`).join("\n")}
-
-\u30EC\u30DD\u30FC\u30C8:
-`;
-      const result = await synthesizerAgent.generate(prompt);
-      const report = result.text || "\u30A8\u30E9\u30FC: \u30EC\u30DD\u30FC\u30C8\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002";
-      logger.info("(SynthesizeStep) Generated report successfully.");
-      logger.info("=========== \u6700\u7D42\u30EC\u30DD\u30FC\u30C8\u5185\u5BB9 =============");
-      logger.info(report);
-      logger.info("=========== \u6700\u7D42\u30EC\u30DD\u30FC\u30C8\u7D42\u4E86 =============");
-      return { report };
-    } catch (error) {
-      logger.error("(SynthesizeStep) Error calling synthesizerAgent:", { error: String(error) });
-      return { report: "\u30A8\u30E9\u30FC: \u30EC\u30DD\u30FC\u30C8\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002" };
-    }
-  }
-});
-goTResearchWorkflow.step(clarityCheckStep).then(requestClarificationStep, {
-  // ★ when 条件を async に修正
-  when: async ({ context }) => {
-    const clarityResult = context.getStepResult(clarityCheckStep);
-    return !clarityResult?.isClear;
-  }
-}).then(initialThoughtsStep).then(prepareProcessThoughtsInput).then(processThoughtsWorkflow, {
-  variables: {
-    thoughts: { step: prepareProcessThoughtsInput, path: "thoughts" },
-    originalQuery: { step: prepareProcessThoughtsInput, path: "originalQuery" }
-  }
-}).then(transformThoughtStep).then(prepareSynthesizeInput).then(synthesizeStep).commit();
-
-const mastra = new Mastra({
-  agents: {
-    thoughtEvaluatorAgent: thoughtEvaluatorAgent,
-    thoughtGeneratorAgent: thoughtGeneratorAgent,
-    thoughtTransformerAgent: thoughtTransformerAgent,
-    clarityCheckAgent: clarityCheckAgent,
-    clarificationPromptAgent: clarificationPromptAgent
-  },
-  workflows: {
-    goTResearchWorkflow
-  },
-  logger: createLogger({
-    name: "Mastra",
-    level: "info"
-  })
-});
-const getLogger = () => mastra.getLogger();
 
 // src/utils/filepath.ts
 var getFilePath = (options) => {
@@ -1735,7 +1052,11 @@ var Hono$1 = class Hono {
         optionHandler = options;
       } else {
         optionHandler = options.optionHandler;
-        replaceRequest = options.replaceRequest;
+        if (options.replaceRequest === false) {
+          replaceRequest = (request) => request;
+        } else {
+          replaceRequest = options.replaceRequest;
+        }
       }
     }
     const getOptions = optionHandler ? (c) => {
@@ -8319,27 +7640,35 @@ __export(agents_exports, {
   getLiveEvalsByAgentIdHandler: () => getLiveEvalsByAgentIdHandler$1,
   streamGenerateHandler: () => streamGenerateHandler$2
 });
-async function getAgentsHandler$1({ mastra }) {
+async function getAgentsHandler$1({ mastra, runtimeContext }) {
   try {
     const agents = mastra.getAgents();
-    const serializedAgents = Object.entries(agents).reduce((acc, [_id, _agent]) => {
-      const agent = _agent;
-      const serializedAgentTools = Object.entries(agent?.tools || {}).reduce((acc2, [key, tool]) => {
-        const _tool = tool;
-        acc2[key] = {
-          ..._tool,
-          inputSchema: _tool.inputSchema ? stringify(esm_default(_tool.inputSchema)) : void 0,
-          outputSchema: _tool.outputSchema ? stringify(esm_default(_tool.outputSchema)) : void 0
+    const serializedAgentsMap = await Promise.all(
+      Object.entries(agents).map(async ([id, agent]) => {
+        const instructions = await agent.getInstructions({ runtimeContext });
+        const tools = await agent.getTools({ runtimeContext });
+        const llm = await agent.getLLM({ runtimeContext });
+        const serializedAgentTools = Object.entries(tools || {}).reduce((acc, [key, tool]) => {
+          const _tool = tool;
+          acc[key] = {
+            ..._tool,
+            inputSchema: _tool.inputSchema ? stringify(esm_default(_tool.inputSchema)) : void 0,
+            outputSchema: _tool.outputSchema ? stringify(esm_default(_tool.outputSchema)) : void 0
+          };
+          return acc;
+        }, {});
+        return {
+          id,
+          name: agent.name,
+          instructions,
+          tools: serializedAgentTools,
+          provider: llm?.getProvider(),
+          modelId: llm?.getModelId()
         };
-        return acc2;
-      }, {});
-      acc[_id] = {
-        name: agent.name,
-        instructions: agent.instructions,
-        tools: serializedAgentTools,
-        provider: agent.llm?.getProvider(),
-        modelId: agent.llm?.getModelId()
-      };
+      })
+    );
+    const serializedAgents = serializedAgentsMap.reduce((acc, { id, ...rest }) => {
+      acc[id] = rest;
       return acc;
     }, {});
     return serializedAgents;
@@ -8347,13 +7676,18 @@ async function getAgentsHandler$1({ mastra }) {
     return handleError$1(error, "Error getting agents");
   }
 }
-async function getAgentByIdHandler$1({ mastra, agentId }) {
+async function getAgentByIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     if (!agent) {
       throw new HTTPException(404, { message: "Agent not found" });
     }
-    const serializedAgentTools = Object.entries(agent?.tools || {}).reduce((acc, [key, tool]) => {
+    const tools = await agent.getTools({ runtimeContext });
+    const serializedAgentTools = Object.entries(tools || {}).reduce((acc, [key, tool]) => {
       const _tool = tool;
       acc[key] = {
         ..._tool,
@@ -8362,39 +7696,51 @@ async function getAgentByIdHandler$1({ mastra, agentId }) {
       };
       return acc;
     }, {});
+    const instructions = await agent.getInstructions({ runtimeContext });
+    const llm = await agent.getLLM({ runtimeContext });
     return {
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       tools: serializedAgentTools,
-      provider: agent.llm?.getProvider(),
-      modelId: agent.llm?.getModelId()
+      provider: llm?.getProvider(),
+      modelId: llm?.getModelId()
     };
   } catch (error) {
     return handleError$1(error, "Error getting agent");
   }
 }
-async function getEvalsByAgentIdHandler$1({ mastra, agentId }) {
+async function getEvalsByAgentIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     const evals = await mastra.getStorage()?.getEvalsByAgentName?.(agent.name, "test") || [];
+    const instructions = await agent.getInstructions({ runtimeContext });
     return {
       id: agentId,
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       evals
     };
   } catch (error) {
     return handleError$1(error, "Error getting test evals");
   }
 }
-async function getLiveEvalsByAgentIdHandler$1({ mastra, agentId }) {
+async function getLiveEvalsByAgentIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     const evals = await mastra.getStorage()?.getEvalsByAgentName?.(agent.name, "live") || [];
+    const instructions = await agent.getInstructions({ runtimeContext });
     return {
       id: agentId,
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       evals
     };
   } catch (error) {
@@ -8709,33 +8055,48 @@ __export(network_exports, {
   getNetworksHandler: () => getNetworksHandler$1,
   streamGenerateHandler: () => streamGenerateHandler$1
 });
-async function getNetworksHandler$1({ mastra }) {
+async function getNetworksHandler$1({
+  mastra,
+  runtimeContext
+}) {
   try {
     const networks = mastra.getNetworks();
-    const serializedNetworks = networks.map((network) => {
-      const routingAgent = network.getRoutingAgent();
-      const agents = network.getAgents();
-      return {
-        id: network.formatAgentId(routingAgent.name),
-        name: routingAgent.name,
-        instructions: routingAgent.instructions,
-        agents: agents.map((agent) => ({
-          name: agent.name,
-          provider: agent.llm?.getProvider(),
-          modelId: agent.llm?.getModelId()
-        })),
-        routingModel: {
-          provider: routingAgent.llm?.getProvider(),
-          modelId: routingAgent.llm?.getModelId()
-        }
-      };
-    });
+    const serializedNetworks = await Promise.all(
+      networks.map(async (network) => {
+        const routingAgent = network.getRoutingAgent();
+        const routingLLM = await routingAgent.getLLM({ runtimeContext });
+        const agents = network.getAgents();
+        return {
+          id: network.formatAgentId(routingAgent.name),
+          name: routingAgent.name,
+          instructions: routingAgent.instructions,
+          agents: await Promise.all(
+            agents.map(async (agent) => {
+              const llm = await agent.getLLM({ runtimeContext });
+              return {
+                name: agent.name,
+                provider: llm?.getProvider(),
+                modelId: llm?.getModelId()
+              };
+            })
+          ),
+          routingModel: {
+            provider: routingLLM?.getProvider(),
+            modelId: routingLLM?.getModelId()
+          }
+        };
+      })
+    );
     return serializedNetworks;
   } catch (error) {
     return handleError$1(error, "Error getting networks");
   }
 }
-async function getNetworkByIdHandler$1({ mastra, networkId }) {
+async function getNetworkByIdHandler$1({
+  mastra,
+  networkId,
+  runtimeContext
+}) {
   try {
     const networks = mastra.getNetworks();
     const network = networks.find((network2) => {
@@ -8746,19 +8107,25 @@ async function getNetworkByIdHandler$1({ mastra, networkId }) {
       throw new HTTPException(404, { message: "Network not found" });
     }
     const routingAgent = network.getRoutingAgent();
+    const routingLLM = await routingAgent.getLLM({ runtimeContext });
     const agents = network.getAgents();
     const serializedNetwork = {
       id: network.formatAgentId(routingAgent.name),
       name: routingAgent.name,
       instructions: routingAgent.instructions,
-      agents: agents.map((agent) => ({
-        name: agent.name,
-        provider: agent.llm?.getProvider(),
-        modelId: agent.llm?.getModelId()
-      })),
+      agents: await Promise.all(
+        agents.map(async (agent) => {
+          const llm = await agent.getLLM({ runtimeContext });
+          return {
+            name: agent.name,
+            provider: llm?.getProvider(),
+            modelId: llm?.getModelId()
+          };
+        })
+      ),
       routingModel: {
-        provider: routingAgent.llm?.getProvider(),
-        modelId: routingAgent.llm?.getModelId()
+        provider: routingLLM?.getProvider(),
+        modelId: routingLLM?.getModelId()
       }
     };
     return serializedNetwork;
@@ -9176,6 +8543,407 @@ async function deleteIndex$1({
   }
 }
 
+// src/server/handlers/vNextWorkflows.ts
+var vNextWorkflows_exports = {};
+__export(vNextWorkflows_exports, {
+  createVNextWorkflowRunHandler: () => createVNextWorkflowRunHandler$1,
+  getVNextWorkflowByIdHandler: () => getVNextWorkflowByIdHandler$1,
+  getVNextWorkflowRunHandler: () => getVNextWorkflowRunHandler,
+  getVNextWorkflowRunsHandler: () => getVNextWorkflowRunsHandler$1,
+  getVNextWorkflowsHandler: () => getVNextWorkflowsHandler$1,
+  resumeAsyncVNextWorkflowHandler: () => resumeAsyncVNextWorkflowHandler$1,
+  resumeVNextWorkflowHandler: () => resumeVNextWorkflowHandler$1,
+  startAsyncVNextWorkflowHandler: () => startAsyncVNextWorkflowHandler$1,
+  startVNextWorkflowRunHandler: () => startVNextWorkflowRunHandler$1,
+  watchVNextWorkflowHandler: () => watchVNextWorkflowHandler$1
+});
+async function getVNextWorkflowsHandler$1({ mastra }) {
+  try {
+    const workflows = mastra.vnext_getWorkflows({ serialized: false });
+    const _workflows = Object.entries(workflows).reduce((acc, [key, workflow]) => {
+      acc[key] = {
+        name: workflow.name,
+        steps: Object.entries(workflow.steps).reduce((acc2, [key2, step]) => {
+          acc2[key2] = {
+            ...step,
+            inputSchema: step.inputSchema ? stringify(esm_default(step.inputSchema)) : void 0,
+            outputSchema: step.outputSchema ? stringify(esm_default(step.outputSchema)) : void 0,
+            resumeSchema: step.resumeSchema ? stringify(esm_default(step.resumeSchema)) : void 0
+          };
+          return acc2;
+        }, {}),
+        stepGraph: workflow.stepGraph,
+        inputSchema: workflow.inputSchema ? stringify(esm_default(workflow.inputSchema)) : void 0,
+        outputSchema: workflow.outputSchema ? stringify(esm_default(workflow.outputSchema)) : void 0
+      };
+      return acc;
+    }, {});
+    return _workflows;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflows" });
+  }
+}
+async function getVNextWorkflowByIdHandler$1({ mastra, workflowId }) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    return {
+      steps: Object.entries(workflow.steps).reduce((acc, [key, step]) => {
+        acc[key] = {
+          ...step,
+          inputSchema: step.inputSchema ? stringify(esm_default(step.inputSchema)) : void 0,
+          outputSchema: step.outputSchema ? stringify(esm_default(step.outputSchema)) : void 0,
+          resumeSchema: step.resumeSchema ? stringify(esm_default(step.resumeSchema)) : void 0
+        };
+        return acc;
+      }, {}),
+      name: workflow.name,
+      stepGraph: workflow.stepGraph,
+      inputSchema: workflow.inputSchema ? stringify(esm_default(workflow.inputSchema)) : void 0,
+      outputSchema: workflow.outputSchema ? stringify(esm_default(workflow.outputSchema)) : void 0
+    };
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflow" });
+  }
+}
+async function getVNextWorkflowRunHandler({
+  mastra,
+  workflowId,
+  runId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "Run ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    return run;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflow run" });
+  }
+}
+async function createVNextWorkflowRunHandler$1({
+  mastra,
+  workflowId,
+  runId: prevRunId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const run = workflow.createRun({ runId: prevRunId });
+    return { runId: run.runId };
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error creating workflow run" });
+  }
+}
+async function startAsyncVNextWorkflowHandler$1({
+  mastra,
+  runtimeContext,
+  workflowId,
+  runId,
+  inputData
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    const result = await _run.start({
+      inputData,
+      runtimeContext
+    });
+    return result;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error executing workflow" });
+  }
+}
+async function startVNextWorkflowRunHandler$1({
+  mastra,
+  runtimeContext,
+  workflowId,
+  runId,
+  inputData
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to start run" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    await _run.start({
+      inputData,
+      runtimeContext
+    });
+    return { message: "Workflow run started" };
+  } catch (e) {
+    return handleError$1(e, "Error starting workflow run");
+  }
+}
+async function watchVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to watch workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    let unwatch;
+    let asyncRef = null;
+    const stream = new ReadableStream$1({
+      start(controller) {
+        unwatch = _run.watch(({ type, payload, eventTimestamp }) => {
+          controller.enqueue(JSON.stringify({ type, payload, eventTimestamp, runId }));
+          if (asyncRef) {
+            clearImmediate(asyncRef);
+            asyncRef = null;
+          }
+          asyncRef = setImmediate(async () => {
+            const runDone = payload.workflowState.status !== "running";
+            if (runDone) {
+              controller.close();
+              unwatch?.();
+            }
+          });
+        });
+      },
+      cancel() {
+        unwatch?.();
+      }
+    });
+    return stream;
+  } catch (error) {
+    return handleError$1(error, "Error watching workflow");
+  }
+}
+async function resumeAsyncVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId,
+  body,
+  runtimeContext
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to resume workflow" });
+    }
+    if (!body.step) {
+      throw new HTTPException(400, { message: "step required to resume workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    const result = await _run.resume({
+      step: body.step,
+      resumeData: body.resumeData,
+      runtimeContext
+    });
+    return result;
+  } catch (error) {
+    return handleError$1(error, "Error resuming workflow step");
+  }
+}
+async function resumeVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId,
+  body,
+  runtimeContext
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to resume workflow" });
+    }
+    if (!body.step) {
+      throw new HTTPException(400, { message: "step required to resume workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    await _run.resume({
+      step: body.step,
+      resumeData: body.resumeData,
+      runtimeContext
+    });
+    return { message: "Workflow run resumed" };
+  } catch (error) {
+    return handleError$1(error, "Error resuming workflow");
+  }
+}
+async function getVNextWorkflowRunsHandler$1({ mastra, workflowId }) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const workflowRuns = await workflow.getWorkflowRuns() || {
+      runs: [],
+      total: 0
+    };
+    return workflowRuns;
+  } catch (error) {
+    return handleError$1(error, "Error getting workflow runs");
+  }
+}
+
+// src/utils/stream.ts
+var StreamingApi = class {
+  writer;
+  encoder;
+  writable;
+  abortSubscribers = [];
+  responseReadable;
+  aborted = false;
+  closed = false;
+  constructor(writable, _readable) {
+    this.writable = writable;
+    this.writer = writable.getWriter();
+    this.encoder = new TextEncoder();
+    const reader = _readable.getReader();
+    this.abortSubscribers.push(async () => {
+      await reader.cancel();
+    });
+    this.responseReadable = new ReadableStream({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        done ? controller.close() : controller.enqueue(value);
+      },
+      cancel: () => {
+        this.abort();
+      }
+    });
+  }
+  async write(input) {
+    try {
+      if (typeof input === "string") {
+        input = this.encoder.encode(input);
+      }
+      await this.writer.write(input);
+    } catch {
+    }
+    return this;
+  }
+  async writeln(input) {
+    await this.write(input + "\n");
+    return this;
+  }
+  sleep(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+  }
+  async close() {
+    try {
+      await this.writer.close();
+    } catch {
+    }
+    this.closed = true;
+  }
+  async pipe(body) {
+    this.writer.releaseLock();
+    await body.pipeTo(this.writable, { preventClose: true });
+    this.writer = this.writable.getWriter();
+  }
+  onAbort(listener) {
+    this.abortSubscribers.push(listener);
+  }
+  abort() {
+    if (!this.aborted) {
+      this.aborted = true;
+      this.abortSubscribers.forEach((subscriber) => subscriber());
+    }
+  }
+};
+
+// src/helper/streaming/utils.ts
+var isOldBunVersion = () => {
+  const version = typeof Bun !== "undefined" ? Bun.version : void 0;
+  if (version === void 0) {
+    return false;
+  }
+  const result = version.startsWith("1.1") || version.startsWith("1.0") || version.startsWith("0.");
+  isOldBunVersion = () => result;
+  return result;
+};
+
+// src/helper/streaming/stream.ts
+var contextStash = /* @__PURE__ */ new WeakMap();
+var stream = (c, cb, onError) => {
+  const { readable, writable } = new TransformStream();
+  const stream2 = new StreamingApi(writable, readable);
+  if (isOldBunVersion()) {
+    c.req.raw.signal.addEventListener("abort", () => {
+      if (!stream2.closed) {
+        stream2.abort();
+      }
+    });
+  }
+  contextStash.set(stream2.responseReadable, c);
+  (async () => {
+    try {
+      await cb(stream2);
+    } catch (e) {
+      if (e === void 0) ; else if (e instanceof Error && onError) {
+        await onError(e, stream2);
+      } else {
+        console.error(e);
+      }
+    } finally {
+      stream2.close();
+    }
+  })();
+  return c.newResponse(stream2.responseReadable);
+};
+
 // src/server/handlers/voice.ts
 var voice_exports = {};
 __export(voice_exports, {
@@ -9224,12 +8992,7 @@ async function generateSpeechHandler({
     if (!audioStream) {
       throw new HTTPException(500, { message: "Failed to generate speech" });
     }
-    const chunks = [];
-    for await (const chunk of audioStream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    const audioData = Buffer.concat(chunks);
-    return { audioData };
+    return audioStream;
   } catch (error) {
     return handleError$1(error, "Error generating speech");
   }
@@ -9562,113 +9325,6 @@ async function getWorkflowRunsHandler$1({ mastra, workflowId }) {
   }
 }
 
-// src/utils/stream.ts
-var StreamingApi = class {
-  writer;
-  encoder;
-  writable;
-  abortSubscribers = [];
-  responseReadable;
-  aborted = false;
-  closed = false;
-  constructor(writable, _readable) {
-    this.writable = writable;
-    this.writer = writable.getWriter();
-    this.encoder = new TextEncoder();
-    const reader = _readable.getReader();
-    this.abortSubscribers.push(async () => {
-      await reader.cancel();
-    });
-    this.responseReadable = new ReadableStream({
-      async pull(controller) {
-        const { done, value } = await reader.read();
-        done ? controller.close() : controller.enqueue(value);
-      },
-      cancel: () => {
-        this.abort();
-      }
-    });
-  }
-  async write(input) {
-    try {
-      if (typeof input === "string") {
-        input = this.encoder.encode(input);
-      }
-      await this.writer.write(input);
-    } catch {
-    }
-    return this;
-  }
-  async writeln(input) {
-    await this.write(input + "\n");
-    return this;
-  }
-  sleep(ms) {
-    return new Promise((res) => setTimeout(res, ms));
-  }
-  async close() {
-    try {
-      await this.writer.close();
-    } catch {
-    }
-    this.closed = true;
-  }
-  async pipe(body) {
-    this.writer.releaseLock();
-    await body.pipeTo(this.writable, { preventClose: true });
-    this.writer = this.writable.getWriter();
-  }
-  onAbort(listener) {
-    this.abortSubscribers.push(listener);
-  }
-  abort() {
-    if (!this.aborted) {
-      this.aborted = true;
-      this.abortSubscribers.forEach((subscriber) => subscriber());
-    }
-  }
-};
-
-// src/helper/streaming/utils.ts
-var isOldBunVersion = () => {
-  const version = typeof Bun !== "undefined" ? Bun.version : void 0;
-  if (version === void 0) {
-    return false;
-  }
-  const result = version.startsWith("1.1") || version.startsWith("1.0") || version.startsWith("0.");
-  isOldBunVersion = () => result;
-  return result;
-};
-
-// src/helper/streaming/stream.ts
-var contextStash = /* @__PURE__ */ new WeakMap();
-var stream = (c, cb, onError) => {
-  const { readable, writable } = new TransformStream();
-  const stream2 = new StreamingApi(writable, readable);
-  if (isOldBunVersion()) {
-    c.req.raw.signal.addEventListener("abort", () => {
-      if (!stream2.closed) {
-        stream2.abort();
-      }
-    });
-  }
-  contextStash.set(stream2.responseReadable, c);
-  (async () => {
-    try {
-      await cb(stream2);
-    } catch (e) {
-      if (e === void 0) ; else if (e instanceof Error && onError) {
-        await onError(e, stream2);
-      } else {
-        console.error(e);
-      }
-    } finally {
-      stream2.close();
-    }
-  })();
-  return c.newResponse(stream2.responseReadable);
-};
-
 // src/server/index.ts
 var RequestError = class extends Error {
   static name = "RequestError";
@@ -9805,14 +9461,14 @@ var newRequest = (incoming, defaultHostname) => {
   req[urlKey] = url.href;
   return req;
 };
-function writeFromReadableStream(stream2, writable) {
-  if (stream2.locked) {
+function writeFromReadableStream(stream3, writable) {
+  if (stream3.locked) {
     throw new TypeError("ReadableStream is locked.");
   } else if (writable.destroyed) {
-    stream2.cancel();
+    stream3.cancel();
     return;
   }
-  const reader = stream2.getReader();
+  const reader = stream3.getReader();
   writable.on("close", cancel);
   writable.on("error", cancel);
   reader.read().then(flow, cancel);
@@ -10010,7 +9666,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
   const resHeaderRecord = buildOutgoingHttpHeaders(res.headers);
   const internalBody = getInternalBody(res);
   if (internalBody) {
-    const { length, source, stream: stream2 } = internalBody;
+    const { length, source, stream: stream3 } = internalBody;
     if (source instanceof Uint8Array && source.byteLength !== length) ; else {
       if (length) {
         resHeaderRecord["content-length"] = length;
@@ -10021,7 +9677,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
       } else if (source instanceof Blob) {
         outgoing.end(new Uint8Array(await source.arrayBuffer()));
       } else {
-        await writeFromReadableStream(stream2, outgoing);
+        await writeFromReadableStream(stream3, outgoing);
       }
       return;
     }
@@ -10125,18 +9781,18 @@ var ENCODINGS = {
   gzip: ".gz"
 };
 var ENCODINGS_ORDERED_KEYS = Object.keys(ENCODINGS);
-var createStreamBody = (stream2) => {
+var createStreamBody = (stream3) => {
   const body = new ReadableStream({
     start(controller) {
-      stream2.on("data", (chunk) => {
+      stream3.on("data", (chunk) => {
         controller.enqueue(chunk);
       });
-      stream2.on("end", () => {
+      stream3.on("end", () => {
         controller.close();
       });
     },
     cancel() {
-      stream2.destroy();
+      stream3.destroy();
     }
   });
   return body;
@@ -10232,10 +9888,10 @@ var serveStatic = (options = { root: "" }) => {
       end = size - 1;
     }
     const chunksize = end - start + 1;
-    const stream2 = createReadStream(path, { start, end });
+    const stream3 = createReadStream(path, { start, end });
     c2.header("Content-Length", chunksize.toString());
     c2.header("Content-Range", `bytes ${start}-${end}/${stats.size}`);
-    return c2.body(createStreamBody(stream2), 206);
+    return c2.body(createStreamBody(stream3), 206);
   };
 };
 var RENDER_TYPE = {
@@ -10498,33 +10154,42 @@ function errorHandler(err, c2) {
 
 // src/server/handlers/agents.ts
 async function getAgentsHandler(c2) {
-  const serializedAgents = await getAgentsHandler$1({ mastra: c2.get("mastra") });
+  const serializedAgents = await getAgentsHandler$1({
+    mastra: c2.get("mastra"),
+    runtimeContext: c2.get("runtimeContext")
+  });
   return c2.json(serializedAgents);
 }
 async function getAgentByIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getAgentByIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
 async function getEvalsByAgentIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getEvalsByAgentIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
 async function getLiveEvalsByAgentIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getLiveEvalsByAgentIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
@@ -10593,7 +10258,7 @@ async function setAgentInstructionsHandler(c2) {
 // src/server/handlers/client.ts
 var clients = /* @__PURE__ */ new Set();
 function handleClientsRefresh(c2) {
-  const stream2 = new ReadableStream({
+  const stream3 = new ReadableStream({
     start(controller) {
       clients.add(controller);
       controller.enqueue("data: connected\n\n");
@@ -10602,7 +10267,7 @@ function handleClientsRefresh(c2) {
       });
     }
   });
-  return new Response(stream2, {
+  return new Response(stream3, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -10783,8 +10448,10 @@ async function getMessagesHandler(c2) {
 async function getNetworksHandler(c2) {
   try {
     const mastra = c2.get("mastra");
+    const runtimeContext = c2.get("runtimeContext");
     const networks = await getNetworksHandler$1({
-      mastra
+      mastra,
+      runtimeContext
     });
     return c2.json(networks);
   } catch (error) {
@@ -10795,9 +10462,11 @@ async function getNetworkByIdHandler(c2) {
   try {
     const mastra = c2.get("mastra");
     const networkId = c2.req.param("networkId");
+    const runtimeContext = c2.get("runtimeContext");
     const network = await getNetworkByIdHandler$1({
       mastra,
-      networkId
+      networkId,
+      runtimeContext
     });
     return c2.json(network);
   } catch (error) {
@@ -11139,6 +10808,174 @@ async function deleteIndex(c2) {
     return handleError(error, "Error deleting index");
   }
 }
+async function getVNextWorkflowsHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflows = await getVNextWorkflowsHandler$1({
+      mastra
+    });
+    return c2.json(workflows);
+  } catch (error) {
+    return handleError(error, "Error getting workflows");
+  }
+}
+async function getVNextWorkflowByIdHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const workflow = await getVNextWorkflowByIdHandler$1({
+      mastra,
+      workflowId
+    });
+    return c2.json(workflow);
+  } catch (error) {
+    return handleError(error, "Error getting workflow");
+  }
+}
+async function createVNextWorkflowRunHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const prevRunId = c2.req.query("runId");
+    const result = await createVNextWorkflowRunHandler$1({
+      mastra,
+      workflowId,
+      runId: prevRunId
+    });
+    return c2.json(result);
+  } catch (e2) {
+    return handleError(e2, "Error creating run");
+  }
+}
+async function startAsyncVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const { inputData, runtimeContext } = await c2.req.json();
+    const runId = c2.req.query("runId");
+    const result = await startAsyncVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      inputData
+    });
+    return c2.json(result);
+  } catch (error) {
+    return handleError(error, "Error executing workflow");
+  }
+}
+async function startVNextWorkflowRunHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const { inputData, runtimeContext } = await c2.req.json();
+    const runId = c2.req.query("runId");
+    await startVNextWorkflowRunHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      inputData
+    });
+    return c2.json({ message: "Workflow run started" });
+  } catch (e2) {
+    return handleError(e2, "Error starting workflow run");
+  }
+}
+function watchVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const logger2 = mastra.getLogger();
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to watch workflow" });
+    }
+    return stream(
+      c2,
+      async (stream3) => {
+        try {
+          const result = await watchVNextWorkflowHandler$1({
+            mastra,
+            workflowId,
+            runId
+          });
+          stream3.onAbort(() => {
+            if (!result.locked) {
+              return result.cancel();
+            }
+          });
+          for await (const chunk of result) {
+            await stream3.write(chunk.toString() + "");
+          }
+        } catch (err) {
+          console.log(err);
+        }
+      },
+      async (err) => {
+        logger2.error("Error in watch stream: " + err?.message);
+      }
+    );
+  } catch (error) {
+    return handleError(error, "Error watching workflow");
+  }
+}
+async function resumeAsyncVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    const { step, resumeData, runtimeContext } = await c2.req.json();
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to resume workflow" });
+    }
+    const result = await resumeAsyncVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      body: { step, resumeData }
+    });
+    return c2.json(result);
+  } catch (error) {
+    return handleError(error, "Error resuming workflow step");
+  }
+}
+async function resumeVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    const { step, resumeData, runtimeContext } = await c2.req.json();
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to resume workflow" });
+    }
+    await resumeVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      body: { step, resumeData }
+    });
+    return c2.json({ message: "Workflow run resumed" });
+  } catch (error) {
+    return handleError(error, "Error resuming workflow");
+  }
+}
+async function getVNextWorkflowRunsHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const workflowRuns = await getVNextWorkflowRunsHandler$1({
+      mastra,
+      workflowId
+    });
+    return c2.json(workflowRuns);
+  } catch (error) {
+    return handleError(error, "Error getting workflow runs");
+  }
+}
 async function getSpeakersHandler(c2) {
   try {
     const mastra = c2.get("mastra");
@@ -11286,20 +11123,20 @@ function watchWorkflowHandler(c2) {
     }
     return stream(
       c2,
-      async (stream2) => {
+      async (stream3) => {
         try {
           const result = await watchWorkflowHandler$1({
             mastra,
             workflowId,
             runId
           });
-          stream2.onAbort(() => {
+          stream3.onAbort(() => {
             if (!result.locked) {
               return result.cancel();
             }
           });
           for await (const chunk of result) {
-            await stream2.write(chunk.toString() + "");
+            await stream3.write(chunk.toString() + "");
           }
         } catch (err) {
           console.log(err);
@@ -11482,12 +11319,12 @@ var html2 = `
 async function createHonoServer(mastra, options = {}) {
   const app = new Hono();
   const server = mastra.getServer();
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const mastraToolsPaths = (await import(pathToFileURL(join(__dirname, "tools.mjs")).href)).tools;
+  const toolsPath = "./tools.mjs";
+  const mastraToolsPaths = (await import(toolsPath)).tools;
   const toolImports = mastraToolsPaths ? await Promise.all(
     // @ts-ignore
     mastraToolsPaths.map(async (toolPath) => {
-      return import(pathToFileURL(join(__dirname, toolPath)).href);
+      return import(toolPath);
     })
   ) : [];
   const tools = toolImports.reduce((acc, toolModule) => {
@@ -11586,7 +11423,7 @@ async function createHonoServer(mastra, options = {}) {
       }
     }
   }
-  if (options?.isDev || server?.build?.apiReqLogs) {
+  if (server?.build?.apiReqLogs) {
     app.use(logger());
   }
   app.get(
@@ -12724,6 +12561,289 @@ async function createHonoServer(mastra, options = {}) {
     storeTelemetryHandler
   );
   app.get(
+    "/api/workflows/v-next",
+    h({
+      description: "Get all vNext workflows",
+      tags: ["vNextWorkflows"],
+      responses: {
+        200: {
+          description: "List of all vNext workflows"
+        }
+      }
+    }),
+    getVNextWorkflowsHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId",
+    h({
+      description: "Get vNext workflow by ID",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "vNext workflow details"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    getVNextWorkflowByIdHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId/runs",
+    h({
+      description: "Get all runs for a vNext workflow",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "List of vNext workflow runs from storage"
+        }
+      }
+    }),
+    getVNextWorkflowRunsHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/resume",
+    h({
+      description: "Resume a suspended vNext workflow step",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                step: {
+                  oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }]
+                },
+                resumeData: { type: "object" },
+                runtimeContext: { type: "object" }
+              },
+              required: ["step"]
+            }
+          }
+        }
+      }
+    }),
+    resumeVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/resume-async",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Resume a suspended vNext workflow step",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                step: {
+                  oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }]
+                },
+                resumeData: { type: "object" },
+                runtimeContext: { type: "object" }
+              },
+              required: ["step"]
+            }
+          }
+        }
+      }
+    }),
+    resumeAsyncVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/create-run",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Create a new vNext workflow run",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "New vNext workflow run created"
+        }
+      }
+    }),
+    createVNextWorkflowRunHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/start-async",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Execute/Start a vNext workflow",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                inputData: { type: "object" },
+                runtimeContext: { type: "object" }
+              }
+            }
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: "vNext workflow execution result"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    startAsyncVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/start",
+    h({
+      description: "Create and start a new vNext workflow run",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                inputData: { type: "object" },
+                runtimeContext: { type: "object" }
+              }
+            }
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: "vNext workflow run started"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    startVNextWorkflowRunHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId/watch",
+    h({
+      description: "Watch vNext workflow transitions in real-time",
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      tags: ["vNextWorkflows"],
+      responses: {
+        200: {
+          description: "vNext workflow transitions in real-time"
+        }
+      }
+    }),
+    watchVNextWorkflowHandler
+  );
+  app.get(
     "/api/workflows",
     h({
       description: "Get all workflows",
@@ -12922,7 +13042,7 @@ async function createHonoServer(mastra, options = {}) {
     "/api/workflows/:workflowId/startAsync",
     bodyLimit(bodyLimitOptions),
     h({
-      description: "Execute/Start a workflow",
+      description: "@deprecated Use /api/workflows/:workflowId/start-async instead",
       tags: ["workflows"],
       parameters: [
         {
@@ -12966,7 +13086,7 @@ async function createHonoServer(mastra, options = {}) {
     "/api/workflows/:workflowId/start-async",
     bodyLimit(bodyLimitOptions),
     h({
-      description: "@deprecated Use /api/workflows/:workflowId/start-async instead",
+      description: "Execute/Start a workflow",
       tags: ["workflows"],
       parameters: [
         {
@@ -13480,19 +13600,21 @@ async function createNodeServer(mastra, options = {}) {
   const server = serve(
     {
       fetch: app.fetch,
-      port
+      port,
+      hostname: serverOptions?.host ?? "localhost"
     },
     () => {
       const logger2 = mastra.getLogger();
-      logger2.info(` Mastra API running on port http://localhost:${process.env.PORT || 4111}/api`);
+      const host = serverOptions?.host ?? "localhost";
+      logger2.info(` Mastra API running on port http://${host}:${port}/api`);
       if (options?.isDev) {
-        logger2.info(`\uFFFD Open API documentation available at http://localhost:${port}/openapi.json`);
+        logger2.info(`\uFFFD Open API documentation available at http://${host}:${port}/openapi.json`);
       }
       if (options?.isDev) {
-        logger2.info(`\u{1F9EA} Swagger UI available at http://localhost:${port}/swagger-ui`);
+        logger2.info(`\u{1F9EA} Swagger UI available at http://${host}:${port}/swagger-ui`);
       }
       if (options?.playground) {
-        logger2.info(`\u{1F468}\u200D\u{1F4BB} Playground available at http://localhost:${port}/`);
+        logger2.info(`\u{1F468}\u200D\u{1F4BB} Playground available at http://${host}:${port}/`);
       }
     }
   );

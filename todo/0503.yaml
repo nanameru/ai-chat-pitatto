@@ -25,6 +25,10 @@ matrix:
         description: 'GoTベース検索ワークフローの実装'
         status: 'todo'
         depends_on: [implement_web_search_tool, implement_x_search_tool]
+      - id: implement_loop_processing
+        description: 'ワークフロー内のループ処理の実装'
+        status: 'in_progress'
+        depends_on: design_got_workflow
       - id: integrate_search_agent
         description: '検索エージェントへのGoTワークフロー統合'
         status: 'todo'
@@ -45,6 +49,16 @@ matrix:
         description: 'ピタッとAIサービスとDiscord (discordapp/ボット) を連携'
         status: 'todo'
         notes: '詳細は別途検討'
+      - id: api_search_workflow
+        description: 'Next.jsの検索ワークフローをAPI化'
+        status: 'todo'
+        depends_on: implement_got_workflow
+        notes: 'ディープリサーチのワークフロー完成後に着手'
+      - id: setup_discord_daily
+        description: 'Discord経由で検索結果を毎日配信する仕組みを構築'
+        status: 'todo'
+        depends_on: [api_search_workflow, integrate_discord]
+        notes: 'API化とDiscord連携が完了してから着手'
 
   quadrant_3: # 重要度: 低, 緊急度: 高
     title: '第3象限 (後回し/依頼: 重要度 低, 緊急度 高)'
