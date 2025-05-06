@@ -1,5 +1,6 @@
 import { Mastra } from '@mastra/core';
 import { createLogger } from '@mastra/core/logger';
+import { LibSQLStore } from '@mastra/libsql';
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { createTool } from '@mastra/core/tools';
@@ -1588,7 +1589,11 @@ goTResearchWorkflow.step(clarityCheckStep).then(requestClarificationStep, {
   }
 ).then(prepareSynthesizeInput).then(synthesizeStep).commit();
 
+const storage = new LibSQLStore({
+  url: "file:./mastra.db"
+});
 const mastra = new Mastra({
+  storage,
   agents: {
     thoughtEvaluatorAgent: thoughtEvaluatorAgent,
     thoughtGeneratorAgent: thoughtGeneratorAgent,

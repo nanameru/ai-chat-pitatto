@@ -17,6 +17,7 @@ import { z } from 'zod';
 import { isVercelTool } from '@mastra/core/tools';
 import { ReadableStream as ReadableStream$1 } from 'node:stream/web';
 import '@mastra/core/logger';
+import '@mastra/libsql';
 import '@ai-sdk/openai';
 import '@mastra/core/workflows';
 import 'util';
