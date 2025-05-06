@@ -51,14 +51,7 @@ function getExampleSuggestions(
       description: '生成AIの最新技術や研究について教えてください',
       onClick: () => {
         const input = '生成AIの最新技術や研究について教えてください';
-        const message = {
-          id: randomUUID(),
-          content: input,
-          role: 'user' as const,
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
+        setInput(input);
       }
     },
     {
@@ -66,14 +59,7 @@ function getExampleSuggestions(
       description: 'コードの書き方や最適化について質問できます',
       onClick: () => {
         const input = 'Reactでパフォーマンスを最適化するベストプラクティスを教えてください';
-        const message = {
-          id: randomUUID(),
-          content: input,
-          role: 'user' as const,
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
+        setInput(input);
       }
     },
     {
@@ -81,14 +67,7 @@ function getExampleSuggestions(
       description: '効果的なデータ分析の方法を教えてください',
       onClick: () => {
         const input = '大量のデータから意味のある洞察を得るための効果的なデータ分析方法を教えてください';
-        const message = {
-          id: randomUUID(),
-          content: input,
-          role: 'user' as const,
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
+        setInput(input);
       }
     },
     {
@@ -96,14 +75,7 @@ function getExampleSuggestions(
       description: '機械学習を学ぶための良い教材を紹介してください',
       onClick: () => {
         const input = '機械学習を効率的に学ぶためのおすすめの学習リソースを教えてください';
-        const message = {
-          id: randomUUID(),
-          content: input,
-          role: 'user' as const,
-          createdAt: new Date()
-        };
-        append(message);
-        setInput('');
+        setInput(input);
       }
     }
   ];
@@ -229,9 +201,6 @@ export function Chat({
   const { mutate } = useSWRConfig();
   const { data: session } = useSWR('/api/auth/session', fetcher);
   
-  // カスタムフックを使用して、isXSearchEnabledの値を監視
-  const [isXSearchEnabled, setIsXSearchEnabled] = useLocalStorage('searchMode', false);
-  
   // Computer Use機能の状態を監視
   const [isComputerUseEnabled, setIsComputerUseEnabled] = useLocalStorage('computerUseMode', false);
   const { isLoading: isComputerUseLoading } = useComputerUse();
@@ -249,7 +218,7 @@ export function Chat({
   const [currentMessages, setCurrentMessages] = useState<Message[]>(initialMessages);
   
   // useChat の再初期化のための一意のキーを生成
-  const [chatKey, setChatKey] = useState(`${id}-${isComputerUseEnabled ? 'computer-use' : isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`);
+  const [chatKey, setChatKey] = useState(`${id}-${isComputerUseEnabled ? 'computer-use' : 'chat'}-${refreshParam || Date.now()}`);
   
   // チャットIDが変更されたときに内部状態を更新
   useEffect(() => {
@@ -262,11 +231,11 @@ export function Chat({
     setCurrentMessages(initialMessages);
     
     // チャットキーを更新して強制的に再初期化
-    const newKey = `${id}-${isComputerUseEnabled ? 'computer-use' : isXSearchEnabled ? 'xsearch' : 'chat'}-${refreshParam || Date.now()}`;
+    const newKey = `${id}-${isComputerUseEnabled ? 'computer-use' : 'chat'}-${refreshParam || Date.now()}`;
     console.log(`[Chat] チャットキーを更新します: ${newKey}`);
     setChatKey(newKey);
     
-  }, [id, initialMessages, isXSearchEnabled, isComputerUseEnabled, refreshParam]);
+  }, [id, initialMessages, isComputerUseEnabled, refreshParam]);
   
   // チャットの状態を保持するための参照
   const chatStateRef = useRef<{
@@ -343,7 +312,7 @@ export function Chat({
       console.log('🤖 Generating with:', {
         name: currentModel?.name,
         version: currentModel?.modelVersion,
-        mode: isXSearchEnabled ? 'X Search' : 'Regular Chat'
+        mode: 'Regular Chat'
       });
     },
     onFinish: (message: Message) => {
@@ -378,7 +347,7 @@ export function Chat({
         stack: error.stack,
         cause: error.cause,
         raw: error,
-        mode: isComputerUseEnabled ? 'Computer Use' : isXSearchEnabled ? 'X Search' : 'Regular Chat'
+        mode: 'Regular Chat'
       });
 
       if (!chatStateRef.current.messages.length || 
@@ -406,13 +375,7 @@ export function Chat({
     reload
   } = useChat({
     ...chatOptions,
-    api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat', // サーバープロキシ経由で OpenAI を呼び出すため、useChat の api オプションを設定
-    body: {
-      ...(chatOptions?.body || {}),
-      chatId: id,
-      xSearchEnabled: isXSearchEnabled,
-      computerUseEnabled: isComputerUseEnabled,
-    },
+    api: isComputerUseEnabled ? '/api/computer-use' : '/api/chat', // サーバープロキシ経由で OpenAI を呼び出すため、useChat の api オプションを設定
     id: chatKey,
     initialMessages: currentMessages
   });
@@ -491,7 +454,7 @@ export function Chat({
         // エラーハンドリング (useOptimistic がロールバックする)
         console.error('[Chat] Error sending message:', {
           error,
-          api: isComputerUseEnabled ? '/api/computer-use' : isXSearchEnabled ? '/api/deep-research' : '/api/chat',
+          api: isComputerUseEnabled ? '/api/computer-use' : '/api/chat',
           // ... 他のエラー情報 ...
         });
         toast.error('メッセージの送信に失敗しました。');
@@ -499,7 +462,7 @@ export function Chat({
       }
     },
     // originalAppend, addOptimisticMessage, startTransition に依存
-    [originalAppend, addOptimisticMessage, startTransition, isXSearchEnabled, isComputerUseEnabled]
+    [originalAppend, addOptimisticMessage, startTransition, isComputerUseEnabled]
   );
 
   // チャットの状態が変わったときに参照を更新
@@ -568,9 +531,9 @@ export function Chat({
       
       // silentModeフラグがある場合はログを抑制
       if (!silentMode) {
-        console.log('[Event] X検索モード変更イベントを受信:', {
-          前のモード: previous ? 'X検索モード' : '通常チャットモード',
-          新しいモード: enabled ? 'X検索モード' : '通常チャットモード',
+        console.log('[Event] Computer Useモード変更イベントを受信:', {
+          前のモード: previous ? 'Computer Useモード' : '通常モード',
+          新しいモード: enabled ? 'Computer Useモード' : '通常モード',
           タイムスタンプ: timestamp,
           強制更新: force ? 'あり' : 'なし',
           即時更新: immediate ? 'あり' : 'なし',
@@ -580,7 +543,7 @@ export function Chat({
       }
       
       // モードが変更された場合、または強制更新フラグがある場合、またはチャットリセットが要求された場合に処理を実行
-      if (enabled !== isXSearchEnabled || force || resetChat) {
+      if (enabled !== isComputerUseEnabled || force || resetChat) {
         if (!silentMode) {
           console.log('[Event] モード変更またはリセット要求を検出、チャットを再初期化します');
         }
@@ -591,7 +554,7 @@ export function Chat({
         }
         
         // 状態を即座に更新（最優先）
-        setIsXSearchEnabled(enabled);
+        setIsComputerUseEnabled(enabled);
         
         // 既存のメッセージをクリア
         if (messages.length > 0) {
@@ -604,9 +567,9 @@ export function Chat({
         // 即座に新しいキーを生成して useChat を強制的に再初期化
         // タイムスタンプをミリ秒単位で含めることで、確実に一意のキーになる
         const timestampValue = Date.now();
-        const forcedNewKey = `${id}-${enabled ? 'xsearch' : 'chat'}-${timestampValue}-${resetChat ? 'reset' : (immediate ? 'immediate' : 'forced')}`;
+        const forcedNewKey = `${id}-${enabled ? 'computer-use' : 'chat'}-${timestampValue}-${resetChat ? 'reset' : (immediate ? 'immediate' : 'forced')}`;
         if (!silentMode) {
-          console.log(`[Chat] チャットキーを強制更新: ${forcedNewKey}`);
+          console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
         }
         setChatKey(forcedNewKey);
         
@@ -621,20 +584,26 @@ export function Chat({
                 data: {
                   chatId: id,
                   model: selectedChatModel,
-                  xSearchEnabled: enabled,
-                  computerUseEnabled: false,
+                  computerUseEnabled: enabled,
                   timestamp: timestampValue, // タイムスタンプを含めて確実に再初期化
                   forceReset: true // 強制的にリセットするフラグ
                 }
               });
               if (!silentMode) {
-                console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                console.log(`[Event] リロード完了: ${enabled ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
               }
             } catch (error) {
-              console.error('[X検索] リロードエラー:', error);
+              console.error('[Computer Use] リロードエラー:', error);
               toast.error('モード切替に失敗しました。ページを再読み込みします。');
               window.location.reload();
             }
+            
+            // 確実に再初期化されたことを確認するためのチェック
+            setTimeout(() => {
+              if (!silentMode) {
+                console.log(`[Verify] チャットの状態を確認: モード=${enabled ? 'Computer Use' : '通常チャット'}, キー=${forcedNewKey}`);
+              }
+            }, 100);
           } else {
             if (!silentMode) {
               console.warn(`[Event] reloadが利用できません。強制的にページをリロードします`);
@@ -653,17 +622,16 @@ export function Chat({
                   data: {
                     chatId: id,
                     model: selectedChatModel,
-                    xSearchEnabled: enabled,
-                    computerUseEnabled: false,
+                    computerUseEnabled: enabled,
                     timestamp: timestampValue, // タイムスタンプを含めて確実に再初期化
                     forceReset: true // 強制的にリセットするフラグ
                   }
                 });
                 if (!silentMode) {
-                  console.log(`[Event] リロード完了: ${enabled ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
+                  console.log(`[Event] リロード完了: ${enabled ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
                 }
               } catch (error) {
-                console.error('[X検索] リロードエラー:', error);
+                console.error('[Computer Use] リロードエラー:', error);
                 toast.error('モード切替に失敗しました。ページを再読み込みします。');
                 window.location.reload();
               }
@@ -679,13 +647,13 @@ export function Chat({
     };
 
     // イベントリスナーを追加
-    window.addEventListener('xsearch-mode-changed', handleModeChange as EventListener);
+    window.addEventListener('computer-use-mode-changed', handleModeChange as EventListener);
 
     // クリーンアップ関数
     return () => {
-      window.removeEventListener('xsearch-mode-changed', handleModeChange as EventListener);
+      window.removeEventListener('computer-use-mode-changed', handleModeChange as EventListener);
     };
-  }, [isXSearchEnabled, id, setIsXSearchEnabled, setChatKey, originalSetMessages, selectedChatModel, reload, messages.length]);
+  }, [isComputerUseEnabled, id, setIsComputerUseEnabled, setChatKey, originalSetMessages, selectedChatModel, reload, messages.length]);
 
   const { data: votes, error: votesError } = useSWR<Array<Vote>>(
     `/api/vote?chatId=${id}`,
@@ -715,90 +683,33 @@ export function Chat({
     }
   };
 
-  // Deep Research 用の関数
-  const executeDeepResearch = async (query: string) => {
-    console.log('[Deep Research] 実行開始:', query);
-    setIsReasoningLoading(true); // ローディング開始
-
-    try {
-      // APIを呼び出し
-      const response = await fetch('/api/deep-research', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          query,
-          chatId: id,
-          model: selectedChatModel
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: '不明なエラーが発生しました' }));
-        console.error('[Deep Research] APIエラー:', response.status, errorData);
-        throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
-      }
-
-      // ... (data.needsClarification や data.result の処理) ...
-
-    } catch (error) {
-      console.error('[Deep Research] 実行エラー:', error);
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      toast.error(`Deep Research中にエラーが発生しました: ${errorMessage}`);
-
-      // ★ エラーメッセージをチャットに追加して終了 ★
-      // addOptimisticMessage は useChat 管理外なので、元の messages 配列を直接操作する
-      // （または、useChat の setMessages を使う方が安全かもしれないが、まずはこれで試す）
-      // 既存のメッセージ配列を取得 (useChat の内部状態を参照するべきだが、ここでは暫定的に optimisticMessages を使う)
-      // ※注意: この方法は useChat の状態と完全に同期しない可能性がある
-      const currentMsgs = optimisticMessages; // または chatStateRef.current.messages
-      originalSetMessages([
-        ...currentMsgs,
-        {
-            id: randomUUID(),
-            role: 'assistant',
-            content: `エラーが発生したため、Deep Research を中断しました: ${errorMessage}`,
-            createdAt: new Date(),
-            annotations: [{ type: 'error', data: { details: errorMessage } }] // エラーを示す注釈
+  const handleFileSelect = (file: File) => {
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        if (event.target?.result) {
+          const fileContent = event.target.result as string;
+          handleSetInput(fileContent);
         }
-      ]);
-
-    } finally {
-      setIsReasoningLoading(false); // ローディング終了
+      };
+      reader.readAsText(file);
     }
   };
 
-  /* // ★ コメントアウト開始: テスト用ダミーデータ設定部分
-  // テスト用: 初期読み込み時にダミーの思考ステップを設定
-  useEffect(() => {
-    if (isXSearchEnabled) {
-      // デバッグ: テスト用の思考ステップを追加
-      const testReasoningSteps: ReasoningStep[] = [
-        {
-          id: 'test-1',
-          timestamp: new Date().toISOString(),
-          type: 'planning',
-          title: 'テスト: 研究計画フェーズを開始',
-          content: 'テスト用のダミーデータです。実際の思考プロセスではありません。'
-        },
-        {
-          id: 'test-2',
-          timestamp: new Date().toISOString(),
-          type: 'thought_generation',
-          title: 'テスト: 思考生成を実行',
-          content: 'テスト用の思考生成ステップです。'
-        }
-      ];
-      console.log('Setting test reasoning steps for debugging - COMMENTED OUT'); // ログ変更
-      // setReasoningSteps(testReasoningSteps); // ★ 状態更新をコメントアウト
-      // setIsReasoningLoading(false); // ★ 状態更新をコメントアウト
+  // WebSearch機能の有効/無効を切り替える関数
+  const handleComputerUseToggle = useCallback((enabled: boolean) => {
+    if (!enabled) {
+      toast.info(`Computer Use モードを無効にしました`);
+    } else {
+      toast.info(`Computer Use モードを有効にしました`);
     }
-  }, [isXSearchEnabled]);
-  */ // ★ コメントアウト終了
+    setIsComputerUseEnabled(enabled);
+    // モード変更時にログ出力
+    console.log(`[API] エンドポイントを切り替え: ${enabled ? '/api/computer-use' : '/api/chat'}`);
+    // モード変更時にチャット履歴をリセットするかどうかを検討
+    // setMessages([]); // 必要に応じてリセット
+  }, [setIsComputerUseEnabled]);
 
-  // ※ 重複処理防止のため、データプロパティのハンドリングは上部の useEffect 内で行います
-  // assistant メッセージの最初のトークンを受信したかどうか
   const [hasFirstAssistantToken, setHasFirstAssistantToken] = useState(false);
 
   // 最新の assistant メッセージにトークンが到達したらフラグを立てる
@@ -848,164 +759,78 @@ export function Chat({
             )}
 
             <div className="sticky bottom-0 z-10 bg-background">
-              <form className="flex flex-col px-4 bg-background pb-4 md:pb-6 gap-2 w-full" onSubmit={(e) => e.preventDefault()}>
+              <form className="flex flex-col px-6 md:px-8 bg-background pb-6 md:pb-8 gap-4 w-full" onSubmit={(e) => e.preventDefault()}>
                 {!isReadonly && (
                   <>
                     <MultimodalInput
-                      chatId={id}
+                      id={id}
+                      isLoading={isLoading}
+                      stop={stop}
                       input={input}
                       setInput={handleSetInput}
-                      isLoading={showThinking}
+                      handleSubmit={async (
+                        event?: {
+                          preventDefault?: () => void;
+                        },
+                        options?: ChatRequestOptions & { xSearchEnabled?: boolean }
+                      ): Promise<{ success: boolean } | undefined> => {
+                        if (event?.preventDefault) {
+                          event.preventDefault();
+                        }
+                        const message: CreateMessage = {
+                          id: randomUUID(),
+                          content: input,
+                          role: 'user',
+                          createdAt: new Date()
+                        };
+                        await append(message, options);
+                        return { success: true };
+                      }}
                       attachments={attachments}
                       setAttachments={setAttachments}
                       messages={messages}
+                      setMessages={originalSetMessages}
                       append={append}
                       selectedModelId={selectedChatModel}
-                      isXSearchEnabled={isXSearchEnabled}
-                      onXSearchToggle={(newValue, silentMode) => {
-                        const oldValue = isXSearchEnabled;
-                        
-                        // silentModeフラグがある場合はログを抑制
-                        if (!silentMode) {
-                          console.log(`[Parent] X検索ボタンがクリックされました`);
-                          console.log(`[Parent] X検索モード変更: ${oldValue ? 'X検索モード' : '通常チャットモード'} → ${newValue ? 'X検索モード' : '通常チャットモード'}`);
+                      reload={async (chatRequestOptions) => {
+                        // 既存のチャットインスタンスを使用して新しいメッセージを送信
+                        const response = await fetch('/api/chat', {
+                          method: 'POST',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            chatId: id,
+                            model: optimisticModelId,
+                            visibilityType: selectedVisibilityType,
+                            messages: initialMessages
+                          }),
+                        });
+
+                        if (!response.ok) {
+                          console.error('Chat error:', await response.text());
+                          toast.error('メッセージの送信に失敗しました。もう一度お試しください。');
+                          return null;
                         }
-                        
-                        // Computer Useモードが有効な場合は無効化
-                        if (isComputerUseEnabled) {
-                          setIsComputerUseEnabled(false);
-                          if (!silentMode) {
-                            console.log(`[Parent] Computer Useモードを無効化しました`);
+
+                        const reader = response.body?.getReader();
+                        if (!reader) return null;
+
+                        try {
+                          while (true) {
+                            const { done, value } = await reader.read();
+                            if (done) break;
+                            // 進行状況をコンソールに表示
+                            console.log('Response chunk:', new TextDecoder().decode(value));
                           }
+                        } finally {
+                          reader.releaseLock();
                         }
-                        
-                        // 状態を即座に更新（最優先）
-                        setIsXSearchEnabled(newValue);
-                        if (!silentMode) {
-                          console.log(`[Parent] 状態を更新しました: ${newValue}`);
-                        }
-                        
-                        // まず既存のメッセージをクリア（モード切替時は常にチャットをリセット）
-                        if (messages.length > 0) {
-                          if (!silentMode) {
-                            console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
-                          }
-                          originalSetMessages([]);
-                        }
-                        
-                        // 即座に新しいキーを生成して useChat を強制的に再初期化
-                        // タイムスタンプをミリ秒単位で含めることで、確実に一意のキーになる
-                        const timestamp = Date.now();
-                        const forcedNewKey = `${id}-${newValue ? 'xsearch' : 'chat'}-${timestamp}-reset`;
-                        if (!silentMode) {
-                          console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
-                        }
-                        setChatKey(forcedNewKey);
-                        
-                        // APIエンドポイントを即座に切り替える
-                        if (!silentMode) {
-                          console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/deep-research' : '/api/chat'}`);
-                        }
-                        
-                        // useChat を同期的に強制再初期化
-                        if (reload) {
-                          if (!silentMode) {
-                            console.log(`[Refresh] useChat を同期的に再初期化します`);
-                          }
-                          try {
-                            reload({
-                              data: {
-                                chatId: id,
-                                model: selectedChatModel,
-                                xSearchEnabled: newValue,
-                                computerUseEnabled: false,
-                                timestamp: timestamp, // タイムスタンプを含めて確実に再初期化
-                                forceReset: true // 強制的にリセットするフラグ
-                              }
-                            });
-                            if (!silentMode) {
-                              console.log(`[Refresh] 完了: ${newValue ? 'X検索モード' : '通常チャットモード'} が有効になりました`);
-                            }
-                          } catch (error) {
-                            console.error('[X検索] リロードエラー:', error);
-                            toast.error('モード切替に失敗しました。ページを再読み込みします。');
-                            window.location.reload();
-                          }
-                          
-                          // 確実に再初期化されたことを確認するためのチェック
-                          setTimeout(() => {
-                            if (!silentMode) {
-                              console.log(`[Verify] チャットの状態を確認: モード=${newValue ? 'X検索' : '通常チャット'}, キー=${forcedNewKey}`);
-                            }
-                          }, 100);
-                        } else {
-                          if (!silentMode) {
-                            console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
-                          }
-                          window.location.reload();
-                        }
+
+                        return null;
                       }}
-                      isComputerUseEnabled={isComputerUseEnabled}
-                      onComputerUseToggle={(newValue) => {
-                        const oldValue = isComputerUseEnabled;
-                        
-                        console.log(`[Parent] Computer Useボタンがクリックされました`);
-                        console.log(`[Parent] Computer Useモード変更: ${oldValue ? 'Computer Useモード' : '通常モード'} → ${newValue ? 'Computer Useモード' : '通常モード'}`);
-                        
-                        // X検索モードが有効な場合は無効化
-                        if (isXSearchEnabled) {
-                          setIsXSearchEnabled(false);
-                          console.log(`[Parent] X検索モードを無効化しました`);
-                        }
-                        
-                        // 状態を即座に更新
-                        setIsComputerUseEnabled(newValue);
-                        console.log(`[Parent] 状態を更新しました: ${newValue}`);
-                        
-                        // メッセージをクリア
-                        if (messages.length > 0) {
-                          console.log(`[Reset] チャットの状態をリセットします（${messages.length}件のメッセージをクリア）`);
-                          originalSetMessages([]);
-                        }
-                        
-                        // 新しいキーを生成して useChat を再初期化
-                        const timestamp = Date.now();
-                        const forcedNewKey = `${id}-${newValue ? 'computer-use' : 'chat'}-${timestamp}-reset`;
-                        console.log(`[Chat] チャットキーを更新: ${forcedNewKey}`);
-                        setChatKey(forcedNewKey);
-                        
-                        // APIエンドポイントを切り替え
-                        console.log(`[API] エンドポイントを切り替え: ${newValue ? '/api/computer-use' : '/api/chat'}`);
-                        
-                        // useChat を再初期化
-                        if (reload) {
-                          console.log(`[Refresh] useChat を再初期化します`);
-                          try {
-                            reload({
-                              data: {
-                                chatId: id,
-                                model: selectedChatModel,
-                                xSearchEnabled: false,
-                                computerUseEnabled: newValue,
-                                timestamp: timestamp,
-                                forceReset: true
-                              }
-                            });
-                            console.log(`[Refresh] 完了: ${newValue ? 'Computer Useモード' : '通常チャットモード'} が有効になりました`);
-                          } catch (error) {
-                            console.error('[Computer Use] リロードエラー:', error);
-                            toast.error('モード切替に失敗しました。ページを再読み込みします。');
-                            window.location.reload();
-                          }
-                        } else {
-                          console.warn(`[Refresh] reloadが利用できません。強制的にページをリロードします`);
-                          window.location.reload();
-                        }
-                      }}
-                      onShowSearchResults={() => {
-                        console.log(`[Chat] 検索結果の表示状態を変更`);
-                        setShowReasoningSidebar(true);
-                      }}
+                      votes={votes}
+                      isReadonly={isReadonly}
                     />
 
                     {isArtifactVisible && <Artifact 
@@ -1036,7 +861,7 @@ export function Chat({
                     />}
 
                     {!isArtifactVisible && messages.length === 0 && (
-                      <div className="mb-2">
+                      <div className="mt-8 mb-4">
                         <SuggestedActions
                           chatId={id}
                           append={append}
@@ -1052,7 +877,7 @@ export function Chat({
           </div>
 
           {/* ReasoningSidebar - 右側に表示 */}
-          {isXSearchEnabled && showReasoningSidebar && messages.length > 0 && (
+          {showReasoningSidebar && messages.length > 0 && (
             <div className="w-96 border-l border-gray-200 overflow-y-auto h-full">
               <ReasoningSidebar 
                 steps={reasoningSteps} 

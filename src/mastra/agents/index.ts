@@ -44,7 +44,19 @@ export { redditTestAgent } from './redditTestAgent';
 export { youTubeTestAgent } from './youTubeTestAgent';
 export { mediumTestAgent } from './mediumTestAgent';
 export { noteTestAgent } from './noteTestAgent';
-export { clarityCheckAgent } from './clarityCheckAgent';
-export { clarificationPromptAgent } from './clarificationPromptAgent';
 export { thoughtGeneratorAgent } from './thoughtGeneratorAgent';
 export { thoughtEvaluatorAgent } from './thoughtEvaluatorAgent';
+export { thoughtTransformerAgent } from './thoughtTransformerAgent';
+export { synthesizerAgent } from './synthesizerAgent';
+
+export const clarityCheckAgent = new Agent({
+  name: 'clarityCheckAgent',
+  model: openai('gpt-4o-mini'),
+  instructions: `あなたは質問の明確さを評価する専門家です。与えられた質問が明確か不明確かを判断し、理由とともに回答してください。評価結果は必ず以下のJSON形式で返してください: {"isClear": boolean, "reasoning": "評価理由を簡潔に"}`
+});
+
+export const clarificationPromptAgent = new Agent({
+  name: 'clarificationPromptAgent',
+  model: openai('gpt-4o-mini'),
+  instructions: `あなたは質問の明確化を支援する専門家です。不明確な質問に対して、ユーザーがより明確に質問を再構築できるような質問文を生成してください。`
+});

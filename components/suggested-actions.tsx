@@ -30,7 +30,7 @@ function PureSuggestedActions({
   if (!suggestions || suggestions.length === 0) return null;
 
   return (
-    <div className="grid sm:grid-cols-2 gap-3 w-full max-w-3xl mx-auto">
+    <div className="grid sm:grid-cols-2 gap-4 md:gap-5 w-full max-w-3xl mx-auto px-2">
       {suggestions.map((suggestion, index) => (
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -47,7 +47,7 @@ function PureSuggestedActions({
         >
           <Button
             variant="ghost"
-            className="w-full h-auto p-4 justify-start hover:bg-primary/5 hover:text-primary border border-primary/10 hover:border-primary/20 transition-all duration-200 rounded-xl group"
+            className="w-full h-auto p-5 justify-start hover:bg-primary/5 hover:text-primary border border-primary/10 hover:border-primary/20 transition-all duration-200 rounded-xl group"
             onClick={suggestion.onClick}
           >
             <div className="flex flex-row items-start gap-3 text-left">

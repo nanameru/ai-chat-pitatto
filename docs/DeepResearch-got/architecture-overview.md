@@ -10,6 +10,7 @@
 *   **役割:**
     *   リサーチプロセス全体の流れを制御するオーケストレーター。
     *   ユーザー入力の明確さ判断、思考グラフの状態管理、各エージェント/ツールの呼び出し、ループ制御、Human-in-the-Loop (ユーザー確認) の管理を行う。
+    *   **思考処理サブワークフロー (`ProcessThoughtsSubWorkflow`)** を呼び出す。
 
 ### 1.2. エージェント (Agent): 合計 6個
 
@@ -20,7 +21,7 @@
 3.  **名称:** `ThoughtGeneratorAgent`
     *   **役割:** 明確化された質問に基づき、初期の多様な思考、視点、サブクエスチョンを生成 (思考グラフの起点)。
 4.  **名称:** `ThoughtTransformerAgent`
-    *   **役割:** 思考グラフ内の選択されたノードを展開・変換する。内部推論、新規アイデア生成、適切なツールの選択と呼び出し指示を行う GoT の中核。
+    *   **役割:** `ProcessThoughtsSubWorkflow` 内で呼び出され、思考グラフ内の選択されたノードを展開・変換する。内部推論、新規アイデア生成、適切なツールの選択と呼び出し指示を行う GoT の中核。
 5.  **名称:** `ThoughtEvaluatorAgent`
     *   **役割:** 生成された思考ノードやパスの質、関連性、新規性などを評価し、スコア付けする (探索戦略に使用)。
 6.  **名称:** `SynthesizerAgent`
@@ -83,20 +84,27 @@ graph TD
         subgraph ExpansionLoop [思考展開ループ .while()]
              direction TB
              LoopStart(ループ開始) --> SelectNode(2a. 展開ノード選択);
-             SelectNode -- 選択ノード --> TransformThought(2b. 思考変換 Step);
-             TransformThought -- Calls --> ThoughtTransformerAgent((ThoughtTransformer Agent));
+             SelectNode -- 選択ノード --> ProcessThoughtsSub(2b. 思考処理サブワークフロー);
 
-             %% ツール利用
-             ThoughtTransformerAgent -- May Call --> WebSearchTool([WebSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> ArxivSearchTool([ArxivSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> XSearchTool([XSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> RedditSearchTool([RedditSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> YouTubeSearchTool([YouTubeSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> MediumSearchTool([MediumSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> NoteSearchTool([NoteSearch Tool]);
-             ThoughtTransformerAgent -- May Call --> OtherTools([...]);
+             subgraph ProcessThoughtsSub [ProcessThoughtsSubWorkflow]
+                direction TB
+                SubStart(入力: 選択ノード) --> TransformThought(思考変換 Step);
+                TransformThought -- Calls --> ThoughtTransformerAgent((ThoughtTransformer Agent));
 
-             TransformThought -- 新思考/結果 --> UpdateGraph(2c. グラフ状態更新);
+                %% ツール利用
+                ThoughtTransformerAgent -- May Call --> WebSearchTool([WebSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> ArxivSearchTool([ArxivSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> XSearchTool([XSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> RedditSearchTool([RedditSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> YouTubeSearchTool([YouTubeSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> MediumSearchTool([MediumSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> NoteSearchTool([NoteSearch Tool]);
+                ThoughtTransformerAgent -- May Call --> OtherTools([...]);
+
+                TransformThought -- 新思考/結果 --> SubEnd(出力: 新思考/結果);
+             end
+
+             ProcessThoughtsSub -- 新思考/結果 --> UpdateGraph(2c. グラフ状態更新);
              UpdateGraph -- 更新後グラフ --> EvaluateThoughts(2d. 思考評価 Step);
              EvaluateThoughts -- Calls --> ThoughtEvaluatorAgent((ThoughtEvaluator Agent));
              EvaluateThoughts -- 評価済みグラフ --> CheckTermination(2e. 終了条件チェック);
@@ -124,6 +132,7 @@ graph TD
     style NoteSearchTool fill:#DFD,stroke:#333
     style OtherTools fill:#DFD,stroke:#333
     style WaitForUserInput fill:#FFA,stroke:#333,stroke-width:2px,stroke-dasharray: 5 5
+    style ProcessThoughtsSub fill:#EEE,stroke:#666,stroke-dasharray: 5 5
 ```
 
 ## 3. 段階的な開発計画（案）
@@ -132,9 +141,10 @@ graph TD
     *   `WebSearchTool`, `ArxivSearchTool`
     *   `ClarityCheckAgent`, `ThoughtGeneratorAgent`, `ThoughtTransformerAgent`, `SynthesizerAgent`
     *   `GoTResearchWorkflow` の基本骨格（明確化判断、初期生成、シンプルなループ、統合）
+    *   `ProcessThoughtsSubWorkflow` の初期実装
 2.  **フェーズ2: 推奨ツールの追加と連携強化**
     *   `XSearchTool`, `RedditSearchTool`, `YouTubeSearchTool`, `MediumSearchTool`, `NoteSearchTool` を実装。
-    *   `ThoughtTransformerAgent` が状況に応じてこれらのツールを選択・利用できるように指示を改良。
+    *   `ThoughtTransformerAgent` が状況に応じてこれらのツールを選択・利用できるように指示を改良 (`ProcessThoughtsSubWorkflow` 内)。
 3.  **フェーズ3: 高度化**
     *   `ClarificationPromptAgent` と Human-in-the-Loop (`suspend`/`resume`) の実装。
     *   `ThoughtEvaluatorAgent` による評価ロジックと、それを利用した探索戦略の導入。

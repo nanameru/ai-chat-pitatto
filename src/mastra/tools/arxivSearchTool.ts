@@ -1,17 +1,15 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { getLogger } from '..';
 
-// Web検索ツールのためのインターフェース (arXiv検索でも利用)
-interface BraveSearchResponse {
-  web: {
-    results: Array<{
-      title: string;
-      url: string;
-      description: string;
-      page_age?: string; // Brave Search APIが返す可能性のある追加フィールド
-    }>;
-    total_results_estimation?: number;
-  };
+// Tavily Search APIのレスポンス型
+interface TavilySearchResponse {
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+  }>;
+  answer?: string;
 }
 
 export const arxivSearchTool = createTool({
@@ -31,58 +29,102 @@ export const arxivSearchTool = createTool({
   }),
   execute: async ({ context }) => {
     const { query, count = 5 } = context;
+    const logger = getLogger();
     
-    const apiKey = process.env.BRAVE_API_KEY;
+    logger.info(`(arxivSearchTool) 検索クエリの実行: "${query}", 取得件数: ${count}`);
+    
+    const apiKey = process.env.TAVILY_API_KEY;
     
     if (!apiKey) {
-      throw new Error('環境変数 BRAVE_API_KEY が設定されていません');
+      const errorMsg = '環境変数 TAVILY_API_KEY が設定されていません';
+      logger.error(`(arxivSearchTool) API_KEY不足エラー: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
     // count の上限を設定
     const limitedCount = Math.min(count, 10);
 
     // ユーザーのクエリの前に "site:arxiv.org " を追加
-    const siteScopedQuery = `site:arxiv.org ${query}`;
+    const siteScopedQuery = `arxiv ${query}`;
     
-    // 検索URLを構築
-    const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(siteScopedQuery)}&count=${limitedCount}`;
+    try {
+      logger.info(`(arxivSearchTool) Tavily Search APIリクエスト開始: "${siteScopedQuery}"`);
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query: siteScopedQuery,
+          max_results: limitedCount,
+          search_depth: 'basic',
+          include_answer: false,
+          include_domains: ['arxiv.org']
+        })
+      });
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey
+      logger.info(`(arxivSearchTool) APIレスポンス受信: ステータスコード=${response.status}`);
+      
+      if (!response.ok) {
+        const responseText = await response.text().catch(e => `テキスト取得失敗: ${e.message}`);
+        const errorMsg = `Tavily Search APIエラー: ${response.status} ${response.statusText}. レスポンス: ${responseText}`;
+        logger.error(`(arxivSearchTool) APIエラー: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Brave Search APIエラー: ${response.status} ${response.statusText}`);
-    }
+      logger.info(`(arxivSearchTool) APIレスポンスのJSONパース開始`);
+      const data = await response.json() as TavilySearchResponse;
+      logger.info(`(arxivSearchTool) JSONパース完了`);
 
-    const data = await response.json() as BraveSearchResponse;
+      if (!data.results || data.results.length === 0) {
+        logger.info(`(arxivSearchTool) 検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResults: 0
+        };
+      }
 
-    // 結果がない場合のハンドリングは維持
-    if (!data.web || !data.web.results || data.web.results.length === 0) {
-      return {
-        results: [],
-        totalResults: 0
-      };
-    }
+      // arXiv関連の結果をフィルタリング（念のため）
+      const arxivResults = data.results.filter(result => 
+        result.url.includes('arxiv.org')
+      );
 
-    // フィルタリング処理を削除 (API側でドメイン指定済みのため)
-    // const arxivResults = data.web.results.filter(result => 
-    //   result.url.startsWith('https://arxiv.org/abs/')
-    // );
+      if (arxivResults.length === 0) {
+        logger.info(`(arxivSearchTool) arXiv関連の検索結果なし: query="${siteScopedQuery}"`);
+        return {
+          results: [],
+          totalResults: 0
+        };
+      }
 
-    // APIから返された結果をそのまま使用
-    return {
-      results: data.web.results.map(result => ({
+      const results = arxivResults.map(result => ({
         title: result.title,
         url: result.url,
-        description: result.description
-      })),
-      // APIから返された結果の件数をtotalResultsとする
-      totalResults: data.web.results.length
-    };
+        description: result.content
+      }));
+      
+      logger.info(`(arxivSearchTool) 検索成功: ${results.length}件の結果を取得`);
+      
+      return {
+        results,
+        totalResults: results.length
+      };
+    } catch (error) {
+      // エラーの詳細情報を記録
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      logger.error(`(arxivSearchTool) 検索実行中のエラー: ${errorMessage}`);
+      if (errorStack) {
+        logger.error(`(arxivSearchTool) エラースタック: ${errorStack}`);
+      }
+      
+      // 環境変数の状態をログに出力（API_KEYは一部マスク）
+      const maskedApiKey = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'undefined';
+      logger.error(`(arxivSearchTool) 環境変数状態: TAVILY_API_KEY=${maskedApiKey}`);
+      
+      throw error;
+    }
   },
 }); 

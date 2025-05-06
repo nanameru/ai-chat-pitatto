@@ -1,16 +1,15 @@
 import { createTool } from '@mastra/core/tools';
 import { z } from 'zod';
+import { getLogger } from '..';
 
-// Web検索ツールのためのインターフェース
-interface BraveSearchResponse {
-  web: {
-    results: Array<{
-      title: string;
-      url: string;
-      description: string;
-    }>;
-    total_results_estimation?: number;
-  };
+// Tavily Search APIのレスポンス型
+interface TavilySearchResponse {
+  results: Array<{
+    title: string;
+    url: string;
+    content: string;
+  }>;
+  answer?: string;
 }
 
 export const webSearchTool = createTool({
@@ -30,45 +29,84 @@ export const webSearchTool = createTool({
   }),
   execute: async ({ context }) => {
     const { query, count = 5 } = context;
+    const logger = getLogger();
     
-    const apiKey = process.env.BRAVE_API_KEY;
+    logger.info(`(webSearchTool) 検索クエリの実行: "${query}", 取得件数: ${count}`);
+    
+    const apiKey = process.env.TAVILY_API_KEY;
     
     if (!apiKey) {
-      throw new Error('環境変数 BRAVE_API_KEY が設定されていません');
+      const errorMsg = '環境変数 TAVILY_API_KEY が設定されていません';
+      logger.error(`(webSearchTool) API_KEY不足エラー: ${errorMsg}`);
+      throw new Error(errorMsg);
     }
 
     const limitedCount = Math.min(count, 10);
     
-    const searchUrl = `https://api.search.brave.com/res/v1/web/search?q=${encodeURIComponent(query)}&count=${limitedCount}`;
+    try {
+      logger.info(`(webSearchTool) Tavily Search APIリクエスト開始`);
+      const response = await fetch('https://api.tavily.com/search', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          query,
+          max_results: limitedCount,
+          search_depth: 'basic',
+          include_answer: false,
+        })
+      });
 
-    const response = await fetch(searchUrl, {
-      headers: {
-        'Accept': 'application/json',
-        'Accept-Encoding': 'gzip',
-        'X-Subscription-Token': apiKey
+      logger.info(`(webSearchTool) APIレスポンス受信: ステータスコード=${response.status}`);
+      
+      if (!response.ok) {
+        const responseText = await response.text().catch(e => `テキスト取得失敗: ${e.message}`);
+        const errorMsg = `Tavily Search APIエラー: ${response.status} ${response.statusText}. レスポンス: ${responseText}`;
+        logger.error(`(webSearchTool) APIエラー: ${errorMsg}`);
+        throw new Error(errorMsg);
       }
-    });
 
-    if (!response.ok) {
-      throw new Error(`Brave Search APIエラー: ${response.status} ${response.statusText}`);
-    }
+      logger.info(`(webSearchTool) APIレスポンスのJSONパース開始`);
+      const data = await response.json() as TavilySearchResponse;
+      logger.info(`(webSearchTool) JSONパース完了`);
 
-    const data = await response.json() as BraveSearchResponse;
+      if (!data.results || data.results.length === 0) {
+        logger.info(`(webSearchTool) 検索結果なし: query="${query}"`);
+        return {
+          results: [],
+          totalResults: 0
+        };
+      }
 
-    if (!data.web || !data.web.results || data.web.results.length === 0) {
-      return {
-        results: [],
-        totalResults: 0
-      };
-    }
-
-    return {
-      results: data.web.results.map(result => ({
+      const results = data.results.map(result => ({
         title: result.title,
         url: result.url,
-        description: result.description
-      })),
-      totalResults: data.web.total_results_estimation
-    };
+        description: result.content
+      }));
+      
+      logger.info(`(webSearchTool) 検索成功: ${results.length}件の結果を取得`);
+      
+      return {
+        results,
+        totalResults: results.length
+      };
+    } catch (error) {
+      // エラーの詳細情報を記録
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      logger.error(`(webSearchTool) 検索実行中のエラー: ${errorMessage}`);
+      if (errorStack) {
+        logger.error(`(webSearchTool) エラースタック: ${errorStack}`);
+      }
+      
+      // 環境変数の状態をログに出力（API_KEYは一部マスク）
+      const maskedApiKey = apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'undefined';
+      logger.error(`(webSearchTool) 環境変数状態: TAVILY_API_KEY=${maskedApiKey}`);
+      
+      throw error;
+    }
   },
 }); 

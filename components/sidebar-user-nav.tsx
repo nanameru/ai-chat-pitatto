@@ -2,7 +2,9 @@
 import { ChevronUp } from 'lucide-react';
 import Image from 'next/image';
 import type { User } from 'next-auth';
-import { signOut } from 'next-auth/react';
+// import { signOut } from 'next-auth/react';
+import { useRouter } from 'next/navigation';
+import { createClient } from '@/utils/supabase/client';
 import { useTheme } from 'next-themes';
 
 import {
@@ -20,6 +22,13 @@ import {
 
 export function SidebarUserNav({ user }: { user: User }) {
   const { setTheme, theme } = useTheme();
+  const router = useRouter();
+  const supabase = createClient();
+  
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    router.push('/login');
+  };
 
   return (
     <SidebarMenu>
@@ -35,7 +44,7 @@ export function SidebarUserNav({ user }: { user: User }) {
                 className="rounded-full"
               />
               <span className="truncate">{user?.email}</span>
-              <ChevronUp className="ml-auto" />
+              <ChevronUp className="ml-auto group-data-[state=collapsed]:hidden" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent
@@ -53,11 +62,7 @@ export function SidebarUserNav({ user }: { user: User }) {
               <button
                 type="button"
                 className="w-full cursor-pointer"
-                onClick={() => {
-                  signOut({
-                    redirectTo: '/',
-                  });
-                }}
+                onClick={handleSignOut}
               >
                 サインアウト
               </button>

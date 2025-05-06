@@ -2,384 +2,26 @@ import { evaluate } from '@mastra/core/eval';
 import { registerHook, AvailableHooks } from '@mastra/core/hooks';
 import { TABLE_EVALS } from '@mastra/core/storage';
 import { checkEvalStorageFields } from '@mastra/core/utils';
-import { Mastra } from '@mastra/core/mastra';
-import { createLogger } from '@mastra/core/logger';
-import { openai } from '@ai-sdk/openai';
-import { Agent } from '@mastra/core/agent';
-import { arxivSearchTool, redditSearchTool, youTubeSearchTool, mediumSearchTool, noteSearchTool, webSearchTool, weatherTool } from './tools/c5e32ff5-56c8-48a6-b426-e6b7f261c356.mjs';
-import { z } from 'zod';
-import { Workflow, Step } from '@mastra/core/workflows';
+import { m as mastra } from './index2.mjs';
 import crypto, { randomUUID } from 'crypto';
 import { readFile } from 'fs/promises';
-import { dirname } from 'path';
 import { join } from 'path/posix';
-import { fileURLToPath, pathToFileURL } from 'url';
 import { createServer } from 'http';
 import { Http2ServerRequest } from 'http2';
 import { Readable } from 'stream';
 import { createReadStream, lstatSync } from 'fs';
 import { Telemetry } from '@mastra/core';
-import { RuntimeContext } from '@mastra/core/di';
+import { RuntimeContext } from '@mastra/core/runtime-context';
+import { Agent } from '@mastra/core/agent';
+import { z } from 'zod';
 import { isVercelTool } from '@mastra/core/tools';
 import { ReadableStream as ReadableStream$1 } from 'node:stream/web';
+import '@mastra/core/logger';
+import '@mastra/libsql';
+import '@ai-sdk/openai';
+import '@mastra/core/workflows';
+import 'util';
 import 'buffer';
-
-const arxivSearchAgent = new Agent({
-  name: "Arxiv Search Agent",
-  // Agent name
-  instructions: "You are an agent specialized in searching for academic papers on arXiv. Use the provided tool to perform searches based on user queries.",
-  // Instructions for the agent
-  model: openai("gpt-4o-mini"),
-  // Specify the language model
-  tools: { arxivSearchTool }
-  // Register the arxivSearchTool with this agent
-});
-
-const redditTestAgent = new Agent({
-  name: "Reddit Test Agent",
-  // Agent name
-  instructions: "This agent is designed to test the Reddit Search Tool. It takes a user query and uses the tool to search Reddit.",
-  // Simple instructions for testing
-  model: openai("gpt-4o-mini"),
-  // Use a basic model
-  tools: { redditSearchTool }
-  // Register the redditSearchTool with this agent
-});
-
-const youTubeTestAgent = new Agent({
-  name: "YouTube Test Agent",
-  instructions: "This agent is designed to test the YouTube Search Tool. It uses the tool to search for videos based on a user query.",
-  model: openai("gpt-4o-mini"),
-  tools: { youTubeSearchTool }
-  // Register the youTubeSearchTool
-});
-
-const mediumTestAgent = new Agent({
-  name: "Medium Test Agent",
-  instructions: "This agent is designed to test the Medium Search Tool. It uses the tool to search for articles on Medium.com based on a user query.",
-  model: openai("gpt-4o-mini"),
-  tools: { mediumSearchTool }
-  // Register the mediumSearchTool
-});
-
-const noteTestAgent = new Agent({
-  name: "Note Test Agent",
-  instructions: "This agent is designed to test the Note Search Tool. It uses the tool to search for articles on note.com based on a user query.",
-  model: openai("gpt-4o-mini"),
-  tools: { noteSearchTool }
-  // Register the noteSearchTool
-});
-
-const clarityCheckAgent = new Agent({
-  name: "Clarity Check Agent",
-  // model: openai('gpt-4o'), // Initially considered gpt-4o, switching to mini for efficiency
-  model: openai("gpt-4o-mini"),
-  // Use gpt-4o-mini as decided
-  instructions: `
-\u3042\u306A\u305F\u306F\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u306E\u660E\u78BA\u6027\u3092\u5224\u65AD\u3059\u308BAI\u3067\u3059\u3002
-
-\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u304C\u3001\u5177\u4F53\u7684\u306A\u60C5\u5831\u691C\u7D22\u3084\u5206\u6790\u3092\u9032\u3081\u308B\u4E0A\u3067\u5341\u5206\u306A\u5185\u5BB9\u304B\u8A55\u4FA1\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-\u4EE5\u4E0B\u306E\u70B9\u3092\u8003\u616E\u3057\u3066\u304F\u3060\u3055\u3044\uFF1A
-- \u5177\u4F53\u6027\uFF1A\u691C\u7D22\u5BFE\u8C61\u3084\u5206\u6790\u5BFE\u8C61\u304C\u7279\u5B9A\u3067\u304D\u308B\u304B\uFF1F
-- \u7BC4\u56F2\uFF1A\u8CEA\u554F\u306E\u30B9\u30B3\u30FC\u30D7\u304C\u5E83\u3059\u304E\u306A\u3044\u304B\uFF1F
-- \u66D6\u6627\u6027\uFF1A\u8907\u6570\u306E\u89E3\u91C8\u304C\u3067\u304D\u308B\u66D6\u6627\u306A\u8A00\u8449\u306F\u306A\u3044\u304B\uFF1F
-- \u4F9D\u5B58\u6027\uFF1A\u8FFD\u52A0\u306E\u6587\u8108\u306A\u3057\u3067\u610F\u56F3\u304C\u7406\u89E3\u3067\u304D\u308B\u304B\uFF1F
-
-\u8A55\u4FA1\u306E\u7D50\u679C\u3001\u8CEA\u554F\u304C\u660E\u78BA\u3067\u3042\u308C\u3070 {"isClear": true} \u3092\u3001\u4E0D\u660E\u78BA\u3067\u3042\u308C\u3070 {"isClear": false} \u3092\u8FD4\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-\u91CD\u8981\uFF1A\u5FDC\u7B54\u306F\u5FC5\u305A\u4E0A\u8A18\u306EJSON\u5F62\u5F0F\u306E\u307F\u3068\u3057\u3001\u4ED6\u306E\u30C6\u30AD\u30B9\u30C8\uFF08\u6328\u62F6\u3001\u7406\u7531\u8AAC\u660E\u306A\u3069\uFF09\u306F\u4E00\u5207\u542B\u3081\u306A\u3044\u3067\u304F\u3060\u3055\u3044\u3002
-`,
-  // This agent does not require external tools for its core function.
-  tools: {}
-});
-
-const clarificationPromptAgent = new Agent({
-  name: "Clarification Prompt Agent",
-  instructions: "You are an AI assistant. Given a user query that was deemed unclear and the reason why, generate a polite and specific question to ask the user for clarification. Only output the question itself.",
-  model: openai("gpt-4o-mini")
-  // Or another suitable model
-});
-
-const thoughtGeneratorAgent = new Agent({
-  name: "Thought Generator Agent",
-  instructions: `
-\u3042\u306A\u305F\u306F\u30EA\u30B5\u30FC\u30C1\u30A2\u30B7\u30B9\u30BF\u30F3\u30C8\u3067\u3059\u3002\u30E6\u30FC\u30B6\u30FC\u304B\u3089\u4E0E\u3048\u3089\u308C\u305F\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u3044\u3066\u3001\u305D\u306E\u8CEA\u554F\u306B\u3064\u3044\u3066\u8ABF\u67FB\u3059\u308B\u305F\u3081\u306E\u591A\u69D8\u306A\u521D\u671F\u601D\u8003\u3001\u7570\u306A\u308B\u8996\u70B9\u3001\u307E\u305F\u306F\u5177\u4F53\u7684\u306A\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u3092\u8907\u6570\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-
-\u51FA\u529B\u306F\u4EE5\u4E0B\u306EJSON\u5F62\u5F0F\u306E\u914D\u5217\u3068\u3057\u3066\u304F\u3060\u3055\u3044:
-\`\`\`json
-[
-  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 1",
-  "\u751F\u6210\u3055\u308C\u305F\u601D\u8003/\u8996\u70B9/\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3 2",
-  "..."
-]
-\`\`\`
-\u4ED6\u306E\u30C6\u30AD\u30B9\u30C8\u306F\u542B\u3081\u305A\u3001JSON\u914D\u5217\u306E\u307F\u3092\u51FA\u529B\u3057\u3066\u304F\u3060\u3055\u3044\u3002
-`,
-  model: openai("gpt-4o-mini"),
-  outputSchema: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u601D\u8003\u3001\u8996\u70B9\u3001\u30B5\u30D6\u30AF\u30A8\u30B9\u30C1\u30E7\u30F3\u306E\u30EA\u30B9\u30C8")
-});
-
-const weatherAgent = new Agent({
-  name: "Weather Agent",
-  instructions: `
-      You are a helpful weather assistant that provides accurate weather information.
-
-      Your primary function is to help users get weather details for specific locations. When responding:
-      - Always ask for a location if none is provided
-      - If the location name isn't in English, please translate it
-      - If giving a location with multiple parts (e.g. "New York, NY"), use the most relevant part (e.g. "New York")
-      - Include relevant details like humidity, wind conditions, and precipitation
-      - Keep responses concise but informative
-
-      Use the weatherTool to fetch current weather data.
-`,
-  model: openai("gpt-4o"),
-  tools: { weatherTool }
-});
-const webSearchAgent = new Agent({
-  name: "Web Search Agent",
-  instructions: `
-      You are a helpful web search assistant that provides relevant information from the internet.
-      
-      Your primary function is to help users find information on the web. When responding:
-      - Extract the main search intent from the user's query
-      - If the query is ambiguous, ask for clarification
-      - Provide a concise summary of the search results
-      - Include relevant URLs for further reading
-      - If no results are found, suggest alternative search queries
-      - Use markdown formatting to make your responses readable and well-structured
-      
-      Use the webSearchTool to fetch search results from the Brave Search API.
-  `,
-  model: openai("gpt-4o"),
-  tools: { webSearchTool }
-});
-
-const triggerSchema$1 = z.object({
-  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
-});
-const processThoughtsWorkflow = new Workflow({
-  name: "processThoughtsSubWorkflow",
-  // サブワークフロー固有の名前
-  triggerSchema: triggerSchema$1
-  // description: '初期思考を評価し、次のアクションを選択するサブワークフロー', // オプション
-});
-const evaluateThoughtsStep = new Step({
-  id: "evaluateThoughtsStep",
-  description: "\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u3092\u8A55\u4FA1\u3059\u308B",
-  // inputSchema は triggerSchema と同じ想定だが、明示的に定義しても良い
-  inputSchema: triggerSchema$1,
-  outputSchema: z.object({
-    // 例: 評価結果
-    evaluation: z.string()
-  }),
-  execute: async ({ context }) => {
-    const thoughts = context.triggerData.thoughts;
-    console.log("(SubWorkflow) Received thoughts for evaluation:", thoughts);
-    const evaluationResult = `Evaluated ${thoughts.length} thoughts. First thought: ${thoughts[0]}`;
-    console.log("(SubWorkflow) Evaluation result:", evaluationResult);
-    return { evaluation: evaluationResult };
-  }
-});
-const selectNodeStep = new Step({
-  id: "selectNodeStep",
-  description: "\u8A55\u4FA1\u306B\u57FA\u3065\u304D\u3001\u6B21\u306B\u63A2\u7D22\u3059\u308B\u601D\u8003\u30CE\u30FC\u30C9\u3092\u9078\u629E\u3059\u308B",
-  // inputSchema: evaluateThoughtsStep の outputSchema を受け取る想定
-  inputSchema: z.object({ evaluation: z.string() }),
-  outputSchema: z.object({
-    // 例: 選択されたノード
-    selectedNode: z.string()
-  }),
-  execute: async ({ context }) => {
-    const evaluation = context.inputData.evaluation;
-    console.log("(SubWorkflow) Received evaluation for node selection:", evaluation);
-    const selectedNode = `Selected node based on evaluation: ${evaluation}`;
-    console.log("(SubWorkflow) Selected node:", selectedNode);
-    return { selectedNode };
-  }
-});
-processThoughtsWorkflow.step(evaluateThoughtsStep).then(selectNodeStep, {
-  variables: {
-    // evaluateThoughtsStep の出力を selectNodeStep の入力にマッピング
-    evaluation: { step: evaluateThoughtsStep, path: "evaluation" }
-  }
-}).commit();
-
-const triggerSchema = z.object({
-  query: z.string().describe("The initial question from the user.")
-});
-const clarityCheckOutputSchema = z.object({
-  isClear: z.boolean(),
-  reasoning: z.string().optional()
-});
-const requestClarificationOutputSchema = z.object({
-  clarifiedQuery: z.string().describe("\u30E6\u30FC\u30B6\u30FC\u306B\u3088\u3063\u3066\u660E\u78BA\u5316\u3055\u308C\u305F\u8CEA\u554F")
-});
-const initialThoughtsOutputSchema = z.object({
-  thoughts: z.array(z.string()).describe("\u751F\u6210\u3055\u308C\u305F\u521D\u671F\u601D\u8003\u306E\u30EA\u30B9\u30C8")
-});
-const goTResearchWorkflow = new Workflow({
-  name: "goTResearchWorkflow",
-  triggerSchema
-});
-const clarityCheckStep = new Step({
-  id: "clarityCheckStep",
-  description: "\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: triggerSchema,
-  outputSchema: clarityCheckOutputSchema,
-  execute: async ({ context }) => {
-    const logger = mastra.getLogger();
-    logger.info("(ClarityCheckStep) Checking clarity for query", { query: context.triggerData.query });
-    try {
-      const result = await clarityCheckAgent.generate(
-        `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${context.triggerData.query}\u300D\u304C\u660E\u78BA\u304B\u3069\u3046\u304B\u3092\u5224\u65AD\u3057\u3001\u7406\u7531\u3068\u3068\u3082\u306BJSON\u5F62\u5F0F\u3067 {"isClear": boolean, "reasoning": string} \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002\u660E\u78BA\u306A\u5834\u5408\u306F reasoning \u306F\u7701\u7565\u53EF\u80FD\u3067\u3059\u3002`
-      );
-      if (result.text) {
-        try {
-          const parsed = JSON.parse(result.text);
-          logger.info("(ClarityCheckStep) Parsed agent response", { parsed });
-          const isClear = typeof parsed.isClear === "boolean" ? parsed.isClear : false;
-          const reasoning = typeof parsed.reasoning === "string" ? parsed.reasoning : void 0;
-          return { isClear, reasoning };
-        } catch (parseError) {
-          logger.error("(ClarityCheckStep) Failed to parse agent response JSON", { error: parseError, responseText: result.text });
-          return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
-        }
-      } else {
-        logger.error("(ClarityCheckStep) Agent did not return text");
-        return { isClear: false, reasoning: "\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002" };
-      }
-    } catch (agentError) {
-      logger.error("(ClarityCheckStep) Error calling clarityCheckAgent", { error: agentError });
-      return { isClear: false, reasoning: "\u660E\u78BA\u6027\u30C1\u30A7\u30C3\u30AF\u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u547C\u3073\u51FA\u3057\u4E2D\u306B\u30A8\u30E9\u30FC\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002" };
-    }
-  }
-});
-const requestClarificationStep = new Step({
-  id: "requestClarificationStep",
-  description: "\u8CEA\u554F\u304C\u4E0D\u660E\u78BA\u306A\u5834\u5408\u306B\u660E\u78BA\u5316\u8981\u6C42\u3092\u751F\u6210\u3057\u3001\u4E00\u6642\u505C\u6B62\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any().optional(),
-  outputSchema: requestClarificationOutputSchema,
-  execute: async ({ context, suspend }) => {
-    const logger = mastra.getLogger();
-    console.log("--- RequestClarificationStep Context Start ---");
-    console.log(JSON.stringify(context, null, 2));
-    console.log("--- RequestClarificationStep Context End ---");
-    const isResuming = context.isResume !== void 0;
-    if (isResuming) {
-      logger.info("(RequestClarificationStep) Workflow is resuming.");
-      let clarifiedQuery = "";
-      if (context.inputData && typeof context.inputData === "object" && Object.keys(context.inputData).length > 0) {
-        try {
-          clarifiedQuery = Object.values(context.inputData).join("");
-          logger.info("(RequestClarificationStep) Reconstructed clarified query from inputData", { clarifiedQuery });
-        } catch (e) {
-          logger.error("(RequestClarificationStep) Failed to reconstruct query from inputData", { inputData: context.inputData, error: e });
-          clarifiedQuery = "\u30A8\u30E9\u30FC: \u518D\u958B\u30C7\u30FC\u30BF\u306E\u51E6\u7406\u306B\u5931\u6557";
-        }
-      } else {
-        logger.warn("(RequestClarificationStep) Resumed but inputData seems empty or invalid.", { inputData: context.inputData });
-        clarifiedQuery = "\u30A8\u30E9\u30FC: \u518D\u958B\u30C7\u30FC\u30BF\u304C\u7A7A\u307E\u305F\u306F\u4E0D\u6B63";
-      }
-      return { clarifiedQuery };
-    }
-    const clarityCheckResult = context.getStepResult(clarityCheckStep);
-    if (clarityCheckResult?.isClear === true) {
-      logger.info("(RequestClarificationStep) Query is clear. Skipping clarification and passing original query.", { query: context.triggerData.query });
-      return { clarifiedQuery: context.triggerData.query };
-    }
-    const reasoning = clarityCheckResult?.reasoning;
-    const originalQuery = context.triggerData.query;
-    logger.info("(RequestClarificationStep) Query is unclear (initial run). Generating clarification prompt...");
-    const prompt = `\u30E6\u30FC\u30B6\u30FC\u306E\u8CEA\u554F\u300C${originalQuery}\u300D\u306F\u4E0D\u660E\u78BA\u3060\u3068\u5224\u65AD\u3055\u308C\u307E\u3057\u305F\u3002\u7406\u7531: ${reasoning || "\u63D0\u793A\u3055\u308C\u3066\u3044\u307E\u305B\u3093"}\u3002\u30E6\u30FC\u30B6\u30FC\u306B\u8CEA\u554F\u5185\u5BB9\u306E\u660E\u78BA\u5316\u3092\u4FC3\u3059\u3001\u4E01\u5BE7\u3067\u5177\u4F53\u7684\u306A\u8CEA\u554F\u6587\u3092\u751F\u6210\u3057\u3066\u304F\u3060\u3055\u3044\u3002`;
-    let generatedClarificationQuestion = "\u30A8\u30E9\u30FC: \u8CEA\u554F\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002";
-    try {
-      const agentResponse = await clarificationPromptAgent.generate(prompt);
-      generatedClarificationQuestion = agentResponse.text || generatedClarificationQuestion;
-    } catch (error) {
-      logger.error("(RequestClarificationStep) Failed to generate clarification prompt", { error });
-    }
-    logger.info("(RequestClarificationStep) Generated question", { generatedClarificationQuestion });
-    await suspend({ clarificationPrompt: generatedClarificationQuestion });
-    logger.info("(RequestClarificationStep) Workflow suspended, waiting for clarification.");
-    return { clarifiedQuery: "" };
-  }
-});
-const initialThoughtsStep = new Step({
-  id: "initialThoughtsStep",
-  description: "\u660E\u78BA\u306A\u8CEA\u554F\u306B\u57FA\u3065\u304D\u3001\u521D\u671F\u601D\u8003\u3092\u751F\u6210\u3059\u308B\u30B9\u30C6\u30C3\u30D7",
-  inputSchema: z.any().optional(),
-  outputSchema: initialThoughtsOutputSchema,
-  execute: async ({ context }) => {
-    const logger = mastra.getLogger();
-    let query = context.triggerData.query;
-    const clarificationStepResult = context.getStepResult(requestClarificationStep);
-    if (clarificationStepResult?.clarifiedQuery && clarificationStepResult.clarifiedQuery !== "") {
-      logger.info("(InitialThoughtsStep) Using clarified query", { clarifiedQuery: clarificationStepResult.clarifiedQuery });
-      query = clarificationStepResult.clarifiedQuery;
-    } else {
-      logger.info("(InitialThoughtsStep) Using original query (clarification not needed or available)", { query });
-    }
-    logger.info("(InitialThoughtsStep) Generating initial thoughts for query", { query });
-    let generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u306B\u5931\u6557\u3057\u307E\u3057\u305F\u3002"];
-    try {
-      const agentResponse = await thoughtGeneratorAgent.generate(
-        `\u4E0E\u3048\u3089\u308C\u305F\u8CEA\u554F\u300C${query}\u300D\u306B\u3064\u3044\u3066\u3001\u8CEA\u554F\u5185\u3067\u6307\u5B9A\u3055\u308C\u305F\u4E3B\u8981\u306A\u89B3\u70B9\uFF08\u4F8B\uFF1A\u30B3\u30B9\u30C8\u3001\u6280\u8853\u3001\u653F\u7B56\u3001\u793E\u4F1A\u7684\u5074\u9762\u306A\u3069\uFF09\u305D\u308C\u305E\u308C\u306B\u7D10\u3065\u304F\u5F62\u3067\u3001\u8ABF\u67FB\u306E\u51FA\u767A\u70B9\u3068\u306A\u308B\u521D\u671F\u601D\u8003\u3092\u5408\u8A085\u3064\u7A0B\u5EA6\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002\u3082\u3057\u8CEA\u554F\u5185\u306B\u660E\u78BA\u306A\u89B3\u70B9\u304C\u6307\u5B9A\u3055\u308C\u3066\u3044\u306A\u3044\u5834\u5408\u306F\u3001\u591A\u69D8\u306A\u89B3\u70B9\u304B\u3089\u63D0\u6848\u3057\u3066\u304F\u3060\u3055\u3044\u3002JSON\u914D\u5217\u5F62\u5F0F\u3067 ["\u601D\u80031", "\u601D\u80032", ...] \u306E\u3088\u3046\u306B\u7B54\u3048\u3066\u304F\u3060\u3055\u3044\u3002`
-      );
-      if (agentResponse.text) {
-        try {
-          let responseText = agentResponse.text || "";
-          responseText = responseText.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-          const parsed = JSON.parse(responseText);
-          if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-            generatedThoughts = parsed;
-          } else {
-            logger.error("(InitialThoughtsStep) Parsed response is not an array of strings", { parsed });
-            generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u5F62\u5F0F\u304C\u4E0D\u6B63\u3067\u3059 (\u914D\u5217\u3067\u306F\u3042\u308A\u307E\u305B\u3093)\u3002"];
-          }
-        } catch (parseError) {
-          logger.error("(InitialThoughtsStep) Failed to parse thought generator agent response", { error: parseError, responseText: agentResponse.text });
-          generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u306E\u5FDC\u7B54\u3092JSON\u3068\u3057\u3066\u89E3\u6790\u3067\u304D\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
-        }
-      } else {
-        logger.error("(InitialThoughtsStep) Thought generator agent did not return text");
-        generatedThoughts = ["\u30A8\u30E9\u30FC: \u30A8\u30FC\u30B8\u30A7\u30F3\u30C8\u304B\u3089\u30C6\u30AD\u30B9\u30C8\u5FDC\u7B54\u304C\u3042\u308A\u307E\u305B\u3093\u3067\u3057\u305F\u3002"];
-      }
-    } catch (error) {
-      logger.error("(InitialThoughtsStep) Failed to generate initial thoughts", { error });
-      generatedThoughts = ["\u30A8\u30E9\u30FC: \u521D\u671F\u601D\u8003\u306E\u751F\u6210\u4E2D\u306B\u554F\u984C\u304C\u767A\u751F\u3057\u307E\u3057\u305F\u3002"];
-    }
-    logger.info("(InitialThoughtsStep) Generated initial thoughts", { generatedThoughts });
-    return { thoughts: generatedThoughts };
-  }
-});
-goTResearchWorkflow.step(clarityCheckStep).then(requestClarificationStep).then(initialThoughtsStep).then(processThoughtsWorkflow, {
-  variables: {
-    thoughts: { step: initialThoughtsStep, path: "thoughts" }
-  }
-}).commit();
-
-const mastra = new Mastra({
-  agents: {
-    weatherAgent,
-    webSearchAgent,
-    arxivSearchAgent,
-    redditTestAgent,
-    youTubeTestAgent,
-    mediumTestAgent,
-    noteTestAgent,
-    clarityCheckAgent,
-    clarificationPromptAgent,
-    thoughtGeneratorAgent
-  },
-  workflows: {
-    goTResearchWorkflow
-  },
-  logger: createLogger({
-    name: "Mastra",
-    level: "info"
-  })
-});
 
 // src/utils/filepath.ts
 var getFilePath = (options) => {
@@ -1411,7 +1053,11 @@ var Hono$1 = class Hono {
         optionHandler = options;
       } else {
         optionHandler = options.optionHandler;
-        replaceRequest = options.replaceRequest;
+        if (options.replaceRequest === false) {
+          replaceRequest = (request) => request;
+        } else {
+          replaceRequest = options.replaceRequest;
+        }
       }
     }
     const getOptions = optionHandler ? (c) => {
@@ -7995,27 +7641,35 @@ __export(agents_exports, {
   getLiveEvalsByAgentIdHandler: () => getLiveEvalsByAgentIdHandler$1,
   streamGenerateHandler: () => streamGenerateHandler$2
 });
-async function getAgentsHandler$1({ mastra }) {
+async function getAgentsHandler$1({ mastra, runtimeContext }) {
   try {
     const agents = mastra.getAgents();
-    const serializedAgents = Object.entries(agents).reduce((acc, [_id, _agent]) => {
-      const agent = _agent;
-      const serializedAgentTools = Object.entries(agent?.tools || {}).reduce((acc2, [key, tool]) => {
-        const _tool = tool;
-        acc2[key] = {
-          ..._tool,
-          inputSchema: _tool.inputSchema ? stringify(esm_default(_tool.inputSchema)) : void 0,
-          outputSchema: _tool.outputSchema ? stringify(esm_default(_tool.outputSchema)) : void 0
+    const serializedAgentsMap = await Promise.all(
+      Object.entries(agents).map(async ([id, agent]) => {
+        const instructions = await agent.getInstructions({ runtimeContext });
+        const tools = await agent.getTools({ runtimeContext });
+        const llm = await agent.getLLM({ runtimeContext });
+        const serializedAgentTools = Object.entries(tools || {}).reduce((acc, [key, tool]) => {
+          const _tool = tool;
+          acc[key] = {
+            ..._tool,
+            inputSchema: _tool.inputSchema ? stringify(esm_default(_tool.inputSchema)) : void 0,
+            outputSchema: _tool.outputSchema ? stringify(esm_default(_tool.outputSchema)) : void 0
+          };
+          return acc;
+        }, {});
+        return {
+          id,
+          name: agent.name,
+          instructions,
+          tools: serializedAgentTools,
+          provider: llm?.getProvider(),
+          modelId: llm?.getModelId()
         };
-        return acc2;
-      }, {});
-      acc[_id] = {
-        name: agent.name,
-        instructions: agent.instructions,
-        tools: serializedAgentTools,
-        provider: agent.llm?.getProvider(),
-        modelId: agent.llm?.getModelId()
-      };
+      })
+    );
+    const serializedAgents = serializedAgentsMap.reduce((acc, { id, ...rest }) => {
+      acc[id] = rest;
       return acc;
     }, {});
     return serializedAgents;
@@ -8023,13 +7677,18 @@ async function getAgentsHandler$1({ mastra }) {
     return handleError$1(error, "Error getting agents");
   }
 }
-async function getAgentByIdHandler$1({ mastra, agentId }) {
+async function getAgentByIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     if (!agent) {
       throw new HTTPException(404, { message: "Agent not found" });
     }
-    const serializedAgentTools = Object.entries(agent?.tools || {}).reduce((acc, [key, tool]) => {
+    const tools = await agent.getTools({ runtimeContext });
+    const serializedAgentTools = Object.entries(tools || {}).reduce((acc, [key, tool]) => {
       const _tool = tool;
       acc[key] = {
         ..._tool,
@@ -8038,39 +7697,51 @@ async function getAgentByIdHandler$1({ mastra, agentId }) {
       };
       return acc;
     }, {});
+    const instructions = await agent.getInstructions({ runtimeContext });
+    const llm = await agent.getLLM({ runtimeContext });
     return {
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       tools: serializedAgentTools,
-      provider: agent.llm?.getProvider(),
-      modelId: agent.llm?.getModelId()
+      provider: llm?.getProvider(),
+      modelId: llm?.getModelId()
     };
   } catch (error) {
     return handleError$1(error, "Error getting agent");
   }
 }
-async function getEvalsByAgentIdHandler$1({ mastra, agentId }) {
+async function getEvalsByAgentIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     const evals = await mastra.getStorage()?.getEvalsByAgentName?.(agent.name, "test") || [];
+    const instructions = await agent.getInstructions({ runtimeContext });
     return {
       id: agentId,
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       evals
     };
   } catch (error) {
     return handleError$1(error, "Error getting test evals");
   }
 }
-async function getLiveEvalsByAgentIdHandler$1({ mastra, agentId }) {
+async function getLiveEvalsByAgentIdHandler$1({
+  mastra,
+  runtimeContext,
+  agentId
+}) {
   try {
     const agent = mastra.getAgent(agentId);
     const evals = await mastra.getStorage()?.getEvalsByAgentName?.(agent.name, "live") || [];
+    const instructions = await agent.getInstructions({ runtimeContext });
     return {
       id: agentId,
       name: agent.name,
-      instructions: agent.instructions,
+      instructions,
       evals
     };
   } catch (error) {
@@ -8385,33 +8056,48 @@ __export(network_exports, {
   getNetworksHandler: () => getNetworksHandler$1,
   streamGenerateHandler: () => streamGenerateHandler$1
 });
-async function getNetworksHandler$1({ mastra }) {
+async function getNetworksHandler$1({
+  mastra,
+  runtimeContext
+}) {
   try {
     const networks = mastra.getNetworks();
-    const serializedNetworks = networks.map((network) => {
-      const routingAgent = network.getRoutingAgent();
-      const agents = network.getAgents();
-      return {
-        id: network.formatAgentId(routingAgent.name),
-        name: routingAgent.name,
-        instructions: routingAgent.instructions,
-        agents: agents.map((agent) => ({
-          name: agent.name,
-          provider: agent.llm?.getProvider(),
-          modelId: agent.llm?.getModelId()
-        })),
-        routingModel: {
-          provider: routingAgent.llm?.getProvider(),
-          modelId: routingAgent.llm?.getModelId()
-        }
-      };
-    });
+    const serializedNetworks = await Promise.all(
+      networks.map(async (network) => {
+        const routingAgent = network.getRoutingAgent();
+        const routingLLM = await routingAgent.getLLM({ runtimeContext });
+        const agents = network.getAgents();
+        return {
+          id: network.formatAgentId(routingAgent.name),
+          name: routingAgent.name,
+          instructions: routingAgent.instructions,
+          agents: await Promise.all(
+            agents.map(async (agent) => {
+              const llm = await agent.getLLM({ runtimeContext });
+              return {
+                name: agent.name,
+                provider: llm?.getProvider(),
+                modelId: llm?.getModelId()
+              };
+            })
+          ),
+          routingModel: {
+            provider: routingLLM?.getProvider(),
+            modelId: routingLLM?.getModelId()
+          }
+        };
+      })
+    );
     return serializedNetworks;
   } catch (error) {
     return handleError$1(error, "Error getting networks");
   }
 }
-async function getNetworkByIdHandler$1({ mastra, networkId }) {
+async function getNetworkByIdHandler$1({
+  mastra,
+  networkId,
+  runtimeContext
+}) {
   try {
     const networks = mastra.getNetworks();
     const network = networks.find((network2) => {
@@ -8422,19 +8108,25 @@ async function getNetworkByIdHandler$1({ mastra, networkId }) {
       throw new HTTPException(404, { message: "Network not found" });
     }
     const routingAgent = network.getRoutingAgent();
+    const routingLLM = await routingAgent.getLLM({ runtimeContext });
     const agents = network.getAgents();
     const serializedNetwork = {
       id: network.formatAgentId(routingAgent.name),
       name: routingAgent.name,
       instructions: routingAgent.instructions,
-      agents: agents.map((agent) => ({
-        name: agent.name,
-        provider: agent.llm?.getProvider(),
-        modelId: agent.llm?.getModelId()
-      })),
+      agents: await Promise.all(
+        agents.map(async (agent) => {
+          const llm = await agent.getLLM({ runtimeContext });
+          return {
+            name: agent.name,
+            provider: llm?.getProvider(),
+            modelId: llm?.getModelId()
+          };
+        })
+      ),
       routingModel: {
-        provider: routingAgent.llm?.getProvider(),
-        modelId: routingAgent.llm?.getModelId()
+        provider: routingLLM?.getProvider(),
+        modelId: routingLLM?.getModelId()
       }
     };
     return serializedNetwork;
@@ -8852,6 +8544,407 @@ async function deleteIndex$1({
   }
 }
 
+// src/server/handlers/vNextWorkflows.ts
+var vNextWorkflows_exports = {};
+__export(vNextWorkflows_exports, {
+  createVNextWorkflowRunHandler: () => createVNextWorkflowRunHandler$1,
+  getVNextWorkflowByIdHandler: () => getVNextWorkflowByIdHandler$1,
+  getVNextWorkflowRunHandler: () => getVNextWorkflowRunHandler,
+  getVNextWorkflowRunsHandler: () => getVNextWorkflowRunsHandler$1,
+  getVNextWorkflowsHandler: () => getVNextWorkflowsHandler$1,
+  resumeAsyncVNextWorkflowHandler: () => resumeAsyncVNextWorkflowHandler$1,
+  resumeVNextWorkflowHandler: () => resumeVNextWorkflowHandler$1,
+  startAsyncVNextWorkflowHandler: () => startAsyncVNextWorkflowHandler$1,
+  startVNextWorkflowRunHandler: () => startVNextWorkflowRunHandler$1,
+  watchVNextWorkflowHandler: () => watchVNextWorkflowHandler$1
+});
+async function getVNextWorkflowsHandler$1({ mastra }) {
+  try {
+    const workflows = mastra.vnext_getWorkflows({ serialized: false });
+    const _workflows = Object.entries(workflows).reduce((acc, [key, workflow]) => {
+      acc[key] = {
+        name: workflow.name,
+        steps: Object.entries(workflow.steps).reduce((acc2, [key2, step]) => {
+          acc2[key2] = {
+            ...step,
+            inputSchema: step.inputSchema ? stringify(esm_default(step.inputSchema)) : void 0,
+            outputSchema: step.outputSchema ? stringify(esm_default(step.outputSchema)) : void 0,
+            resumeSchema: step.resumeSchema ? stringify(esm_default(step.resumeSchema)) : void 0
+          };
+          return acc2;
+        }, {}),
+        stepGraph: workflow.stepGraph,
+        inputSchema: workflow.inputSchema ? stringify(esm_default(workflow.inputSchema)) : void 0,
+        outputSchema: workflow.outputSchema ? stringify(esm_default(workflow.outputSchema)) : void 0
+      };
+      return acc;
+    }, {});
+    return _workflows;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflows" });
+  }
+}
+async function getVNextWorkflowByIdHandler$1({ mastra, workflowId }) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    return {
+      steps: Object.entries(workflow.steps).reduce((acc, [key, step]) => {
+        acc[key] = {
+          ...step,
+          inputSchema: step.inputSchema ? stringify(esm_default(step.inputSchema)) : void 0,
+          outputSchema: step.outputSchema ? stringify(esm_default(step.outputSchema)) : void 0,
+          resumeSchema: step.resumeSchema ? stringify(esm_default(step.resumeSchema)) : void 0
+        };
+        return acc;
+      }, {}),
+      name: workflow.name,
+      stepGraph: workflow.stepGraph,
+      inputSchema: workflow.inputSchema ? stringify(esm_default(workflow.inputSchema)) : void 0,
+      outputSchema: workflow.outputSchema ? stringify(esm_default(workflow.outputSchema)) : void 0
+    };
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflow" });
+  }
+}
+async function getVNextWorkflowRunHandler({
+  mastra,
+  workflowId,
+  runId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "Run ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    return run;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error getting workflow run" });
+  }
+}
+async function createVNextWorkflowRunHandler$1({
+  mastra,
+  workflowId,
+  runId: prevRunId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const run = workflow.createRun({ runId: prevRunId });
+    return { runId: run.runId };
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error creating workflow run" });
+  }
+}
+async function startAsyncVNextWorkflowHandler$1({
+  mastra,
+  runtimeContext,
+  workflowId,
+  runId,
+  inputData
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    if (!workflow) {
+      throw new HTTPException(404, { message: "Workflow not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    const result = await _run.start({
+      inputData,
+      runtimeContext
+    });
+    return result;
+  } catch (error) {
+    throw new HTTPException(500, { message: error?.message || "Error executing workflow" });
+  }
+}
+async function startVNextWorkflowRunHandler$1({
+  mastra,
+  runtimeContext,
+  workflowId,
+  runId,
+  inputData
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to start run" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    await _run.start({
+      inputData,
+      runtimeContext
+    });
+    return { message: "Workflow run started" };
+  } catch (e) {
+    return handleError$1(e, "Error starting workflow run");
+  }
+}
+async function watchVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to watch workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    let unwatch;
+    let asyncRef = null;
+    const stream = new ReadableStream$1({
+      start(controller) {
+        unwatch = _run.watch(({ type, payload, eventTimestamp }) => {
+          controller.enqueue(JSON.stringify({ type, payload, eventTimestamp, runId }));
+          if (asyncRef) {
+            clearImmediate(asyncRef);
+            asyncRef = null;
+          }
+          asyncRef = setImmediate(async () => {
+            const runDone = payload.workflowState.status !== "running";
+            if (runDone) {
+              controller.close();
+              unwatch?.();
+            }
+          });
+        });
+      },
+      cancel() {
+        unwatch?.();
+      }
+    });
+    return stream;
+  } catch (error) {
+    return handleError$1(error, "Error watching workflow");
+  }
+}
+async function resumeAsyncVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId,
+  body,
+  runtimeContext
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to resume workflow" });
+    }
+    if (!body.step) {
+      throw new HTTPException(400, { message: "step required to resume workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    const result = await _run.resume({
+      step: body.step,
+      resumeData: body.resumeData,
+      runtimeContext
+    });
+    return result;
+  } catch (error) {
+    return handleError$1(error, "Error resuming workflow step");
+  }
+}
+async function resumeVNextWorkflowHandler$1({
+  mastra,
+  workflowId,
+  runId,
+  body,
+  runtimeContext
+}) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    if (!runId) {
+      throw new HTTPException(400, { message: "runId required to resume workflow" });
+    }
+    if (!body.step) {
+      throw new HTTPException(400, { message: "step required to resume workflow" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const run = await workflow.getWorkflowRun(runId);
+    if (!run) {
+      throw new HTTPException(404, { message: "Workflow run not found" });
+    }
+    const _run = workflow.createRun({ runId });
+    await _run.resume({
+      step: body.step,
+      resumeData: body.resumeData,
+      runtimeContext
+    });
+    return { message: "Workflow run resumed" };
+  } catch (error) {
+    return handleError$1(error, "Error resuming workflow");
+  }
+}
+async function getVNextWorkflowRunsHandler$1({ mastra, workflowId }) {
+  try {
+    if (!workflowId) {
+      throw new HTTPException(400, { message: "Workflow ID is required" });
+    }
+    const workflow = mastra.vnext_getWorkflow(workflowId);
+    const workflowRuns = await workflow.getWorkflowRuns() || {
+      runs: [],
+      total: 0
+    };
+    return workflowRuns;
+  } catch (error) {
+    return handleError$1(error, "Error getting workflow runs");
+  }
+}
+
+// src/utils/stream.ts
+var StreamingApi = class {
+  writer;
+  encoder;
+  writable;
+  abortSubscribers = [];
+  responseReadable;
+  aborted = false;
+  closed = false;
+  constructor(writable, _readable) {
+    this.writable = writable;
+    this.writer = writable.getWriter();
+    this.encoder = new TextEncoder();
+    const reader = _readable.getReader();
+    this.abortSubscribers.push(async () => {
+      await reader.cancel();
+    });
+    this.responseReadable = new ReadableStream({
+      async pull(controller) {
+        const { done, value } = await reader.read();
+        done ? controller.close() : controller.enqueue(value);
+      },
+      cancel: () => {
+        this.abort();
+      }
+    });
+  }
+  async write(input) {
+    try {
+      if (typeof input === "string") {
+        input = this.encoder.encode(input);
+      }
+      await this.writer.write(input);
+    } catch {
+    }
+    return this;
+  }
+  async writeln(input) {
+    await this.write(input + "\n");
+    return this;
+  }
+  sleep(ms) {
+    return new Promise((res) => setTimeout(res, ms));
+  }
+  async close() {
+    try {
+      await this.writer.close();
+    } catch {
+    }
+    this.closed = true;
+  }
+  async pipe(body) {
+    this.writer.releaseLock();
+    await body.pipeTo(this.writable, { preventClose: true });
+    this.writer = this.writable.getWriter();
+  }
+  onAbort(listener) {
+    this.abortSubscribers.push(listener);
+  }
+  abort() {
+    if (!this.aborted) {
+      this.aborted = true;
+      this.abortSubscribers.forEach((subscriber) => subscriber());
+    }
+  }
+};
+
+// src/helper/streaming/utils.ts
+var isOldBunVersion = () => {
+  const version = typeof Bun !== "undefined" ? Bun.version : void 0;
+  if (version === void 0) {
+    return false;
+  }
+  const result = version.startsWith("1.1") || version.startsWith("1.0") || version.startsWith("0.");
+  isOldBunVersion = () => result;
+  return result;
+};
+
+// src/helper/streaming/stream.ts
+var contextStash = /* @__PURE__ */ new WeakMap();
+var stream = (c, cb, onError) => {
+  const { readable, writable } = new TransformStream();
+  const stream2 = new StreamingApi(writable, readable);
+  if (isOldBunVersion()) {
+    c.req.raw.signal.addEventListener("abort", () => {
+      if (!stream2.closed) {
+        stream2.abort();
+      }
+    });
+  }
+  contextStash.set(stream2.responseReadable, c);
+  (async () => {
+    try {
+      await cb(stream2);
+    } catch (e) {
+      if (e === void 0) ; else if (e instanceof Error && onError) {
+        await onError(e, stream2);
+      } else {
+        console.error(e);
+      }
+    } finally {
+      stream2.close();
+    }
+  })();
+  return c.newResponse(stream2.responseReadable);
+};
+
 // src/server/handlers/voice.ts
 var voice_exports = {};
 __export(voice_exports, {
@@ -8900,12 +8993,7 @@ async function generateSpeechHandler({
     if (!audioStream) {
       throw new HTTPException(500, { message: "Failed to generate speech" });
     }
-    const chunks = [];
-    for await (const chunk of audioStream) {
-      chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-    }
-    const audioData = Buffer.concat(chunks);
-    return { audioData };
+    return audioStream;
   } catch (error) {
     return handleError$1(error, "Error generating speech");
   }
@@ -9238,113 +9326,6 @@ async function getWorkflowRunsHandler$1({ mastra, workflowId }) {
   }
 }
 
-// src/utils/stream.ts
-var StreamingApi = class {
-  writer;
-  encoder;
-  writable;
-  abortSubscribers = [];
-  responseReadable;
-  aborted = false;
-  closed = false;
-  constructor(writable, _readable) {
-    this.writable = writable;
-    this.writer = writable.getWriter();
-    this.encoder = new TextEncoder();
-    const reader = _readable.getReader();
-    this.abortSubscribers.push(async () => {
-      await reader.cancel();
-    });
-    this.responseReadable = new ReadableStream({
-      async pull(controller) {
-        const { done, value } = await reader.read();
-        done ? controller.close() : controller.enqueue(value);
-      },
-      cancel: () => {
-        this.abort();
-      }
-    });
-  }
-  async write(input) {
-    try {
-      if (typeof input === "string") {
-        input = this.encoder.encode(input);
-      }
-      await this.writer.write(input);
-    } catch {
-    }
-    return this;
-  }
-  async writeln(input) {
-    await this.write(input + "\n");
-    return this;
-  }
-  sleep(ms) {
-    return new Promise((res) => setTimeout(res, ms));
-  }
-  async close() {
-    try {
-      await this.writer.close();
-    } catch {
-    }
-    this.closed = true;
-  }
-  async pipe(body) {
-    this.writer.releaseLock();
-    await body.pipeTo(this.writable, { preventClose: true });
-    this.writer = this.writable.getWriter();
-  }
-  onAbort(listener) {
-    this.abortSubscribers.push(listener);
-  }
-  abort() {
-    if (!this.aborted) {
-      this.aborted = true;
-      this.abortSubscribers.forEach((subscriber) => subscriber());
-    }
-  }
-};
-
-// src/helper/streaming/utils.ts
-var isOldBunVersion = () => {
-  const version = typeof Bun !== "undefined" ? Bun.version : void 0;
-  if (version === void 0) {
-    return false;
-  }
-  const result = version.startsWith("1.1") || version.startsWith("1.0") || version.startsWith("0.");
-  isOldBunVersion = () => result;
-  return result;
-};
-
-// src/helper/streaming/stream.ts
-var contextStash = /* @__PURE__ */ new WeakMap();
-var stream = (c, cb, onError) => {
-  const { readable, writable } = new TransformStream();
-  const stream2 = new StreamingApi(writable, readable);
-  if (isOldBunVersion()) {
-    c.req.raw.signal.addEventListener("abort", () => {
-      if (!stream2.closed) {
-        stream2.abort();
-      }
-    });
-  }
-  contextStash.set(stream2.responseReadable, c);
-  (async () => {
-    try {
-      await cb(stream2);
-    } catch (e) {
-      if (e === void 0) ; else if (e instanceof Error && onError) {
-        await onError(e, stream2);
-      } else {
-        console.error(e);
-      }
-    } finally {
-      stream2.close();
-    }
-  })();
-  return c.newResponse(stream2.responseReadable);
-};
-
 // src/server/index.ts
 var RequestError = class extends Error {
   static name = "RequestError";
@@ -9481,14 +9462,14 @@ var newRequest = (incoming, defaultHostname) => {
   req[urlKey] = url.href;
   return req;
 };
-function writeFromReadableStream(stream2, writable) {
-  if (stream2.locked) {
+function writeFromReadableStream(stream3, writable) {
+  if (stream3.locked) {
     throw new TypeError("ReadableStream is locked.");
   } else if (writable.destroyed) {
-    stream2.cancel();
+    stream3.cancel();
     return;
   }
-  const reader = stream2.getReader();
+  const reader = stream3.getReader();
   writable.on("close", cancel);
   writable.on("error", cancel);
   reader.read().then(flow, cancel);
@@ -9686,7 +9667,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
   const resHeaderRecord = buildOutgoingHttpHeaders(res.headers);
   const internalBody = getInternalBody(res);
   if (internalBody) {
-    const { length, source, stream: stream2 } = internalBody;
+    const { length, source, stream: stream3 } = internalBody;
     if (source instanceof Uint8Array && source.byteLength !== length) ; else {
       if (length) {
         resHeaderRecord["content-length"] = length;
@@ -9697,7 +9678,7 @@ var responseViaResponseObject = async (res, outgoing, options = {}) => {
       } else if (source instanceof Blob) {
         outgoing.end(new Uint8Array(await source.arrayBuffer()));
       } else {
-        await writeFromReadableStream(stream2, outgoing);
+        await writeFromReadableStream(stream3, outgoing);
       }
       return;
     }
@@ -9801,18 +9782,18 @@ var ENCODINGS = {
   gzip: ".gz"
 };
 var ENCODINGS_ORDERED_KEYS = Object.keys(ENCODINGS);
-var createStreamBody = (stream2) => {
+var createStreamBody = (stream3) => {
   const body = new ReadableStream({
     start(controller) {
-      stream2.on("data", (chunk) => {
+      stream3.on("data", (chunk) => {
         controller.enqueue(chunk);
       });
-      stream2.on("end", () => {
+      stream3.on("end", () => {
         controller.close();
       });
     },
     cancel() {
-      stream2.destroy();
+      stream3.destroy();
     }
   });
   return body;
@@ -9908,10 +9889,10 @@ var serveStatic = (options = { root: "" }) => {
       end = size - 1;
     }
     const chunksize = end - start + 1;
-    const stream2 = createReadStream(path, { start, end });
+    const stream3 = createReadStream(path, { start, end });
     c2.header("Content-Length", chunksize.toString());
     c2.header("Content-Range", `bytes ${start}-${end}/${stats.size}`);
-    return c2.body(createStreamBody(stream2), 206);
+    return c2.body(createStreamBody(stream3), 206);
   };
 };
 var RENDER_TYPE = {
@@ -10174,33 +10155,42 @@ function errorHandler(err, c2) {
 
 // src/server/handlers/agents.ts
 async function getAgentsHandler(c2) {
-  const serializedAgents = await getAgentsHandler$1({ mastra: c2.get("mastra") });
+  const serializedAgents = await getAgentsHandler$1({
+    mastra: c2.get("mastra"),
+    runtimeContext: c2.get("runtimeContext")
+  });
   return c2.json(serializedAgents);
 }
 async function getAgentByIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getAgentByIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
 async function getEvalsByAgentIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getEvalsByAgentIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
 async function getLiveEvalsByAgentIdHandler(c2) {
   const mastra = c2.get("mastra");
   const agentId = c2.req.param("agentId");
+  const runtimeContext = c2.get("runtimeContext");
   const result = await getLiveEvalsByAgentIdHandler$1({
     mastra,
-    agentId
+    agentId,
+    runtimeContext
   });
   return c2.json(result);
 }
@@ -10269,7 +10259,7 @@ async function setAgentInstructionsHandler(c2) {
 // src/server/handlers/client.ts
 var clients = /* @__PURE__ */ new Set();
 function handleClientsRefresh(c2) {
-  const stream2 = new ReadableStream({
+  const stream3 = new ReadableStream({
     start(controller) {
       clients.add(controller);
       controller.enqueue("data: connected\n\n");
@@ -10278,7 +10268,7 @@ function handleClientsRefresh(c2) {
       });
     }
   });
-  return new Response(stream2, {
+  return new Response(stream3, {
     headers: {
       "Content-Type": "text/event-stream",
       "Cache-Control": "no-cache",
@@ -10459,8 +10449,10 @@ async function getMessagesHandler(c2) {
 async function getNetworksHandler(c2) {
   try {
     const mastra = c2.get("mastra");
+    const runtimeContext = c2.get("runtimeContext");
     const networks = await getNetworksHandler$1({
-      mastra
+      mastra,
+      runtimeContext
     });
     return c2.json(networks);
   } catch (error) {
@@ -10471,9 +10463,11 @@ async function getNetworkByIdHandler(c2) {
   try {
     const mastra = c2.get("mastra");
     const networkId = c2.req.param("networkId");
+    const runtimeContext = c2.get("runtimeContext");
     const network = await getNetworkByIdHandler$1({
       mastra,
-      networkId
+      networkId,
+      runtimeContext
     });
     return c2.json(network);
   } catch (error) {
@@ -10815,6 +10809,174 @@ async function deleteIndex(c2) {
     return handleError(error, "Error deleting index");
   }
 }
+async function getVNextWorkflowsHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflows = await getVNextWorkflowsHandler$1({
+      mastra
+    });
+    return c2.json(workflows);
+  } catch (error) {
+    return handleError(error, "Error getting workflows");
+  }
+}
+async function getVNextWorkflowByIdHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const workflow = await getVNextWorkflowByIdHandler$1({
+      mastra,
+      workflowId
+    });
+    return c2.json(workflow);
+  } catch (error) {
+    return handleError(error, "Error getting workflow");
+  }
+}
+async function createVNextWorkflowRunHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const prevRunId = c2.req.query("runId");
+    const result = await createVNextWorkflowRunHandler$1({
+      mastra,
+      workflowId,
+      runId: prevRunId
+    });
+    return c2.json(result);
+  } catch (e2) {
+    return handleError(e2, "Error creating run");
+  }
+}
+async function startAsyncVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const { inputData, runtimeContext } = await c2.req.json();
+    const runId = c2.req.query("runId");
+    const result = await startAsyncVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      inputData
+    });
+    return c2.json(result);
+  } catch (error) {
+    return handleError(error, "Error executing workflow");
+  }
+}
+async function startVNextWorkflowRunHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const { inputData, runtimeContext } = await c2.req.json();
+    const runId = c2.req.query("runId");
+    await startVNextWorkflowRunHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      inputData
+    });
+    return c2.json({ message: "Workflow run started" });
+  } catch (e2) {
+    return handleError(e2, "Error starting workflow run");
+  }
+}
+function watchVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const logger2 = mastra.getLogger();
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to watch workflow" });
+    }
+    return stream(
+      c2,
+      async (stream3) => {
+        try {
+          const result = await watchVNextWorkflowHandler$1({
+            mastra,
+            workflowId,
+            runId
+          });
+          stream3.onAbort(() => {
+            if (!result.locked) {
+              return result.cancel();
+            }
+          });
+          for await (const chunk of result) {
+            await stream3.write(chunk.toString() + "");
+          }
+        } catch (err) {
+          console.log(err);
+        }
+      },
+      async (err) => {
+        logger2.error("Error in watch stream: " + err?.message);
+      }
+    );
+  } catch (error) {
+    return handleError(error, "Error watching workflow");
+  }
+}
+async function resumeAsyncVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    const { step, resumeData, runtimeContext } = await c2.req.json();
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to resume workflow" });
+    }
+    const result = await resumeAsyncVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      body: { step, resumeData }
+    });
+    return c2.json(result);
+  } catch (error) {
+    return handleError(error, "Error resuming workflow step");
+  }
+}
+async function resumeVNextWorkflowHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const runId = c2.req.query("runId");
+    const { step, resumeData, runtimeContext } = await c2.req.json();
+    if (!runId) {
+      throw new HTTPException$1(400, { message: "runId required to resume workflow" });
+    }
+    await resumeVNextWorkflowHandler$1({
+      mastra,
+      runtimeContext,
+      workflowId,
+      runId,
+      body: { step, resumeData }
+    });
+    return c2.json({ message: "Workflow run resumed" });
+  } catch (error) {
+    return handleError(error, "Error resuming workflow");
+  }
+}
+async function getVNextWorkflowRunsHandler(c2) {
+  try {
+    const mastra = c2.get("mastra");
+    const workflowId = c2.req.param("workflowId");
+    const workflowRuns = await getVNextWorkflowRunsHandler$1({
+      mastra,
+      workflowId
+    });
+    return c2.json(workflowRuns);
+  } catch (error) {
+    return handleError(error, "Error getting workflow runs");
+  }
+}
 async function getSpeakersHandler(c2) {
   try {
     const mastra = c2.get("mastra");
@@ -10962,20 +11124,20 @@ function watchWorkflowHandler(c2) {
     }
     return stream(
       c2,
-      async (stream2) => {
+      async (stream3) => {
         try {
           const result = await watchWorkflowHandler$1({
             mastra,
             workflowId,
             runId
           });
-          stream2.onAbort(() => {
+          stream3.onAbort(() => {
             if (!result.locked) {
               return result.cancel();
             }
           });
           for await (const chunk of result) {
-            await stream2.write(chunk.toString() + "");
+            await stream3.write(chunk.toString() + "");
           }
         } catch (err) {
           console.log(err);
@@ -11158,12 +11320,12 @@ var html2 = `
 async function createHonoServer(mastra, options = {}) {
   const app = new Hono();
   const server = mastra.getServer();
-  const __dirname = dirname(fileURLToPath(import.meta.url));
-  const mastraToolsPaths = (await import(pathToFileURL(join(__dirname, "tools.mjs")).href)).tools;
+  const toolsPath = "./tools.mjs";
+  const mastraToolsPaths = (await import(toolsPath)).tools;
   const toolImports = mastraToolsPaths ? await Promise.all(
     // @ts-ignore
     mastraToolsPaths.map(async (toolPath) => {
-      return import(pathToFileURL(join(__dirname, toolPath)).href);
+      return import(toolPath);
     })
   ) : [];
   const tools = toolImports.reduce((acc, toolModule) => {
@@ -11262,7 +11424,7 @@ async function createHonoServer(mastra, options = {}) {
       }
     }
   }
-  if (options?.isDev || server?.build?.apiReqLogs) {
+  if (server?.build?.apiReqLogs) {
     app.use(logger());
   }
   app.get(
@@ -12400,6 +12562,289 @@ async function createHonoServer(mastra, options = {}) {
     storeTelemetryHandler
   );
   app.get(
+    "/api/workflows/v-next",
+    h({
+      description: "Get all vNext workflows",
+      tags: ["vNextWorkflows"],
+      responses: {
+        200: {
+          description: "List of all vNext workflows"
+        }
+      }
+    }),
+    getVNextWorkflowsHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId",
+    h({
+      description: "Get vNext workflow by ID",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "vNext workflow details"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    getVNextWorkflowByIdHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId/runs",
+    h({
+      description: "Get all runs for a vNext workflow",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "List of vNext workflow runs from storage"
+        }
+      }
+    }),
+    getVNextWorkflowRunsHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/resume",
+    h({
+      description: "Resume a suspended vNext workflow step",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                step: {
+                  oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }]
+                },
+                resumeData: { type: "object" },
+                runtimeContext: { type: "object" }
+              },
+              required: ["step"]
+            }
+          }
+        }
+      }
+    }),
+    resumeVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/resume-async",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Resume a suspended vNext workflow step",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                step: {
+                  oneOf: [{ type: "string" }, { type: "array", items: { type: "string" } }]
+                },
+                resumeData: { type: "object" },
+                runtimeContext: { type: "object" }
+              },
+              required: ["step"]
+            }
+          }
+        }
+      }
+    }),
+    resumeAsyncVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/create-run",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Create a new vNext workflow run",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      responses: {
+        200: {
+          description: "New vNext workflow run created"
+        }
+      }
+    }),
+    createVNextWorkflowRunHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/start-async",
+    bodyLimit(bodyLimitOptions),
+    h({
+      description: "Execute/Start a vNext workflow",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                inputData: { type: "object" },
+                runtimeContext: { type: "object" }
+              }
+            }
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: "vNext workflow execution result"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    startAsyncVNextWorkflowHandler
+  );
+  app.post(
+    "/api/workflows/v-next/:workflowId/start",
+    h({
+      description: "Create and start a new vNext workflow run",
+      tags: ["vNextWorkflows"],
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: true,
+          schema: { type: "string" }
+        }
+      ],
+      requestBody: {
+        required: true,
+        content: {
+          "application/json": {
+            schema: {
+              type: "object",
+              properties: {
+                inputData: { type: "object" },
+                runtimeContext: { type: "object" }
+              }
+            }
+          }
+        }
+      },
+      responses: {
+        200: {
+          description: "vNext workflow run started"
+        },
+        404: {
+          description: "vNext workflow not found"
+        }
+      }
+    }),
+    startVNextWorkflowRunHandler
+  );
+  app.get(
+    "/api/workflows/v-next/:workflowId/watch",
+    h({
+      description: "Watch vNext workflow transitions in real-time",
+      parameters: [
+        {
+          name: "workflowId",
+          in: "path",
+          required: true,
+          schema: { type: "string" }
+        },
+        {
+          name: "runId",
+          in: "query",
+          required: false,
+          schema: { type: "string" }
+        }
+      ],
+      tags: ["vNextWorkflows"],
+      responses: {
+        200: {
+          description: "vNext workflow transitions in real-time"
+        }
+      }
+    }),
+    watchVNextWorkflowHandler
+  );
+  app.get(
     "/api/workflows",
     h({
       description: "Get all workflows",
@@ -12598,7 +13043,7 @@ async function createHonoServer(mastra, options = {}) {
     "/api/workflows/:workflowId/startAsync",
     bodyLimit(bodyLimitOptions),
     h({
-      description: "Execute/Start a workflow",
+      description: "@deprecated Use /api/workflows/:workflowId/start-async instead",
       tags: ["workflows"],
       parameters: [
         {
@@ -12642,7 +13087,7 @@ async function createHonoServer(mastra, options = {}) {
     "/api/workflows/:workflowId/start-async",
     bodyLimit(bodyLimitOptions),
     h({
-      description: "@deprecated Use /api/workflows/:workflowId/start-async instead",
+      description: "Execute/Start a workflow",
       tags: ["workflows"],
       parameters: [
         {
@@ -13156,19 +13601,21 @@ async function createNodeServer(mastra, options = {}) {
   const server = serve(
     {
       fetch: app.fetch,
-      port
+      port,
+      hostname: serverOptions?.host ?? "localhost"
     },
     () => {
       const logger2 = mastra.getLogger();
-      logger2.info(` Mastra API running on port http://localhost:${process.env.PORT || 4111}/api`);
+      const host = serverOptions?.host ?? "localhost";
+      logger2.info(` Mastra API running on port http://${host}:${port}/api`);
       if (options?.isDev) {
-        logger2.info(`\uFFFD Open API documentation available at http://localhost:${port}/openapi.json`);
+        logger2.info(`\uFFFD Open API documentation available at http://${host}:${port}/openapi.json`);
       }
       if (options?.isDev) {
-        logger2.info(`\u{1F9EA} Swagger UI available at http://localhost:${port}/swagger-ui`);
+        logger2.info(`\u{1F9EA} Swagger UI available at http://${host}:${port}/swagger-ui`);
       }
       if (options?.playground) {
-        logger2.info(`\u{1F468}\u200D\u{1F4BB} Playground available at http://localhost:${port}/`);
+        logger2.info(`\u{1F468}\u200D\u{1F4BB} Playground available at http://${host}:${port}/`);
       }
     }
   );
