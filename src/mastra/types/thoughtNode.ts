@@ -92,6 +92,75 @@ export function createSynthesizedThought(
   };
 }
 
+export function updateConnectionStrengthHebbian(
+  connection: NodeConnection, 
+  sourceNodeActivity: number, 
+  targetNodeActivity: number,
+  learningRate: number = 0.1
+): NodeConnection {
+  const activityProduct = sourceNodeActivity * targetNodeActivity;
+  
+  const strengthDelta = learningRate * activityProduct;
+  
+  const newStrength = Math.min(1.0, connection.strength + strengthDelta);
+  
+  return {
+    ...connection,
+    strength: newStrength,
+    lastActivated: new Date(),
+    activationCount: (connection.activationCount || 0) + 1
+  };
+}
+
+export function pruneConnections(
+  connections: NodeConnection[], 
+  pruningThreshold: number = 0.2,
+  inactivityThresholdMs: number = 7 * 24 * 60 * 60 * 1000 // 1週間
+): NodeConnection[] {
+  const now = new Date();
+  
+  return connections.filter(conn => {
+    const lastActive = conn.lastActivated || conn.createdAt || now;
+    const inactiveTimeMs = now.getTime() - lastActive.getTime();
+    
+    const shouldPrune = inactiveTimeMs > inactivityThresholdMs && conn.strength < pruningThreshold;
+    
+    return !shouldPrune;
+  });
+}
+
+export function calculateNodeActivity(
+  node: ThoughtNode, 
+  connections: NodeConnection[], 
+  allNodes: ThoughtNode[],
+  decayFactor: number = 0.9
+): number {
+  const baseActivity = node.score / 10;
+  
+  const relatedConnections = connections.filter(
+    conn => conn.sourceNodeId === node.id || conn.targetNodeId === node.id
+  );
+  
+  if (relatedConnections.length === 0) {
+    return baseActivity;
+  }
+  
+  const avgConnectionStrength = relatedConnections.reduce(
+    (sum, conn) => sum + conn.strength, 
+    0
+  ) / relatedConnections.length;
+  
+  const connectedNodesActivity = relatedConnections.reduce((sum, conn) => {
+    const connectedNodeId = conn.sourceNodeId === node.id ? conn.targetNodeId : conn.sourceNodeId;
+    const connectedNode = allNodes.find(n => n.id === connectedNodeId);
+    if (!connectedNode) return sum;
+    
+    return sum + (connectedNode.score / 10) * conn.strength;
+  }, 0) / relatedConnections.length;
+  
+  return decayFactor * (baseActivity * 0.4 + avgConnectionStrength * 0.3 + connectedNodesActivity * 0.3);
+}
+
 export function calculateNetworkState(nodes: ThoughtNode[], connections: NodeConnection[]) {
   const avgStrength = connections.length > 0 
     ? connections.reduce((sum, conn) => sum + conn.strength, 0) / connections.length 

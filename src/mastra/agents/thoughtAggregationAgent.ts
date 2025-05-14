@@ -1,13 +1,25 @@
 import { openai } from '@ai-sdk/openai';
 import { Agent } from '@mastra/core/agent';
 import { z } from 'zod';
-import { thoughtNodeSchema, nodeConnectionSchema } from '../types/thoughtNode';
+import { 
+  thoughtNodeSchema, 
+  nodeConnectionSchema, 
+  updateConnectionStrengthHebbian,
+  pruneConnections,
+  calculateNodeActivity
+} from '../types/thoughtNode';
 import { getLogger } from '..';
 
 export const aggregationInputSchema = z.object({
   nodes: z.array(thoughtNodeSchema),
   query: z.string().describe("元のユーザーからの質問"),
   existingConnections: z.array(nodeConnectionSchema).optional(),
+  learningRate: z.number().min(0).max(1).optional().default(0.1),
+  pruningThreshold: z.number().min(0).max(1).optional().default(0.2),
+  inactivityThresholdMs: z.number().optional().default(7 * 24 * 60 * 60 * 1000), // 1週間
+  decayFactor: z.number().min(0).max(1).optional().default(0.9),
+  cycleCount: z.number().optional().default(0),
+  persistentState: z.record(z.any()).optional().default({}),
 });
 
 export const aggregationOutputSchema = z.object({
@@ -17,6 +29,15 @@ export const aggregationOutputSchema = z.object({
     content: z.string(),
     confidence: z.number().min(0).max(1),
   })),
+  updatedState: z.record(z.any()).optional(),
+  networkMetrics: z.object({
+    nodeCount: z.number(),
+    connectionCount: z.number(),
+    averageStrength: z.number(),
+    averageScore: z.number(),
+    connectionDensity: z.number(),
+    timestamp: z.date(),
+  }).optional(),
 });
 
 export const generateAggregationPrompt = (input: z.infer<typeof aggregationInputSchema>): string => `
@@ -159,9 +180,56 @@ export async function aggregateThoughts(input: z.infer<typeof aggregationInputSc
     const prompt = generateAggregationPrompt(input);
     logger.info("(ThoughtAggregationAgent) Analyzing thought nodes with prompt:", { prompt });
     
+    const existingConnections = input.existingConnections || [];
+    const cycleCount = input.cycleCount || 0;
+    const persistentState = input.persistentState || {};
+    
+    const learningRate = input.learningRate || 0.1;
+    const pruningThreshold = input.pruningThreshold || 0.2;
+    const inactivityThresholdMs = input.inactivityThresholdMs || (7 * 24 * 60 * 60 * 1000);
+    const decayFactor = input.decayFactor || 0.9;
+    
     try {
+        const nodeActivities = new Map<string, number>();
+        input.nodes.forEach(node => {
+            const activity = calculateNodeActivity(node, existingConnections, input.nodes, decayFactor);
+            nodeActivities.set(node.id, activity);
+            logger.debug(`Node ${node.id} activity: ${activity.toFixed(3)}`);
+        });
+        
+        let updatedConnections = [...existingConnections];
+        if (cycleCount > 0 && existingConnections.length > 0) {
+            logger.info(`(ThoughtAggregationAgent) Updating ${existingConnections.length} existing connections using Hebbian learning`);
+            
+            updatedConnections = existingConnections.map(conn => {
+                const sourceActivity = nodeActivities.get(conn.sourceNodeId) || 0;
+                const targetActivity = nodeActivities.get(conn.targetNodeId) || 0;
+                
+                if (sourceActivity > 0 && targetActivity > 0) {
+                    const updatedConn = updateConnectionStrengthHebbian(
+                        conn, 
+                        sourceActivity, 
+                        targetActivity, 
+                        learningRate
+                    );
+                    
+                    logger.debug(`Connection ${conn.sourceNodeId} ↔ ${conn.targetNodeId} strength updated: ${conn.strength.toFixed(3)} → ${updatedConn.strength.toFixed(3)}`);
+                    return updatedConn;
+                }
+                return conn;
+            });
+            
+            const connectionCountBefore = updatedConnections.length;
+            updatedConnections = pruneConnections(updatedConnections, pruningThreshold, inactivityThresholdMs);
+            const prunedCount = connectionCountBefore - updatedConnections.length;
+            
+            if (prunedCount > 0) {
+                logger.info(`(ThoughtAggregationAgent) Pruned ${prunedCount} weak connections`);
+            }
+        }
+        
         const response = await thoughtAggregationAgent.generate(prompt);
-        logger.info("(ThoughtAggregationAgent) Raw agent response received.", { response });
+        logger.info("(ThoughtAggregationAgent) Raw agent response received.");
         
         if (response.text) {
             try {
@@ -173,31 +241,109 @@ export async function aggregateThoughts(input: z.infer<typeof aggregationInputSc
                     'connections' in parsedJson && 
                     'synthesizedThoughts' in parsedJson) {
                     
+                    const newConnections = parsedJson.connections || [];
+                    
+                    const mergedConnections = [...updatedConnections];
+                    for (const newConn of newConnections) {
+                        const isDuplicate = updatedConnections.some(
+                            existConn => 
+                                (existConn.sourceNodeId === newConn.sourceNodeId && 
+                                 existConn.targetNodeId === newConn.targetNodeId) ||
+                                (existConn.sourceNodeId === newConn.targetNodeId && 
+                                 existConn.targetNodeId === newConn.sourceNodeId)
+                        );
+                        
+                        if (!isDuplicate) {
+                            mergedConnections.push(newConn);
+                        }
+                    }
+                    
+                    const networkMetrics = {
+                        nodeCount: input.nodes.length,
+                        connectionCount: mergedConnections.length,
+                        averageStrength: mergedConnections.length > 0 
+                            ? mergedConnections.reduce((sum, conn) => sum + conn.strength, 0) / mergedConnections.length 
+                            : 0,
+                        averageScore: input.nodes.length > 0
+                            ? input.nodes.reduce((sum, node) => sum + node.score, 0) / input.nodes.length
+                            : 0,
+                        connectionDensity: input.nodes.length > 1
+                            ? mergedConnections.length / (input.nodes.length * (input.nodes.length - 1) / 2)
+                            : 0,
+                        timestamp: new Date()
+                    };
+                    
+                    const updatedState = {
+                        ...persistentState,
+                        lastCycleTimestamp: new Date(),
+                        totalCycles: cycleCount + 1,
+                        nodeActivities: Object.fromEntries(nodeActivities),
+                    };
+                    
                     const result = {
-                        connections: parsedJson.connections || [],
-                        synthesizedThoughts: parsedJson.synthesizedThoughts || []
+                        connections: mergedConnections,
+                        synthesizedThoughts: parsedJson.synthesizedThoughts || [],
+                        updatedState,
+                        networkMetrics
                     };
                     
                     logger.info("(ThoughtAggregationAgent) Successfully extracted aggregation results.", { 
                         connectionCount: result.connections.length,
-                        synthesizedThoughtCount: result.synthesizedThoughts.length
+                        synthesizedThoughtCount: result.synthesizedThoughts.length,
+                        cycleCount: updatedState.totalCycles
                     });
                     
                     return result;
                 } else {
                     logger.warn("(ThoughtAggregationAgent) Agent response does not contain expected fields.", { parsedJson });
-                    return { connections: [], synthesizedThoughts: [] };
+                    return { 
+                        connections: updatedConnections, 
+                        synthesizedThoughts: [],
+                        updatedState: {
+                            ...persistentState,
+                            lastCycleTimestamp: new Date(),
+                            totalCycles: cycleCount + 1,
+                            error: "Invalid agent response format"
+                        }
+                    };
                 }
             } catch (parseError) {
-                logger.error("(ThoughtAggregationAgent) Failed to parse agent response JSON.", { error: parseError, responseText: response.text });
-                return { connections: [], synthesizedThoughts: [] };
+                logger.error("(ThoughtAggregationAgent) Failed to parse agent response JSON.", { error: parseError });
+                return { 
+                    connections: updatedConnections, 
+                    synthesizedThoughts: [],
+                    updatedState: {
+                        ...persistentState,
+                        lastCycleTimestamp: new Date(),
+                        totalCycles: cycleCount + 1,
+                        error: "JSON parse error"
+                    }
+                };
             }
         } else {
             logger.error("(ThoughtAggregationAgent) Agent returned no text response.");
-            return { connections: [], synthesizedThoughts: [] };
+            return { 
+                connections: updatedConnections, 
+                synthesizedThoughts: [],
+                updatedState: {
+                    ...persistentState,
+                    lastCycleTimestamp: new Date(),
+                    totalCycles: cycleCount + 1,
+                    error: "Empty agent response"
+                }
+            };
         }
     } catch (error) {
         logger.error("(ThoughtAggregationAgent) Error during agent generation or processing.", { error });
-        return { connections: [], synthesizedThoughts: [] };
+        return { 
+            connections: existingConnections, 
+            synthesizedThoughts: [],
+            updatedState: {
+                ...persistentState,
+                lastCycleTimestamp: new Date(),
+                totalCycles: cycleCount + 1,
+                error: String(error)
+            }
+        };
     }
 }
