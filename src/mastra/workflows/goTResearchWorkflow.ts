@@ -6,8 +6,10 @@ import {
     clarificationPromptAgent,
     thoughtGeneratorAgent,
     thoughtTransformerAgent,
-    synthesizerAgent
+    synthesizerAgent,
+    thoughtAggregationAgent
 } from '../agents';
+import { aggregateThoughtsStep } from './steps/aggregateThoughtsStep';
 import {
   processThoughtsWorkflow,
   // ★ ThoughtEvaluation 型をインポート
@@ -225,8 +227,8 @@ const requestClarificationStep = new Step({
     console.log(JSON.stringify(context, null, 2));
     console.log("--- RequestClarificationStep Context End ---");
 
-    // ★★★ resume かどうかの判断を isResume キーで行う ★★★
-    const isResuming = context.isResume !== undefined;
+    // ★★★ resume かどうかの判断をコンテキストから直接判断 ★★★
+    const isResuming = false; // 一時的に無効化
 
     if (isResuming) {
         logger.info("(RequestClarificationStep) Workflow is resuming.");
@@ -584,7 +586,14 @@ goTResearchWorkflow
       return !clarityResult?.isClear;
     },
   })
-  // ★ ループ前のステップは削除/シンプル化
+  .then(initialThoughtsStep)
+  .then(prepareProcessThoughtsInput)
+  .then(aggregateThoughtsStep, {
+    when: async ({ context }) => {
+      const thoughts = context.getStepResult(prepareProcessThoughtsInput)?.thoughts;
+      return thoughts && thoughts.length > 1;
+    }
+  })
   // --- .while ループ --- 
   .while(
     // 第一引数: 条件判定関数
@@ -618,14 +627,9 @@ goTResearchWorkflow
       return shouldContinue;
     },
     // 第二引数: 繰り返すステップ
-    researchCycleStep,
-    // 第三引数: 変数マッピング
-    {
-      // researchCycleStep に渡す変数
-      query: { step: requestClarificationStep, path: "clarifiedQuery" }
-    }
+    researchCycleStep
   )
   // --- ループ終了後 --- 
   .then(prepareSynthesizeInput)
   .then(synthesizeStep)
-  .commit(); 
+  .commit();          

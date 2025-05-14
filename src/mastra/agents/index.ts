@@ -48,6 +48,7 @@ export { thoughtGeneratorAgent } from './thoughtGeneratorAgent';
 export { thoughtEvaluatorAgent } from './thoughtEvaluatorAgent';
 export { thoughtTransformerAgent } from './thoughtTransformerAgent';
 export { synthesizerAgent } from './synthesizerAgent';
+export { thoughtAggregationAgent } from './thoughtAggregationAgent';
 
 export const clarityCheckAgent = new Agent({
   name: 'clarityCheckAgent',

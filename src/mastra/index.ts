@@ -16,6 +16,7 @@ export const mastra = new Mastra({
     thoughtEvaluatorAgent: agents.thoughtEvaluatorAgent,
     thoughtGeneratorAgent: agents.thoughtGeneratorAgent,
     thoughtTransformerAgent: agents.thoughtTransformerAgent,
+    thoughtAggregationAgent: agents.thoughtAggregationAgent,
     clarityCheckAgent: agents.clarityCheckAgent,
     clarificationPromptAgent: agents.clarificationPromptAgent
   },
