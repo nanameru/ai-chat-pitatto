@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { X } from 'lucide-react';
+import { X, Box, LayoutGrid } from 'lucide-react';
 import { ThoughtGraphPreview } from './thought-graph-preview';
+import { ThoughtGraph3DPreview } from './thought-graph-3d-preview';
 import { ThoughtNode, NodeConnection, SynthesizedThought } from '../src/mastra/types/thoughtNode';
 
 interface ThoughtGraphSidebarProps {
@@ -43,6 +44,7 @@ export const ThoughtGraphSidebar: React.FC<ThoughtGraphSidebarProps> = ({
   const isResizingRef = useRef(false);
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const [selectedNode, setSelectedNode] = useState<ThoughtNode | null>(null);
+  const [visualizationMode, setVisualizationMode] = useState<'2d' | '3d'>('2d');
   
   const handleMouseMove = useCallback((e: MouseEvent) => {
     if (!isResizingRef.current || !sidebarRef.current) return;
@@ -96,18 +98,51 @@ export const ThoughtGraphSidebar: React.FC<ThoughtGraphSidebarProps> = ({
         <div className="w-full h-full bg-transparent transition-colors duration-150 group-hover:bg-gray-300 dark:group-hover:bg-gray-600 opacity-0 group-hover:opacity-50 rounded-l-full"></div>
       </div>
       
-      {/* Header with close button and title */}
+      {/* Header with close button, title, and visualization mode toggle */}
       <div className="flex items-center justify-between p-3 border-b border-gray-200 dark:border-zinc-700 flex-shrink-0">
         <span className="font-semibold text-sm text-gray-700 dark:text-zinc-300">思考グラフ可視化</span>
-        {onClose && (
-          <button
-            onClick={onClose}
-            className="p-1 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
-            aria-label="Close sidebar"
-          >
-            <X size={18} />
-          </button>
-        )}
+        <div className="flex items-center">
+          {/* Visualization mode toggle */}
+          <div className="flex mr-2 bg-gray-100 dark:bg-zinc-800 rounded-md overflow-hidden">
+            <button
+              onClick={() => setVisualizationMode('2d')}
+              className={`p-1 text-xs flex items-center ${
+                visualizationMode === '2d' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
+              }`}
+              aria-label="2D visualization"
+              title="2D visualization"
+            >
+              <LayoutGrid size={14} className="mr-1" />
+              <span>2D</span>
+            </button>
+            <button
+              onClick={() => setVisualizationMode('3d')}
+              className={`p-1 text-xs flex items-center ${
+                visualizationMode === '3d' 
+                  ? 'bg-blue-500 text-white' 
+                  : 'text-gray-700 dark:text-zinc-300 hover:bg-gray-200 dark:hover:bg-zinc-700'
+              }`}
+              aria-label="3D visualization"
+              title="3D visualization"
+            >
+              <Box size={14} className="mr-1" />
+              <span>3D</span>
+            </button>
+          </div>
+          
+          {/* Close button */}
+          {onClose && (
+            <button
+              onClick={onClose}
+              className="p-1 text-gray-500 hover:text-gray-900 dark:text-zinc-400 dark:hover:text-zinc-100 rounded-full hover:bg-gray-100 dark:hover:bg-zinc-800 transition-colors"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          )}
+        </div>
       </div>
       
       {/* Network Metrics */}
@@ -135,14 +170,25 @@ export const ThoughtGraphSidebar: React.FC<ThoughtGraphSidebarProps> = ({
       
       {/* Graph Visualization */}
       <div className="flex-grow overflow-auto">
-        <ThoughtGraphPreview
-          nodes={nodes}
-          connections={connections}
-          synthesizedThoughts={synthesizedThoughts}
-          width={width - 20}
-          height={500}
-          onNodeClick={handleNodeClick}
-        />
+        {visualizationMode === '2d' ? (
+          <ThoughtGraphPreview
+            nodes={nodes}
+            connections={connections}
+            synthesizedThoughts={synthesizedThoughts}
+            width={width - 20}
+            height={500}
+            onNodeClick={handleNodeClick}
+          />
+        ) : (
+          <ThoughtGraph3DPreview
+            nodes={nodes}
+            connections={connections}
+            synthesizedThoughts={synthesizedThoughts}
+            width={width - 20}
+            height={500}
+            onNodeClick={handleNodeClick}
+          />
+        )}
       </div>
       
       {/* Selected Node Details */}
