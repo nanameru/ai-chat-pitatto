@@ -6,6 +6,7 @@ import { useEffect, useOptimistic, useState, useRef, useCallback, useTransition 
 import useSWR, { useSWRConfig } from 'swr';
 import { ReasoningSidebar } from '@/components/reasoning-sidebar';
 import { ReasoningStep } from '@/types/reasoning';
+import { ThoughtGraphButton } from '@/components/thought-graph-button';
 
 import { ChatHeader } from '@/components/chat-header';
 import type { Vote } from '@/lib/db/schema';
@@ -213,6 +214,8 @@ export function Chat({
   const [reasoningSteps, setReasoningSteps] = useState<ReasoningStep[]>([]);
   const [isReasoningLoading, setIsReasoningLoading] = useState(false);
   const [showReasoningSidebar, setShowReasoningSidebar] = useState(true);
+  
+  const [showThoughtGraph, setShowThoughtGraph] = useState(false);
   
   // 内部で管理するメッセージ状態
   const [currentMessages, setCurrentMessages] = useState<Message[]>(initialMessages);

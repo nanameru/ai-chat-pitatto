@@ -8,6 +8,7 @@ import { ModelSelector } from '@/components/model-selector';
 import { SidebarToggle } from '@/components/sidebar-toggle';
 import { useSidebar } from './ui/sidebar';
 import type { VisibilityType } from './visibility-selector';
+import { ThoughtGraphButton } from './thought-graph-button';
 
 function PureChatHeader({
   chatId,
@@ -34,6 +35,11 @@ function PureChatHeader({
           className="order-1 md:order-2"
         />
       )}
+
+      {/* Add ThoughtGraphButton */}
+      <div className="ml-auto flex items-center">
+        <ThoughtGraphButton sessionId={chatId} className="mr-2" />
+      </div>
 
       {/* VisibilitySelector is hidden as requested */}
     </header>
