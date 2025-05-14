@@ -77,7 +77,7 @@ async function runTest() {
       networkState
     };
   } catch (error) {
-    logger.error('Test failed with error:', error);
+    logger.error('Test failed with error:', { error: String(error) });
     return {
       success: false,
       error: error instanceof Error ? error.message : String(error)
